@@ -17,10 +17,15 @@
  *   node scripts/release.js           # Interactive mode
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const readline = require('readline');
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import readline from 'readline';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ANSI color codes for console output
 const colors = {
@@ -67,7 +72,8 @@ function isValidVersion(version) {
 
 // Helper function to get the current version from package.json
 function getCurrentVersion() {
-  const packageJson = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
+  const packageJsonPath = path.join(process.cwd(), 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
   return packageJson.version;
 }
 
@@ -192,6 +198,19 @@ async function publishToNpm() {
 async function main() {
   try {
     console.log(`${colors.bright}${colors.magenta}NexureJS Release Script${colors.reset}\n`);
+
+    // Check for help flag
+    if (process.argv.includes('--help') || process.argv.includes('-h')) {
+      console.log(`${colors.bright}Usage:${colors.reset}`);
+      console.log(`  node scripts/release.js [major|minor|patch|<version>]`);
+      console.log(`\n${colors.bright}Examples:${colors.reset}`);
+      console.log(`  node scripts/release.js patch     # Bump patch version (0.0.x)`);
+      console.log(`  node scripts/release.js minor     # Bump minor version (0.x.0)`);
+      console.log(`  node scripts/release.js major     # Bump major version (x.0.0)`);
+      console.log(`  node scripts/release.js 1.2.3     # Set specific version`);
+      console.log(`  node scripts/release.js           # Interactive mode`);
+      process.exit(0);
+    }
 
     // Check if git is clean
     try {
