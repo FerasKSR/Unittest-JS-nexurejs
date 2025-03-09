@@ -4,14 +4,22 @@
  * This module provides high-performance C++ implementations of core components.
  */
 
-import { join } from 'path';
-import { existsSync } from 'fs';
+import { join, dirname } from 'node:path';
+import { existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { HttpParser as JsHttpParser, HttpParseResult } from '../http/http-parser.js';
+import { RadixRouter as JsRadixRouter } from '../routing/radix-router.js';
+import { HttpMethod } from '../http/http-method.js';
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 // Try to load the native module
 let nativeBinding: any;
 try {
   // Determine the path to the native module
-  const bindingPath = join(__dirname, '..', '..', 'build', 'Release', 'nexurejs_native.node');
+  const bindingPath = join(__dirname, '..', '..', '..', 'build', 'Release', 'nexurejs_native.node');
 
   if (existsSync(bindingPath)) {
     // Load the native module
@@ -19,9 +27,8 @@ try {
   } else {
     throw new Error(`Native module not found at ${bindingPath}`);
   }
-} catch (err: unknown) {
-  const errorMessage = err instanceof Error ? err.message : String(err);
-  console.warn(`Failed to load native module: ${errorMessage}`);
+} catch (err: any) {
+  console.warn(`Failed to load native module: ${err.message}`);
   console.warn('Using JavaScript fallbacks instead');
   nativeBinding = null;
 }
@@ -29,18 +36,12 @@ try {
 /**
  * HTTP Parser Interface
  */
-export interface HttpParseResult {
-  method: string;
-  url: string;
-  httpVersion: string;
-  headers: Record<string, string>;
-  body: Buffer | null;
-  complete: boolean;
-}
+export { HttpParseResult };
 
 export class HttpParser {
   private parser: any;
   private useNative: boolean;
+  private jsParser: JsHttpParser | null = null;
 
   constructor() {
     this.useNative = !!nativeBinding;
@@ -48,16 +49,15 @@ export class HttpParser {
     if (this.useNative) {
       try {
         this.parser = new nativeBinding.HttpParser();
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.warn(`Failed to create native HTTP parser: ${errorMessage}`);
+      } catch (err: any) {
+        console.warn(`Failed to create native HTTP parser: ${err.message}`);
         this.useNative = false;
       }
     }
 
     if (!this.useNative) {
       // Use JavaScript fallback
-      this.parser = null;
+      this.jsParser = new JsHttpParser();
     }
   }
 
@@ -69,10 +69,10 @@ export class HttpParser {
   parse(buffer: Buffer): HttpParseResult {
     if (this.useNative && this.parser) {
       return this.parser.parse(buffer);
+    } else if (this.jsParser) {
+      return this.jsParser.parse(buffer);
     } else {
-      // JavaScript fallback implementation
-      // This would be implemented in a separate file
-      throw new Error('JavaScript fallback not implemented');
+      throw new Error('No HTTP parser implementation available');
     }
   }
 
@@ -82,6 +82,8 @@ export class HttpParser {
   reset(): void {
     if (this.useNative && this.parser) {
       this.parser.reset();
+    } else if (this.jsParser) {
+      this.jsParser.reset();
     }
   }
 }
@@ -98,6 +100,7 @@ export interface RouteMatch {
 export class RadixRouter {
   private router: any;
   private useNative: boolean;
+  private jsRouter: JsRadixRouter | null = null;
 
   constructor(options?: { maxCacheSize?: number }) {
     this.useNative = !!nativeBinding;
@@ -105,16 +108,15 @@ export class RadixRouter {
     if (this.useNative) {
       try {
         this.router = new nativeBinding.RadixRouter(options);
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.warn(`Failed to create native radix router: ${errorMessage}`);
+      } catch (err: any) {
+        console.warn(`Failed to create native radix router: ${err.message}`);
         this.useNative = false;
       }
     }
 
     if (!this.useNative) {
       // Use JavaScript fallback
-      this.router = null;
+      this.jsRouter = new JsRadixRouter('');
     }
   }
 
@@ -128,9 +130,10 @@ export class RadixRouter {
   add(method: string, path: string, handler: any): this {
     if (this.useNative && this.router) {
       this.router.add(method, path, handler);
+    } else if (this.jsRouter) {
+      this.jsRouter.addRoute(method as HttpMethod, path, handler);
     } else {
-      // JavaScript fallback implementation
-      throw new Error('JavaScript fallback not implemented');
+      throw new Error('No router implementation available');
     }
     return this;
   }
@@ -144,9 +147,15 @@ export class RadixRouter {
   find(method: string, path: string): RouteMatch {
     if (this.useNative && this.router) {
       return this.router.find(method, path);
+    } else if (this.jsRouter) {
+      const result = this.jsRouter.findRoute(method as HttpMethod, path);
+      return {
+        handler: result?.route?.handler || null,
+        params: result?.params || {},
+        found: !!result
+      };
     } else {
-      // JavaScript fallback implementation
-      throw new Error('JavaScript fallback not implemented');
+      throw new Error('No router implementation available');
     }
   }
 
@@ -159,9 +168,12 @@ export class RadixRouter {
   remove(method: string, path: string): boolean {
     if (this.useNative && this.router) {
       return this.router.remove(method, path);
+    } else if (this.jsRouter) {
+      // JavaScript implementation doesn't have a remove method
+      // This is a stub implementation
+      return false;
     } else {
-      // JavaScript fallback implementation
-      throw new Error('JavaScript fallback not implemented');
+      throw new Error('No router implementation available');
     }
   }
 }
@@ -179,16 +191,10 @@ export class JsonProcessor {
     if (this.useNative) {
       try {
         this.processor = new nativeBinding.JsonProcessor();
-      } catch (err: unknown) {
-        const errorMessage = err instanceof Error ? err.message : String(err);
-        console.warn(`Failed to create native JSON processor: ${errorMessage}`);
+      } catch (err: any) {
+        console.warn(`Failed to create native JSON processor: ${err.message}`);
         this.useNative = false;
       }
-    }
-
-    if (!this.useNative) {
-      // Use JavaScript fallback
-      this.processor = null;
     }
   }
 
@@ -229,8 +235,10 @@ export class JsonProcessor {
     if (this.useNative && this.processor) {
       return this.processor.parseStream(buffer);
     } else {
-      // JavaScript fallback implementation
-      throw new Error('JavaScript fallback not implemented');
+      // Simple JavaScript fallback implementation
+      const jsonStr = buffer.toString();
+      const jsonLines = jsonStr.split('\n').filter(line => line.trim());
+      return jsonLines.map(line => JSON.parse(line));
     }
   }
 
