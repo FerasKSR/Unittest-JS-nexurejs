@@ -2,6 +2,7 @@
 #include <cstring>
 #include <algorithm>
 #include <cctype>
+#include <stdexcept>
 
 // Helper function to convert string to lowercase
 std::string ToLowerCase(const std::string& str) {
