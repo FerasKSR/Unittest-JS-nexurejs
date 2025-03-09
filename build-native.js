@@ -5,9 +5,18 @@
  * It uses node-gyp to compile the C++ code and then tests if the module can be loaded.
  */
 
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Create require function for loading native modules
+const require = createRequire(import.meta.url);
 
 // ANSI color codes for console output
 const colors = {
