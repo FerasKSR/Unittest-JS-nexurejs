@@ -5,9 +5,10 @@ All notable changes to NexureJS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.1.4] - 2025-03-09
 
 ### Added
+
 - Enhanced release script with improved GitHub release management
 - Automated prebuilt binary uploads to GitHub releases
 - Improved npm publishing workflow
@@ -16,12 +17,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dry run mode for testing release process
 
 ### Changed
+
 - Combined separate release scripts into a single unified script
 - Improved release process documentation
 - Enhanced error messages and user feedback
 - Better handling of GitHub API interactions
 
 ### Fixed
+
 - Release script ES module compatibility
 - Asset upload reliability with chunked uploads
 - GitHub release creation error handling
@@ -30,22 +33,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.3] - 2025-03-09
 
 ### Added
+
 -
 
 ## [0.1.2] - 2025-03-09
 
 ### Added
+
 -
 
 ## [0.1.1] - 2025-03-09
 
 ### Added
+
 - Initial documentation for native modules
 - Performance metrics tracking for all native modules
 - Comprehensive release documentation and process
 - GitHub Actions workflows for automated releases and testing
 
 ### Fixed
+
 - ES Module compatibility in build and installation scripts
 - Native module building and loading in ES Module environment
 - RadixRouter C++ code to use correct Node-API methods
@@ -54,6 +61,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.0] - 2023-11-15
 
 ### Added
+
 - Initial release of NexureJS framework
 - HTTP Parser native module for fast HTTP request parsing
 - Radix Router native module for efficient route matching
@@ -64,9 +72,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Example applications
 
 ### Changed
+
 - Native modules are now enabled by default for maximum performance
 - Default configuration includes maxCacheSize of 1000 for route caching
 
 ### Fixed
+
 - HTTP Parser streaming functionality for handling large requests
 - Native module loading path resolution for various environments
