@@ -31,7 +31,11 @@
     "benchmark:simple:js": "node benchmarks/simple-benchmark.js",
     "benchmark:native": "node run-typescript.js benchmarks/native-benchmark.ts",
     "run-benchmark": "node run-benchmark.js",
-    "run-ts": "node run-typescript.js"
+    "run-ts": "node run-typescript.js",
+    "release": "node scripts/release.js",
+    "release:patch": "node scripts/release.js patch",
+    "release:minor": "node scripts/release.js minor",
+    "release:major": "node scripts/release.js major"
   },
   "keywords": [
     "nodejs",

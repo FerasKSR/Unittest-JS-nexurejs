@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0, minor, major, patch)'
+        required: true
+        default: 'patch'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Run tests
+        run: npm test
+
+      - name: Build project
+        run: npm run build
+
+      # Build native modules for multiple platforms
+      - name: Build native modules for Linux
+        run: npm run build:native
+
+      - name: Setup matrix for other platforms
+        id: setup-matrix
+        run: |
+          echo "::set-output name=matrix::{\"os\":[\"windows-latest\",\"macos-latest\"],\"arch\":[\"x64\",\"arm64\"]}"
+
+      - name: Build native modules for other platforms
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const matrix = JSON.parse('${{ steps.setup-matrix.outputs.matrix }}');
+            for (const os of matrix.os) {
+              for (const arch of matrix.arch) {
+                if (os === 'windows-latest' && arch === 'arm64') continue; // Skip Windows ARM64
+
+                console.log(`Building for ${os} ${arch}`);
+                // Logic to build for each platform would go here
+                // This would typically involve setting up a matrix job
+              }
+            }
+
+      - name: Determine version
+        id: version
+        run: |
+          CURRENT_VERSION=$(node -p "require('./package.json').version")
+          VERSION_ARG="${{ github.event.inputs.version }}"
+
+          if [[ "$VERSION_ARG" == "major" ]]; then
+            IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+            NEW_VERSION="$((VERSION_PARTS[0] + 1)).0.0"
+          elif [[ "$VERSION_ARG" == "minor" ]]; then
+            IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+            NEW_VERSION="${VERSION_PARTS[0]}.$((VERSION_PARTS[1] + 1)).0"
+          elif [[ "$VERSION_ARG" == "patch" ]]; then
+            IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+            NEW_VERSION="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.$((VERSION_PARTS[2] + 1))"
+          else
+            NEW_VERSION="$VERSION_ARG"
+          fi
+
+          echo "::set-output name=new_version::$NEW_VERSION"
+          echo "::set-output name=current_version::$CURRENT_VERSION"
+
+      - name: Update version in package.json
+        run: npm version ${{ steps.version.outputs.new_version }} --no-git-tag-version
+
+      - name: Update CHANGELOG.md
+        run: |
+          TODAY=$(date +%Y-%m-%d)
+          VERSION="${{ steps.version.outputs.new_version }}"
+
+          # Update CHANGELOG.md
+          sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n### Added\n- \n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+
+      - name: Commit changes
+        run: |
+          git add package.json package-lock.json CHANGELOG.md
+          git commit -m "chore: prepare release v${{ steps.version.outputs.new_version }}"
+          git push origin HEAD:main
+
+      - name: Create and push tag
+        run: |
+          git tag -a v${{ steps.version.outputs.new_version }} -m "Release v${{ steps.version.outputs.new_version }}"
+          git push origin v${{ steps.version.outputs.new_version }}
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.version.outputs.new_version }}
+          release_name: NexureJS v${{ steps.version.outputs.new_version }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Changes in v${{ steps.version.outputs.new_version }}
+
+            Please see [CHANGELOG.md](https://github.com/nexurejs/nexurejs/blob/main/CHANGELOG.md) for details.
+
+      - name: Upload prebuilt binaries
+        run: |
+          if [ -d "prebuilds" ]; then
+            for file in prebuilds/*.tar.gz; do
+              if [ -f "$file" ]; then
+                echo "Uploading $file to release"
+                gh release upload v${{ steps.version.outputs.new_version }} "$file" --clobber
+              fi
+            done
+          fi
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to npm
+        run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

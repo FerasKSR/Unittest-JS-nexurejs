@@ -144,6 +144,40 @@ For detailed documentation, see the [docs](./docs) directory:
 
 Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
+## Releasing
+
+NexureJS follows [Semantic Versioning](https://semver.org/) for releases.
+
+### Manual Release
+
+To create a new release:
+
+```bash
+# For patch releases (bug fixes)
+npm run release:patch
+
+# For minor releases (new features)
+npm run release:minor
+
+# For major releases (breaking changes)
+npm run release:major
+
+# For a specific version
+npm run release 1.2.3
+```
+
+For detailed information about the release process, see [Release Documentation](./docs/releasing.md).
+
+### Automated Release
+
+Releases can also be triggered via GitHub Actions:
+
+1. Go to the [Actions tab](https://github.com/nexurejs/nexurejs/actions)
+2. Select the "Release" workflow
+3. Click "Run workflow"
+4. Enter the version type (patch, minor, major) or a specific version number
+5. Click "Run workflow"
+
 ## License
 
 MIT

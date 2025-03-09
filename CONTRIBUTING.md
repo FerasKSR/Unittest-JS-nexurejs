@@ -1,102 +1,126 @@
 # Contributing to NexureJS
 
-Thank you for your interest in contributing to NexureJS! This document provides guidelines and instructions for contributing to the project.
+Thank you for considering contributing to NexureJS! This document outlines the process for contributing to the project.
 
 ## Code of Conduct
 
-Please be respectful and considerate of others when contributing to this project. We aim to foster an inclusive and welcoming community.
+Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Getting Started
+## How Can I Contribute?
+
+### Reporting Bugs
+
+- Check if the bug has already been reported in the [Issues](https://github.com/nexurejs/nexurejs/issues)
+- If not, create a new issue with a clear title and description
+- Include steps to reproduce, expected behavior, and actual behavior
+- Include code samples, error messages, and screenshots if applicable
+
+### Suggesting Features
+
+- Check if the feature has already been suggested in the [Issues](https://github.com/nexurejs/nexurejs/issues)
+- If not, create a new issue with a clear title and description
+- Explain why this feature would be useful to most NexureJS users
+
+### Pull Requests
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/yourusername/nexurejs.git`
-3. Install dependencies: `npm install`
-4. Build the project: `npm run build`
-5. Run tests: `npm test`
+2. Create a new branch for your changes
+3. Make your changes
+4. Run tests and ensure they pass
+5. Submit a pull request
 
-## Development Environment
+## Development Setup
 
-### Prerequisites
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/nexurejs/nexurejs.git
+   cd nexurejs
+   ```
 
-- Node.js (v16 or later)
-- npm or yarn
-- C++ compiler (for native modules)
-- node-gyp
+2. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-### Building Native Modules
+3. Build the project:
+   ```bash
+   npm run build
+   ```
+
+4. Run tests:
+   ```bash
+   npm test
+   ```
+
+## Building Native Modules
 
 To build the native modules:
+
+```bash
+npm run build:native
+```
+
+For development and testing:
 
 ```bash
 npm run build:native:test
 ```
 
-This will compile the C++ code and verify that the native modules are working correctly.
-
-## Pull Request Process
-
-1. Create a new branch for your feature or bugfix: `git checkout -b feature/your-feature-name`
-2. Make your changes
-3. Add tests for your changes
-4. Ensure all tests pass: `npm test`
-5. Update documentation if necessary
-6. Commit your changes with a descriptive commit message
-7. Push to your fork: `git push origin feature/your-feature-name`
-8. Submit a pull request to the main repository
-
 ## Coding Standards
 
 - Follow the existing code style
-- Use TypeScript for all new code
-- Write comprehensive tests for new features
-- Document public APIs
-- Keep commits focused and atomic
+- Write tests for new features and bug fixes
+- Document new features and changes
+- Keep pull requests focused on a single topic
 
-## Working with Native Modules
+## Commit Messages
 
-When working with the native C++ modules:
+We follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
 
-1. Make sure you have the necessary build tools installed
-2. Modify the C++ code in the `src/native` directory
-3. Build and test your changes: `npm run build:native:test`
-4. Ensure both the native and JavaScript implementations work correctly
-5. Add benchmarks for performance-critical changes
+- `feat`: A new feature
+- `fix`: A bug fix
+- `docs`: Documentation changes
+- `style`: Changes that do not affect the meaning of the code
+- `refactor`: Code changes that neither fix a bug nor add a feature
+- `perf`: Performance improvements
+- `test`: Adding or fixing tests
+- `chore`: Changes to the build process or auxiliary tools
 
-## Testing
+Example:
+```
+feat: add support for HTTP/2
+```
 
-- Write unit tests for all new features
-- Ensure existing tests pass with your changes
-- Add integration tests for complex features
-- Test both native and JavaScript implementations
+## Release Process
 
-## Documentation
+NexureJS follows [Semantic Versioning](https://semver.org/) for releases.
 
-- Update documentation for any changed functionality
-- Document new features thoroughly
-- Keep API documentation up-to-date
-- Add examples for new features
+### Preparing a Release
 
-## Reporting Bugs
+1. Ensure all tests pass
+2. Update the CHANGELOG.md with the changes in the new version
+3. Update the version in package.json
 
-When reporting bugs, please include:
+### Creating a Release
 
-- A clear description of the issue
-- Steps to reproduce the problem
-- Expected behavior
-- Actual behavior
-- Environment details (OS, Node.js version, etc.)
-- Any relevant logs or error messages
+For maintainers with release permissions:
 
-## Feature Requests
+```bash
+# For patch releases (bug fixes)
+npm run release:patch
 
-Feature requests are welcome! Please provide:
+# For minor releases (new features)
+npm run release:minor
 
-- A clear description of the feature
-- The motivation for adding this feature
-- Any relevant examples or use cases
+# For major releases (breaking changes)
+npm run release:major
 
-## Questions?
+# For a specific version
+npm run release 1.2.3
+```
 
-If you have any questions about contributing, please open an issue or reach out to the maintainers.
+For detailed information about the release process, see [Release Documentation](./docs/releasing.md).
 
-Thank you for contributing to NexureJS!
+## License
+
+By contributing to NexureJS, you agree that your contributions will be licensed under the project's [MIT License](LICENSE).
