@@ -10,6 +10,7 @@ Before starting the release process, ensure you have:
 2. npm publishing rights for the NexureJS package
 3. Node.js and npm installed locally
 4. All tests passing on the main branch
+5. A GitHub personal access token with `repo` scope for creating releases
 
 ## Version Numbering
 
@@ -99,35 +100,27 @@ NexureJS follows [Semantic Versioning](https://semver.org/) (SemVer):
    git push origin v<new-version>
    ```
 
-4. Create a GitHub release:
-   - Go to the [GitHub releases page](https://github.com/nexurejs/nexurejs/releases)
-   - Click "Draft a new release"
-   - Select the tag you just pushed
-   - Set the title to "NexureJS v<new-version>"
-   - Add release notes from the CHANGELOG.md
-   - If this is a pre-release, check the "This is a pre-release" box
-   - Click "Publish release"
+4. Create a GitHub release and upload prebuilt binaries:
+   ```bash
+   GITHUB_TOKEN=your_token_here npm run create-github-release
+   ```
 
-5. Upload prebuilt binaries to the GitHub release:
-   - Attach all files from the `prebuilds` directory to the GitHub release
+   This script will:
+   - Create a GitHub release for the current version
+   - Extract release notes from CHANGELOG.md
+   - Upload all prebuilt binaries from the `prebuilds` directory
 
 ### 5. Publish to npm
 
-1. Ensure you're logged in to npm:
+1. Publish the package to npm:
    ```bash
-   npm login
+   npm run publish-to-npm
    ```
 
-2. Publish the package:
-   ```bash
-   npm publish
-   ```
-
-3. For pre-releases, use the appropriate tag:
-   ```bash
-   npm publish --tag beta  # for beta releases
-   npm publish --tag next  # for next releases
-   ```
+   This script will:
+   - Check if you're logged in to npm
+   - Publish the package to npm
+   - Handle errors if the version is already published
 
 ### 6. Announce the Release
 
@@ -138,6 +131,22 @@ NexureJS follows [Semantic Versioning](https://semver.org/) (SemVer):
    - Dev.to or Medium blog post (for major releases)
 
 2. Highlight key features, improvements, and breaking changes.
+
+## Automated Release
+
+You can also use the automated release script to handle steps 2-5:
+
+```bash
+npm run release [major|minor|patch|<version>]
+```
+
+For example:
+```bash
+npm run release:patch  # For patch releases
+npm run release:minor  # For minor releases
+npm run release:major  # For major releases
+npm run release 1.2.3  # For specific versions
+```
 
 ## Handling Hotfixes
 
