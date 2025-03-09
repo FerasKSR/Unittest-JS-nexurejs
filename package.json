@@ -12,7 +12,7 @@
     "install": "node scripts/install.js",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node dist/index.js",
-    "test": "echo \"No tests specified yet\" && exit 0",
+    "test": "jest",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "format": "prettier --write \"src/**/*.ts\"",
     "prepare": "npm run build",

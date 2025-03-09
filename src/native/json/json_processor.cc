@@ -650,8 +650,6 @@ Napi::Value JsonProcessor::ParseString(const std::string& json) {
 
 // Stringify a JavaScript value
 std::string JsonProcessor::StringifyValue(const Napi::Value& value) {
-  Napi::Env env = Env();
-
   if (value.IsNull() || value.IsUndefined()) {
     return "null";
   } else if (value.IsBoolean()) {

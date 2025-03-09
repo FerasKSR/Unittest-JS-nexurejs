@@ -212,7 +212,6 @@ void HttpParser::ParseHeaders(const char* buffer, size_t length, size_t& offset)
 // Parse HTTP body
 void HttpParser::ParseBody(const char* buffer, size_t length, size_t& offset) {
   // Append body data
-  size_t remainingBytes = length - offset;
   body_.insert(body_.end(), buffer + offset, buffer + length);
   offset = length; // Consumed all data
 }
