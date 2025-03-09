@@ -5,6 +5,24 @@ All notable changes to NexureJS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- Multi-platform CI testing (Ubuntu, Windows, macOS)
+- Automated build tools installation for different platforms
+- Build artifacts collection on test failures
+- C++17 standard enforcement across all platforms
+
+### Changed
+- Enhanced test workflow with parallel testing on multiple Node.js versions
+- Improved error handling and debugging in CI pipeline
+- Better naming and organization of test jobs
+
+### Fixed
+- Missing stdexcept header in HTTP parser
+- Build tools setup for Windows and Ubuntu environments
+- Cross-platform C++ compilation issues
+
 ## [0.1.5] - 2025-03-09
 
 ### Added
