@@ -26,6 +26,8 @@ export interface NativeModuleOptions {
   verbose?: boolean;
   /** Path to the native module (default: auto-detected) */
   modulePath?: string;
+  /** Maximum size for route cache (default: 1000) */
+  maxCacheSize?: number;
 }
 
 /**
@@ -47,7 +49,8 @@ export interface NativeModuleStatus {
 // Default configuration
 let nativeOptions: NativeModuleOptions = {
   enabled: true,
-  verbose: false
+  verbose: false,
+  maxCacheSize: 1000
 };
 
 // Native module loading state
@@ -113,27 +116,49 @@ function loadNativeBinding(): any {
   }
 
   try {
-    // Determine the path to the native module
-    const bindingPath = nativeOptions.modulePath ||
-      join(__dirname, '..', '..', '..', 'build', 'Release', 'nexurejs_native.node');
+    // Try to load the native module from multiple possible locations
+    const possiblePaths = [
+      // Custom path from options
+      nativeOptions.modulePath,
+      // Local build path
+      join(__dirname, '..', '..', '..', 'build', 'Release', 'nexurejs_native.node'),
+      // Prebuilt binary paths based on platform
+      join(__dirname, '..', '..', '..', 'prebuilds', `${process.platform}-${process.arch}`, 'nexurejs_native.node'),
+      // Node modules path for platform-specific packages
+      require.resolve(`nexurejs-native-${process.platform}-${process.arch}`)
+    ].filter(Boolean) as string[];
 
-    if (existsSync(bindingPath)) {
-      // Load the native module
-      nativeBinding = require(bindingPath);
+    let loadError: Error | null = null;
 
-      // Update status
-      nativeModuleStatus.loaded = true;
-      nativeModuleStatus.httpParser = !!nativeBinding.HttpParser;
-      nativeModuleStatus.radixRouter = !!nativeBinding.RadixRouter;
-      nativeModuleStatus.jsonProcessor = !!nativeBinding.JsonProcessor;
+    // Try each path until one works
+    for (const bindingPath of possiblePaths) {
+      try {
+        if (existsSync(bindingPath)) {
+          // Load the native module
+          nativeBinding = require(bindingPath);
 
-      if (nativeOptions.verbose) {
-        console.log(`Native module loaded successfully from ${bindingPath}`);
-        console.log(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
+          // Update status
+          nativeModuleStatus.loaded = true;
+          nativeModuleStatus.httpParser = !!nativeBinding.HttpParser;
+          nativeModuleStatus.radixRouter = !!nativeBinding.RadixRouter;
+          nativeModuleStatus.jsonProcessor = !!nativeBinding.JsonProcessor;
+
+          if (nativeOptions.verbose) {
+            console.log(`Native module loaded successfully from ${bindingPath}`);
+            console.log(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
+          }
+
+          // Successfully loaded
+          return nativeBinding;
+        }
+      } catch (err: any) {
+        // Store the error but continue trying other paths
+        loadError = err;
       }
-    } else {
-      throw new Error(`Native module not found at ${bindingPath}`);
     }
+
+    // If we get here, all paths failed
+    throw loadError || new Error('Failed to load native module from any location');
   } catch (err: any) {
     if (nativeOptions.verbose || process.env.NODE_ENV !== 'production') {
       console.warn(`Failed to load native module: ${err.message}`);
@@ -287,7 +312,9 @@ export class RadixRouter {
 
     if (this.useNative) {
       try {
-        this.router = new nativeModule.RadixRouter(options);
+        // Use maxCacheSize from nativeOptions if not provided in constructor options
+        const maxCacheSize = options?.maxCacheSize ?? nativeOptions.maxCacheSize ?? 1000;
+        this.router = new nativeModule.RadixRouter({ maxCacheSize });
       } catch (err: any) {
         if (nativeOptions.verbose) {
           console.warn(`Failed to create native radix router: ${err.message}`);

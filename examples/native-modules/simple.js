@@ -18,7 +18,11 @@ const {
 const { HttpStreamParser } = require('../../dist/src/http/http-parser.js');
 
 // Configure native modules with verbose logging
-configureNativeModules({ verbose: true });
+configureNativeModules({
+  enabled: true,
+  verbose: true,
+  maxCacheSize: 1000
+});
 
 // Check native module status
 const status = getNativeModuleStatus();

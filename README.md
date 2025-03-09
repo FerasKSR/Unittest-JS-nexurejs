@@ -26,7 +26,7 @@ NexureJS includes native C++ modules for performance-critical operations:
 - **Radix Router**: Efficient route matching and parameter extraction
 - **JSON Processor**: High-performance JSON parsing and stringification
 
-These native modules can provide up to 10x performance improvement over pure JavaScript implementations.
+These native modules can provide up to 10x performance improvement over pure JavaScript implementations. **Native modules are enabled by default** for maximum performance.
 
 ## Installation
 
@@ -65,9 +65,9 @@ import { configureNativeModules } from 'nexurejs/native';
 
 // Configure native modules
 configureNativeModules({
-  enabled: true,        // Enable/disable all native modules
-  verbose: false,       // Enable/disable verbose logging
-  maxCacheSize: 1000    // Maximum size for route cache
+  enabled: true,        // Enable/disable all native modules (default: true)
+  verbose: false,       // Enable/disable verbose logging (default: false)
+  maxCacheSize: 1000    // Maximum size for route cache (default: 1000)
 });
 ```
 

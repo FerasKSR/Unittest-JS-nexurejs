@@ -1,6 +1,6 @@
 # NexureJS Native Modules
 
-NexureJS includes native C++ modules for performance-critical operations. These modules provide significant performance improvements over pure JavaScript implementations.
+NexureJS includes native C++ modules for performance-critical operations. These modules provide significant performance improvements over pure JavaScript implementations. **Native modules are enabled by default** for maximum performance.
 
 ## Overview
 
@@ -71,9 +71,9 @@ You can configure the native modules behavior:
 
 ```typescript
 configureNativeModules({
-  enabled: true,        // Enable/disable all native modules
-  verbose: false,       // Enable/disable verbose logging
-  maxCacheSize: 1000    // Maximum size for route cache
+  enabled: true,        // Enable/disable all native modules (default: true)
+  verbose: false,       // Enable/disable verbose logging (default: false)
+  maxCacheSize: 1000    // Maximum size for route cache (default: 1000)
 });
 ```
 
