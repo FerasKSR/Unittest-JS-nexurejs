@@ -19,8 +19,9 @@ try {
   } else {
     throw new Error(`Native module not found at ${bindingPath}`);
   }
-} catch (err) {
-  console.warn(`Failed to load native module: ${err.message}`);
+} catch (err: unknown) {
+  const errorMessage = err instanceof Error ? err.message : String(err);
+  console.warn(`Failed to load native module: ${errorMessage}`);
   console.warn('Using JavaScript fallbacks instead');
   nativeBinding = null;
 }
@@ -47,8 +48,9 @@ export class HttpParser {
     if (this.useNative) {
       try {
         this.parser = new nativeBinding.HttpParser();
-      } catch (err) {
-        console.warn(`Failed to create native HTTP parser: ${err.message}`);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.warn(`Failed to create native HTTP parser: ${errorMessage}`);
         this.useNative = false;
       }
     }
@@ -103,8 +105,9 @@ export class RadixRouter {
     if (this.useNative) {
       try {
         this.router = new nativeBinding.RadixRouter(options);
-      } catch (err) {
-        console.warn(`Failed to create native radix router: ${err.message}`);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.warn(`Failed to create native radix router: ${errorMessage}`);
         this.useNative = false;
       }
     }
@@ -176,8 +179,9 @@ export class JsonProcessor {
     if (this.useNative) {
       try {
         this.processor = new nativeBinding.JsonProcessor();
-      } catch (err) {
-        console.warn(`Failed to create native JSON processor: ${err.message}`);
+      } catch (err: unknown) {
+        const errorMessage = err instanceof Error ? err.message : String(err);
+        console.warn(`Failed to create native JSON processor: ${errorMessage}`);
         this.useNative = false;
       }
     }

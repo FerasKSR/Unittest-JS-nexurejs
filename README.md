@@ -1,7 +1,8 @@
 # NexureJS
 
-<!-- Add your logo image here -->
-<!-- ![NexureJS Logo](path/to/logo.png) -->
+<p align="center">
+  <img src="assets/images/nexurejs-logo.svg" alt="NexureJS Logo" width="200" height="200">
+</p>
 
 A high-performance, modular Node.js framework with modern developer experience.
 
@@ -101,6 +102,7 @@ See [Native Modules Documentation](src/native/README.md) for more details.
 - [Performance Optimization](docs/performance-optimization.md)
 - [API Reference](docs/api-reference.md)
 - [Benchmarking Guide](docs/benchmarking-guide.md)
+- [Branding Guide](docs/branding.md)
 
 ## Examples
 
