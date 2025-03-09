@@ -10,6 +10,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial documentation for native modules
 - Performance metrics tracking for all native modules
+- Comprehensive release documentation and process
+- GitHub Actions workflows for automated releases and testing
+
+### Fixed
+- ES Module compatibility in build and installation scripts
+- Native module building and loading in ES Module environment
+- RadixRouter C++ code to use correct Node-API methods
+- Installation and prebuild scripts for better cross-platform support
 
 ## [0.1.0] - 2023-11-15
 

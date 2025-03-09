@@ -7,7 +7,7 @@
  * It handles version bumping, changelog updates, git tagging, and GitHub releases.
  *
  * Usage:
- *   node scripts/release.js [major|minor|patch|<version>]
+ *   node scripts/release.js [major|minor|patch|<version>] [--dry-run]
  *
  * Examples:
  *   node scripts/release.js patch     # Bump patch version (0.0.x)
@@ -15,6 +15,7 @@
  *   node scripts/release.js major     # Bump major version (x.0.0)
  *   node scripts/release.js 1.2.3     # Set specific version
  *   node scripts/release.js           # Interactive mode
+ *   node scripts/release.js patch --dry-run  # Dry run (no changes made)
  */
 
 import fs from 'fs';
@@ -202,22 +203,31 @@ async function main() {
     // Check for help flag
     if (process.argv.includes('--help') || process.argv.includes('-h')) {
       console.log(`${colors.bright}Usage:${colors.reset}`);
-      console.log(`  node scripts/release.js [major|minor|patch|<version>]`);
+      console.log(`  node scripts/release.js [major|minor|patch|<version>] [--dry-run]`);
       console.log(`\n${colors.bright}Examples:${colors.reset}`);
       console.log(`  node scripts/release.js patch     # Bump patch version (0.0.x)`);
       console.log(`  node scripts/release.js minor     # Bump minor version (0.x.0)`);
       console.log(`  node scripts/release.js major     # Bump major version (x.0.0)`);
       console.log(`  node scripts/release.js 1.2.3     # Set specific version`);
       console.log(`  node scripts/release.js           # Interactive mode`);
+      console.log(`  node scripts/release.js patch --dry-run  # Dry run (no changes made)`);
       process.exit(0);
+    }
+
+    // Check for dry run flag
+    const isDryRun = process.argv.includes('--dry-run');
+    if (isDryRun) {
+      console.log(`${colors.yellow}DRY RUN MODE: No changes will be made${colors.reset}\n`);
     }
 
     // Check if git is clean
     try {
       const status = exec('git status --porcelain', { silent: true });
-      if (status.trim() !== '') {
+      if (status.trim() !== '' && !isDryRun) {
         console.log(`${colors.red}Error: Working directory is not clean. Please commit or stash your changes.${colors.reset}`);
         process.exit(1);
+      } else if (status.trim() !== '' && isDryRun) {
+        console.log(`${colors.yellow}Warning: Working directory is not clean. This would fail in a real release.${colors.reset}`);
       }
     } catch (error) {
       console.log(`${colors.red}Error: Failed to check git status.${colors.reset}`);
@@ -248,7 +258,7 @@ async function main() {
     console.log(`${colors.blue}Current version: ${currentVersion}${colors.reset}`);
 
     // Determine new version
-    let newVersion = process.argv[2];
+    let newVersion = process.argv.find(arg => !arg.startsWith('-') && !arg.includes('/') && arg !== 'scripts/release.js');
 
     if (!newVersion) {
       // Interactive mode
@@ -315,24 +325,52 @@ async function main() {
     }
 
     // Update version in package.json
-    updateVersion(newVersion);
+    if (!isDryRun) {
+      updateVersion(newVersion);
+    } else {
+      console.log(`${colors.yellow}DRY RUN: Would update version to ${newVersion}${colors.reset}`);
+    }
 
     // Update changelog
-    await updateChangelog(newVersion);
+    if (!isDryRun) {
+      await updateChangelog(newVersion);
+    } else {
+      console.log(`${colors.yellow}DRY RUN: Would update CHANGELOG.md for version ${newVersion}${colors.reset}`);
+    }
 
     // Commit changes
-    commitChanges(newVersion);
+    if (!isDryRun) {
+      commitChanges(newVersion);
+    } else {
+      console.log(`${colors.yellow}DRY RUN: Would commit changes with message "chore: prepare release v${newVersion}"${colors.reset}`);
+    }
 
     // Create and push git tag
-    createAndPushTag(newVersion);
+    if (!isDryRun) {
+      createAndPushTag(newVersion);
+    } else {
+      console.log(`${colors.yellow}DRY RUN: Would create and push tag v${newVersion}${colors.reset}`);
+    }
 
     // Create GitHub release
-    await createGitHubRelease(newVersion);
+    if (!isDryRun) {
+      await createGitHubRelease(newVersion);
+    } else {
+      console.log(`${colors.yellow}DRY RUN: Would create GitHub release for v${newVersion}${colors.reset}`);
+    }
 
     // Publish to npm
-    await publishToNpm();
+    if (!isDryRun) {
+      await publishToNpm();
+    } else {
+      console.log(`${colors.yellow}DRY RUN: Would publish to npm${colors.reset}`);
+    }
 
-    console.log(`\n${colors.green}${colors.bright}Successfully released NexureJS v${newVersion}!${colors.reset}`);
+    if (isDryRun) {
+      console.log(`\n${colors.green}${colors.bright}Dry run completed successfully for v${newVersion}!${colors.reset}`);
+    } else {
+      console.log(`\n${colors.green}${colors.bright}Successfully released NexureJS v${newVersion}!${colors.reset}`);
+    }
 
   } catch (error) {
     console.error(`${colors.red}Error: ${error.message}${colors.reset}`);
