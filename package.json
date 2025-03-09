@@ -1,0 +1,67 @@
+{
+  "name": "nexurejs",
+  "version": "0.1.0",
+  "description": "A high-performance, modular Node.js framework with modern developer experience",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node --loader ts-node/esm src/index.ts",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
+    "format": "prettier --write \"src/**/*.ts\"",
+    "prepare": "npm run build",
+    "example:basic": "node examples/run-basic.js",
+    "example:middleware": "node --loader ts-node/esm examples/middleware/index.ts",
+    "example:performance": "node --loader ts-node/esm examples/performance/index.ts",
+    "example:security": "node --loader ts-node/esm examples/security/index.ts",
+    "benchmark": "node run-typescript.js benchmarks/run-all.ts",
+    "benchmark:http": "node run-typescript.js benchmarks/http-benchmark.ts",
+    "benchmark:json": "node run-typescript.js benchmarks/json-benchmark.ts",
+    "benchmark:worker": "node run-typescript.js benchmarks/worker-pool-benchmark.ts",
+    "benchmark:v8": "node run-typescript.js benchmarks/v8-optimizer-benchmark.ts",
+    "benchmark:simple": "node run-typescript.js benchmarks/simple-benchmark.ts",
+    "run-ts": "node run-typescript.js"
+  },
+  "keywords": [
+    "nodejs",
+    "framework",
+    "http",
+    "server",
+    "web",
+    "api",
+    "rest",
+    "typescript",
+    "dependency-injection",
+    "performance"
+  ],
+  "author": "",
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "ts-node": "^10.9.2",
+    "tsconfig-paths": "^4.2.0",
+    "typescript": "^5.8.2"
+  },
+  "dependencies": {
+    "reflect-metadata": "^0.2.1"
+  },
+  "optionalDependencies": {
+    "ioredis": "^5.3.2",
+    "simdjson": "^0.9.2",
+    "zlib-sync": "^0.1.8"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/nexurejs.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/nexurejs/issues"
+  },
+  "homepage": "https://github.com/yourusername/nexurejs#readme"
+}

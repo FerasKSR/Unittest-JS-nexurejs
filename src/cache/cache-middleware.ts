@@ -1,0 +1,221 @@
+/**
+ * HTTP response caching middleware
+ */
+
+import { IncomingMessage, ServerResponse } from 'node:http';
+import { MiddlewareHandler } from '../middleware/middleware.js';
+import { CacheManager, CacheOptions } from './cache-manager.js';
+
+/**
+ * HTTP cache options
+ */
+export interface HttpCacheOptions extends CacheOptions {
+  /**
+   * Cache key generator function
+   */
+  keyGenerator?: (req: IncomingMessage) => string;
+
+  /**
+   * Cache condition function
+   */
+  condition?: (req: IncomingMessage) => boolean;
+
+  /**
+   * HTTP cache control header value
+   */
+  cacheControl?: string;
+
+  /**
+   * Whether to add cache control headers
+   */
+  addHeaders?: boolean;
+}
+
+/**
+ * Default cache key generator
+ * @param req The incoming request
+ */
+function defaultKeyGenerator(req: IncomingMessage): string {
+  return `${req.method}:${req.url}`;
+}
+
+/**
+ * Default cache condition
+ * @param req The incoming request
+ */
+function defaultCondition(req: IncomingMessage): boolean {
+  return req.method === 'GET' || req.method === 'HEAD';
+}
+
+/**
+ * Create a HTTP response caching middleware
+ * @param cacheManager The cache manager to use
+ * @param options Cache options
+ */
+export function createCacheMiddleware(
+  cacheManager: CacheManager,
+  options: HttpCacheOptions = {}
+): MiddlewareHandler {
+  const keyGenerator = options.keyGenerator || defaultKeyGenerator;
+  const condition = options.condition || defaultCondition;
+  const ttl = options.ttl || 60000; // Default to 1 minute
+  const namespace = options.namespace || 'http';
+  const cacheControl = options.cacheControl || `max-age=${Math.floor(ttl / 1000)}`;
+  const addHeaders = options.addHeaders !== false;
+
+  return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
+    // Skip caching if condition is not met
+    if (!condition(req)) {
+      return next();
+    }
+
+    // Generate cache key
+    const key = keyGenerator(req);
+    const cacheKey = cacheManager.createKey(key, namespace);
+
+    // Try to get from cache
+    const cachedResponse = await cacheManager.get<{
+      statusCode: number;
+      headers: Record<string, string>;
+      body: string;
+    }>(cacheKey);
+
+    if (cachedResponse) {
+      // Serve from cache
+      res.statusCode = cachedResponse.statusCode;
+
+      // Set headers
+      for (const [name, value] of Object.entries(cachedResponse.headers)) {
+        res.setHeader(name, value);
+      }
+
+      // Add cache hit header
+      res.setHeader('X-Cache', 'HIT');
+
+      // Send cached body
+      res.end(cachedResponse.body);
+      return;
+    }
+
+    // Add cache miss header
+    res.setHeader('X-Cache', 'MISS');
+
+    // Store the original end method
+    const originalEnd = res.end;
+    let body: Buffer[] = [];
+
+    // Override the end method to capture the response
+    res.end = function(chunk?: any, encoding?: BufferEncoding | (() => void), callback?: () => void): ServerResponse {
+      // Handle overloaded method signature
+      if (typeof encoding === 'function') {
+        callback = encoding;
+        encoding = undefined;
+      }
+
+      if (chunk) {
+        body.push(Buffer.from(chunk));
+      }
+
+      // Store the response in cache
+      if (cacheKey && body.length > 0) {
+        const responseBody = Buffer.concat(body).toString();
+        const headers = res.getHeaders();
+        const statusCode = res.statusCode;
+
+        cacheManager.set(cacheKey, {
+          body: responseBody,
+          headers,
+          statusCode
+        }, { ttl });
+      }
+
+      // Apply the original end method
+      // @ts-ignore - We need to handle the overloaded method signatures
+      return originalEnd.apply(this, arguments);
+    };
+
+    // Continue with the request
+    await next();
+  };
+}
+
+/**
+ * Create HTTP cache control middleware
+ * @param options Cache control options
+ */
+export function createCacheControlMiddleware(options: {
+  cacheControl?: string;
+  etag?: boolean;
+  lastModified?: boolean;
+} = {}): MiddlewareHandler {
+  const cacheControl = options.cacheControl || 'no-cache';
+  const etag = options.etag !== false;
+  const lastModified = options.lastModified !== false;
+
+  return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
+    // Set cache control header
+    res.setHeader('Cache-Control', cacheControl);
+
+    // Add ETag support
+    if (etag) {
+      // This is a simplified implementation
+      // In a real-world scenario, you would generate a proper ETag
+      // based on the response content
+      const originalEnd = res.end;
+      let body: Buffer[] = [];
+
+      res.end = function(chunk?: any, encoding?: BufferEncoding | (() => void), callback?: () => void): ServerResponse {
+        // Handle overloaded method signature
+        if (typeof encoding === 'function') {
+          callback = encoding;
+          encoding = undefined;
+        }
+
+        if (chunk) {
+          body.push(Buffer.from(chunk));
+        }
+
+        const responseBody = Buffer.concat(body);
+
+        // Generate a simple ETag based on content length and last modified time
+        const etag = `W/"${responseBody.length}-${Date.now()}"`;
+        res.setHeader('ETag', etag);
+
+        // Check if the client sent an If-None-Match header
+        const ifNoneMatch = req.headers['if-none-match'];
+
+        if (ifNoneMatch === etag) {
+          // Return 304 Not Modified
+          res.statusCode = 304;
+
+          // Apply the original end method with no content
+          // @ts-ignore - We need to handle the overloaded method signatures
+          return originalEnd.apply(this, []);
+        }
+
+        // Apply the original end method
+        // @ts-ignore - We need to handle the overloaded method signatures
+        return originalEnd.apply(this, arguments);
+      };
+    }
+
+    // Add Last-Modified support
+    if (lastModified) {
+      // Set Last-Modified header to current time
+      const lastModified = new Date().toUTCString();
+      res.setHeader('Last-Modified', lastModified);
+
+      // Check if the client sent an If-Modified-Since header
+      const ifModifiedSince = req.headers['if-modified-since'];
+
+      if (ifModifiedSince && new Date(ifModifiedSince) >= new Date(lastModified)) {
+        // Return 304 Not Modified
+        res.statusCode = 304;
+        res.end();
+        return;
+      }
+    }
+
+    await next();
+  };
+}
