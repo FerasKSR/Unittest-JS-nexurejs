@@ -8,17 +8,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-- 
+- Enhanced release script with improved GitHub release management
+- Automated prebuilt binary uploads to GitHub releases
+- Improved npm publishing workflow
+- Better error handling and retry logic for asset uploads
+- Progress tracking for binary uploads
+- Dry run mode for testing release process
+
+### Changed
+- Combined separate release scripts into a single unified script
+- Improved release process documentation
+- Enhanced error messages and user feedback
+- Better handling of GitHub API interactions
+
+### Fixed
+- Release script ES module compatibility
+- Asset upload reliability with chunked uploads
+- GitHub release creation error handling
+- npm publishing version conflict handling
 
 ## [0.1.3] - 2025-03-09
 
 ### Added
-- 
+-
 
 ## [0.1.2] - 2025-03-09
 
 ### Added
-- 
+-
 
 ## [0.1.1] - 2025-03-09
 

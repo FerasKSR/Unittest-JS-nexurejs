@@ -68,6 +68,13 @@ function prompt(question) {
   });
 }
 
+// Helper function to get package info from package.json
+function getPackageInfo() {
+  const packageJsonPath = path.join(__dirname, '..', 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+  return packageJson;
+}
+
 // Helper function to validate version format
 function isValidVersion(version) {
   return /^\d+\.\d+\.\d+$/.test(version);
