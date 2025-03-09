@@ -6,11 +6,16 @@
  * that users can download instead of building from source.
  */
 
-const fs = require('fs');
-const path = require('path');
-const { execSync } = require('child_process');
-const { createGzip } = require('zlib');
-const tar = require('tar-stream');
+import fs from 'fs';
+import path from 'path';
+import { execSync } from 'child_process';
+import { createGzip } from 'zlib';
+import tar from 'tar-stream';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ANSI color codes for console output
 const colors = {
@@ -30,17 +35,22 @@ function log(message, color = colors.reset) {
   console.log(`${color}${message}${colors.reset}`);
 }
 
-// Execute a command and return its output
+// Execute a shell command
 function execute(command, silent = false) {
+  if (!silent) {
+    log(`> ${command}`, colors.dim);
+  }
+
   try {
-    if (!silent) {
-      log(`Executing: ${command}`, colors.dim);
-    }
-    return execSync(command, { stdio: silent ? 'ignore' : 'inherit' });
+    return execSync(command, {
+      stdio: silent ? 'pipe' : 'inherit',
+      encoding: 'utf-8'
+    });
   } catch (error) {
-    log(`Error executing command: ${command}`, colors.red);
-    log(error.message, colors.red);
-    return false;
+    if (!silent) {
+      log(`Command failed: ${error.message}`, colors.red);
+    }
+    throw error;
   }
 }
 
@@ -48,25 +58,32 @@ function execute(command, silent = false) {
 async function createTarball(sourceFile, targetFile) {
   return new Promise((resolve, reject) => {
     const pack = tar.pack();
-    const gzip = createGzip();
-    const writeStream = fs.createWriteStream(targetFile);
 
     // Add the file to the tarball
-    const fileName = path.basename(sourceFile);
-    const fileContent = fs.readFileSync(sourceFile);
+    const sourceFileName = path.basename(sourceFile);
+    const stat = fs.statSync(sourceFile);
 
-    pack.entry({ name: fileName }, fileContent);
+    pack.entry({
+      name: sourceFileName,
+      size: stat.size,
+      mode: stat.mode,
+      mtime: stat.mtime
+    }, fs.readFileSync(sourceFile));
+
     pack.finalize();
 
-    // Pipe the tarball to the output file
-    pack.pipe(gzip).pipe(writeStream);
+    // Create the output file
+    const output = fs.createWriteStream(targetFile);
+    const gzip = createGzip();
 
-    writeStream.on('finish', resolve);
-    writeStream.on('error', reject);
+    pack.pipe(gzip).pipe(output);
+
+    output.on('finish', resolve);
+    output.on('error', reject);
   });
 }
 
-// Build for a specific platform
+// Build for a specific platform and architecture
 async function buildForPlatform(platform, arch) {
   log(`Building for ${platform}-${arch}...`, colors.cyan);
 
@@ -75,58 +92,48 @@ async function buildForPlatform(platform, arch) {
 
   if (platform === 'win32') {
     env.npm_config_target_platform = 'win32';
-    env.npm_config_target_arch = arch;
-    env.npm_config_target_libc = 'msvc';
   } else if (platform === 'darwin') {
     env.npm_config_target_platform = 'darwin';
-    env.npm_config_target_arch = arch;
   } else if (platform === 'linux') {
     env.npm_config_target_platform = 'linux';
-    env.npm_config_target_arch = arch;
-    env.npm_config_target_libc = 'glibc';
   }
 
-  // Clean previous build
-  execute('node-gyp clean', true);
+  env.npm_config_target_arch = arch;
+
+  // Clean previous builds
+  try {
+    execute('node-gyp clean', true);
+  } catch (error) {
+    log(`Warning: Failed to clean previous builds: ${error.message}`, colors.yellow);
+  }
 
   // Configure and build
-  const configureResult = execute('node-gyp configure', true);
-  if (!configureResult) {
-    log(`Failed to configure for ${platform}-${arch}`, colors.red);
-    return false;
-  }
-
-  const buildResult = execute('node-gyp build', true);
-  if (!buildResult) {
-    log(`Failed to build for ${platform}-${arch}`, colors.red);
-    return false;
-  }
-
-  // Create output directory
-  const outputDir = path.join(__dirname, '..', 'prebuilds');
-  if (!fs.existsSync(outputDir)) {
-    fs.mkdirSync(outputDir, { recursive: true });
-  }
-
-  // Get version from package.json
-  let version = '0.1.0';
   try {
-    const packageJson = require('../package.json');
-    version = packageJson.version || version;
-  } catch (error) {
-    log(`Could not read package.json, using default version ${version}`, colors.yellow);
-  }
+    execute('node-gyp configure', true);
+    execute('node-gyp build', true);
 
-  // Create tarball
-  const sourceFile = path.join(__dirname, '..', 'build', 'Release', 'nexurejs_native.node');
-  const targetFile = path.join(outputDir, `nexurejs-native-${platform}-${arch}-${version}.tar.gz`);
+    // Check if the build was successful
+    const buildDir = path.join(__dirname, '..', 'build', 'Release');
+    const nativeModulePath = path.join(buildDir, 'nexurejs_native.node');
 
-  try {
-    await createTarball(sourceFile, targetFile);
-    log(`Created tarball: ${targetFile}`, colors.green);
+    if (!fs.existsSync(nativeModulePath)) {
+      throw new Error(`Native module not found at ${nativeModulePath}`);
+    }
+
+    // Create the prebuilds directory if it doesn't exist
+    const prebuildsDir = path.join(__dirname, '..', 'prebuilds');
+    if (!fs.existsSync(prebuildsDir)) {
+      fs.mkdirSync(prebuildsDir, { recursive: true });
+    }
+
+    // Create a tarball of the native module
+    const tarballPath = path.join(prebuildsDir, `nexurejs-native-${platform}-${arch}.tar.gz`);
+    await createTarball(nativeModulePath, tarballPath);
+
+    log(`Successfully built for ${platform}-${arch}`, colors.green);
     return true;
   } catch (error) {
-    log(`Failed to create tarball: ${error.message}`, colors.red);
+    log(`Failed to build for ${platform}-${arch}: ${error.message}`, colors.red);
     return false;
   }
 }
@@ -134,24 +141,36 @@ async function buildForPlatform(platform, arch) {
 // Main function
 async function main() {
   log('NexureJS Native Module Prebuilder', colors.bright + colors.blue);
-  log('===============================\n', colors.blue);
+  log('================================\n', colors.blue);
 
   // Check if node-gyp is installed
   try {
-    execSync('node-gyp --version', { stdio: 'ignore' });
+    execute('node-gyp --version', true);
   } catch (error) {
-    log('node-gyp is not installed. Please install it with: npm install -g node-gyp', colors.red);
-    process.exit(1);
+    log('node-gyp is not installed. Installing...', colors.yellow);
+    execute('npm install --no-save node-gyp');
   }
 
-  // Define platforms to build for
-  const platforms = [];
+  // Get package version
+  let version = '0.1.0';
+  try {
+    const packageJsonPath = path.join(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
+    version = packageJson.version || version;
+  } catch (error) {
+    log(`Could not read package.json, using default version ${version}`, colors.yellow);
+  }
 
-  // Always build for current platform
-  platforms.push({
-    platform: process.platform,
-    arch: process.arch
-  });
+  log(`Building native modules for version ${version}`, colors.cyan);
+
+  // Define platforms to build for
+  const currentPlatform = process.platform;
+  const currentArch = process.arch;
+
+  // By default, only build for the current platform
+  const platforms = [
+    { platform: currentPlatform, arch: currentArch }
+  ];
 
   // If BUILD_ALL_PLATFORMS is set, build for all supported platforms
   if (process.env.BUILD_ALL_PLATFORMS) {
@@ -164,51 +183,45 @@ async function main() {
 
     // Remove duplicates
     const seen = new Set();
-    const uniquePlatforms = [];
-
-    for (const p of platforms) {
+    const uniquePlatforms = platforms.filter(p => {
       const key = `${p.platform}-${p.arch}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniquePlatforms.push(p);
+      if (seen.has(key)) {
+        return false;
       }
-    }
+      seen.add(key);
+      return true;
+    });
 
     platforms.length = 0;
     platforms.push(...uniquePlatforms);
   }
 
-  log(`Building for ${platforms.length} platform(s):`, colors.cyan);
-  platforms.forEach(p => log(`- ${p.platform}-${p.arch}`, colors.yellow));
-
   // Build for each platform
   const results = [];
-
   for (const { platform, arch } of platforms) {
     const success = await buildForPlatform(platform, arch);
     results.push({ platform, arch, success });
   }
 
-  // Print summary
-  log('\nBuild Summary:', colors.bright + colors.blue);
-
+  // Print build summary
+  log('\nBuild Summary:', colors.bright);
   for (const { platform, arch, success } of results) {
     const status = success ? `${colors.green}Success${colors.reset}` : `${colors.red}Failed${colors.reset}`;
     log(`${platform}-${arch}: ${status}`);
   }
 
   // Check if any builds failed
-  const failedBuilds = results.filter(r => !r.success);
-  if (failedBuilds.length > 0) {
-    log(`\n${failedBuilds.length} build(s) failed.`, colors.red);
+  const anyFailed = results.some(r => !r.success);
+  if (anyFailed) {
+    log('\nSome builds failed. Check the logs for details.', colors.yellow);
     process.exit(1);
+  } else {
+    log('\nAll builds completed successfully!', colors.green);
   }
-
-  log('\nAll builds completed successfully!', colors.bright + colors.green);
 }
 
 // Run the main function
 main().catch(error => {
-  log(`Error during prebuild: ${error.message}`, colors.red);
+  log(`Error: ${error.message}`, colors.red);
   process.exit(1);
 });

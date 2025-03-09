@@ -6,12 +6,17 @@
  * and falls back to building from source if necessary.
  */
 
-const fs = require('fs');
-const path = require('path');
-const https = require('https');
-const { spawn } = require('child_process');
-const { createGunzip } = require('zlib');
-const tar = require('tar-pack');
+import fs from 'fs';
+import path from 'path';
+import https from 'https';
+import { spawn } from 'child_process';
+import { createGunzip } from 'zlib';
+import tar from 'tar-pack';
+import { fileURLToPath } from 'url';
+
+// Get __dirname equivalent in ESM
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ANSI color codes for console output
 const colors = {
@@ -135,7 +140,8 @@ async function downloadPrebuilt() {
   // Try to get version from package.json
   let version = '0.1.0';
   try {
-    const packageJson = require('../package.json');
+    const packageJsonPath = path.join(__dirname, '..', 'package.json');
+    const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
     version = packageJson.version || version;
   } catch (error) {
     log(`Could not read package.json, using default version ${version}`, colors.yellow);
@@ -161,9 +167,16 @@ function buildFromSource() {
   log('Building native module from source...', colors.cyan);
 
   // Check if node-gyp is installed
+  let nodeGypInstalled = false;
   try {
-    require.resolve('node-gyp');
+    // Try to run node-gyp to check if it's installed
+    const result = spawn('node-gyp', ['--version'], { stdio: 'pipe' });
+    nodeGypInstalled = result.status === 0;
   } catch (error) {
+    nodeGypInstalled = false;
+  }
+
+  if (!nodeGypInstalled) {
     log('node-gyp is not installed. Installing...', colors.yellow);
     spawn('npm', ['install', '--no-save', 'node-gyp'], { stdio: 'inherit' });
   }
@@ -193,7 +206,7 @@ function buildFromSource() {
 }
 
 // Test the native module
-function testNativeModule() {
+async function testNativeModule() {
   const modulePath = path.join(__dirname, '..', 'build', 'Release', 'nexurejs_native.node');
 
   if (!fs.existsSync(modulePath)) {
@@ -202,7 +215,8 @@ function testNativeModule() {
   }
 
   try {
-    const nativeModule = require(modulePath);
+    // In ESM, we need to use dynamic import for native modules
+    const nativeModule = await import(modulePath);
 
     if (typeof nativeModule.isAvailable !== 'function' || !nativeModule.isAvailable()) {
       log('Native module loaded but isAvailable check failed', colors.yellow);
@@ -239,7 +253,7 @@ async function main() {
 
   // Test the native module
   if (buildSuccess) {
-    const testSuccess = testNativeModule();
+    const testSuccess = await testNativeModule();
     if (!testSuccess) {
       log('Native module test failed', colors.red);
       log('You may need to build the native module manually:', colors.yellow);
@@ -249,14 +263,13 @@ async function main() {
     log('Native module installation failed', colors.red);
     log('You can try building manually:', colors.yellow);
     log('  npm run build:native', colors.yellow);
-    log('Or you can use the JavaScript implementation instead.', colors.yellow);
+    log('Or skip native module installation:', colors.yellow);
+    log('  SKIP_NATIVE_BUILD=1 npm install', colors.yellow);
   }
-
-  log('\nInstallation completed!', colors.bright + colors.green);
 }
 
 // Run the main function
-main().catch(error => {
-  log(`Error during installation: ${error.message}`, colors.red);
+main().catch((error) => {
+  log(`Error: ${error.message}`, colors.red);
   process.exit(1);
 });
