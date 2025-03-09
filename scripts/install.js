@@ -11,7 +11,7 @@ const path = require('path');
 const https = require('https');
 const { spawn } = require('child_process');
 const { createGunzip } = require('zlib');
-const { extract } = require('tar-pack');
+const tar = require('tar-pack');
 
 // ANSI color codes for console output
 const colors = {
@@ -117,7 +117,7 @@ function downloadAndExtractTarball(url, dest) {
       // Extract the tarball
       response
         .pipe(createGunzip())
-        .pipe(extract(destDir))
+        .pipe(tar.extract(destDir))
         .on('finish', resolve)
         .on('error', reject);
     }).on('error', reject);
@@ -132,7 +132,15 @@ async function downloadPrebuilt() {
     return false;
   }
 
-  const version = '0.1.0'; // TODO: Get version from package.json
+  // Try to get version from package.json
+  let version = '0.1.0';
+  try {
+    const packageJson = require('../package.json');
+    version = packageJson.version || version;
+  } catch (error) {
+    log(`Could not read package.json, using default version ${version}`, colors.yellow);
+  }
+
   const url = `https://github.com/nexurejs/nexurejs/releases/download/v${version}/nexurejs-native-${platformId}.tar.gz`;
   const dest = path.join(__dirname, '..', 'build', 'Release', 'nexurejs_native.node');
 

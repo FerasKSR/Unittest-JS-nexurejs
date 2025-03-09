@@ -108,9 +108,18 @@ async function buildForPlatform(platform, arch) {
     fs.mkdirSync(outputDir, { recursive: true });
   }
 
+  // Get version from package.json
+  let version = '0.1.0';
+  try {
+    const packageJson = require('../package.json');
+    version = packageJson.version || version;
+  } catch (error) {
+    log(`Could not read package.json, using default version ${version}`, colors.yellow);
+  }
+
   // Create tarball
   const sourceFile = path.join(__dirname, '..', 'build', 'Release', 'nexurejs_native.node');
-  const targetFile = path.join(outputDir, `nexurejs-native-${platform}-${arch}.tar.gz`);
+  const targetFile = path.join(outputDir, `nexurejs-native-${platform}-${arch}-${version}.tar.gz`);
 
   try {
     await createTarball(sourceFile, targetFile);

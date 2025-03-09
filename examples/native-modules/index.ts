@@ -1,23 +1,30 @@
 /**
  * NexureJS Native Modules Example
  *
- * This example demonstrates how to use the native modules in a NexureJS application.
- * It shows the performance benefits of using native modules for HTTP parsing, routing,
- * and JSON processing.
+ * This example demonstrates how to use the native modules in NexureJS.
+ * It shows how to configure, check status, and use the native modules.
  */
 
-import { NexureApp } from '../../src/index';
-import { Controller, Get, Post, Body } from '../../src/decorators';
-import { HttpParser, RadixRouter, JsonProcessor, hasNativeSupport, configureNativeModules, getNativeModuleStatus, resetAllPerformanceMetrics, getAllPerformanceMetrics } from '../../src/native/index';
-import { performance } from 'perf_hooks';
+import {
+  HttpParser,
+  RadixRouter,
+  JsonProcessor,
+  configureNativeModules,
+  getNativeModuleStatus,
+  resetAllPerformanceMetrics,
+  getAllPerformanceMetrics
+} from '../../src/native/index.js';
+import { IncomingMessage, ServerResponse } from 'node:http';
+
+// Create a dummy route handler function
+const dummyHandler = async (req: IncomingMessage, res: ServerResponse) => {
+  return { success: true };
+};
 
 // Configure native modules
 configureNativeModules({
   enabled: true,
   verbose: true,
-  httpParser: true,
-  radixRouter: true,
-  jsonProcessor: true,
   maxCacheSize: 1000
 });
 
@@ -26,215 +33,107 @@ const status = getNativeModuleStatus();
 console.log('Native Module Status:');
 console.log(JSON.stringify(status, null, 2));
 
-// Create a simple HTTP request buffer for testing
+// Create instances of native modules
+const httpParser = new HttpParser();
+const radixRouter = new RadixRouter();
+const jsonProcessor = new JsonProcessor();
+
+// Sample HTTP request for testing
 const sampleHttpRequest = Buffer.from(
-  'GET /api/users?page=1&limit=20 HTTP/1.1\r\n' +
+  'GET /api/users?page=1 HTTP/1.1\r\n' +
   'Host: example.com\r\n' +
   'User-Agent: Mozilla/5.0\r\n' +
   'Accept: application/json\r\n' +
   'Content-Type: application/json\r\n' +
-  'Content-Length: 27\r\n' +
+  'Content-Length: 26\r\n' +
   '\r\n' +
-  '{"username":"john","age":30}'
+  '{"name":"John","age":30}'
 );
 
-// Create a sample JSON object for testing
-const sampleJsonObject = {
-  id: 123,
-  name: "Product",
-  price: 99.99,
-  inStock: true,
-  tags: ["electronics", "gadget"],
-  manufacturer: {
-    id: 45,
-    name: "ACME Corp",
-    location: "New York"
+// Sample JSON for testing
+const sampleJson = {
+  users: [
+    { id: 1, name: 'John', email: 'john@example.com', active: true },
+    { id: 2, name: 'Jane', email: 'jane@example.com', active: false },
+    { id: 3, name: 'Bob', email: 'bob@example.com', active: true }
+  ],
+  pagination: {
+    page: 1,
+    perPage: 10,
+    total: 3,
+    totalPages: 1
+  },
+  meta: {
+    timestamp: new Date().toISOString(),
+    server: 'NexureJS',
+    version: '1.0.0'
   }
 };
 
-// Controller that demonstrates native module usage
-@Controller('/native')
-class NativeModulesController {
-  private httpParser = new HttpParser();
-  private jsonProcessor = new JsonProcessor();
-  private radixRouter = new RadixRouter();
+// Reset performance metrics
+resetAllPerformanceMetrics();
 
-  constructor() {
-    // Add some routes to the router
-    this.radixRouter.add('GET', '/users', { handler: 'getAllUsers' });
-    this.radixRouter.add('GET', '/users/:id', { handler: 'getUserById' });
-    this.radixRouter.add('POST', '/users', { handler: 'createUser' });
-  }
+// Test HTTP Parser
+console.log('\n=== HTTP Parser Test ===');
+const parseResult = httpParser.parse(sampleHttpRequest);
+console.log('Parse Result:');
+console.log(JSON.stringify(parseResult, null, 2));
 
-  @Get()
-  getNativeStatus() {
-    return {
-      nativeSupport: hasNativeSupport,
-      message: hasNativeSupport
-        ? 'Native modules are available and enabled!'
-        : 'Native modules are not available. Using JavaScript fallbacks.'
-    };
-  }
+// Test Radix Router
+console.log('\n=== Radix Router Test ===');
+radixRouter.add('GET', '/api/users', dummyHandler);
+radixRouter.add('GET', '/api/users/:id', dummyHandler);
+radixRouter.add('GET', '/api/posts', dummyHandler);
+radixRouter.add('GET', '/api/posts/:id', dummyHandler);
 
-  @Get('/http-parser')
-  testHttpParser() {
-    const start = performance.now();
+const routeMatch = radixRouter.find('GET', '/api/users/123');
+console.log('Route Match:');
+console.log(JSON.stringify(routeMatch, null, 2));
 
-    // Parse the HTTP request 1000 times
-    for (let i = 0; i < 1000; i++) {
-      this.httpParser.parse(sampleHttpRequest);
-    }
+// Test JSON Processor
+console.log('\n=== JSON Processor Test ===');
+const jsonBuffer = Buffer.from(JSON.stringify(sampleJson));
+const parsedJson = jsonProcessor.parse(jsonBuffer);
+console.log('Parsed JSON:');
+console.log(JSON.stringify(parsedJson, null, 2));
 
-    const end = performance.now();
-    const duration = end - start;
+const stringifiedJson = jsonProcessor.stringify(sampleJson);
+console.log('Stringified JSON Length:', stringifiedJson.length);
 
-    // Parse one more time to return the result
-    const result = this.httpParser.parse(sampleHttpRequest);
+// Get performance metrics
+console.log('\n=== Performance Metrics ===');
+const metrics = getAllPerformanceMetrics();
+console.log(JSON.stringify(metrics, null, 2));
 
-    return {
-      nativeSupport: hasNativeSupport,
-      parseTime: `${duration.toFixed(2)}ms for 1000 iterations`,
-      opsPerSecond: Math.floor(1000 / (duration / 1000)),
-      result: {
-        method: result.method,
-        url: result.url,
-        httpVersion: result.httpVersion,
-        headers: result.headers,
-        body: result.body ? result.body.toString() : null
-      }
-    };
-  }
+// Compare JavaScript vs Native implementations
+console.log('\n=== Performance Comparison ===');
+console.log('Running 10,000 iterations of each operation...');
 
-  @Get('/json-processor')
-  testJsonProcessor() {
-    const jsonString = JSON.stringify(sampleJsonObject);
-
-    const start = performance.now();
-
-    // Parse and stringify the JSON 1000 times
-    for (let i = 0; i < 1000; i++) {
-      const parsed = this.jsonProcessor.parse(jsonString);
-      this.jsonProcessor.stringify(parsed);
-    }
-
-    const end = performance.now();
-    const duration = end - start;
-
-    return {
-      nativeSupport: hasNativeSupport,
-      processTime: `${duration.toFixed(2)}ms for 1000 iterations`,
-      opsPerSecond: Math.floor(1000 / (duration / 1000)),
-      originalSize: jsonString.length,
-      parsed: this.jsonProcessor.parse(jsonString)
-    };
-  }
-
-  @Get('/router')
-  testRouter() {
-    const urls = [
-      '/users',
-      '/users/123',
-      '/users/456',
-      '/unknown/path'
-    ];
-
-    const start = performance.now();
-
-    // Find routes 1000 times
-    for (let i = 0; i < 1000; i++) {
-      for (const url of urls) {
-        this.radixRouter.find('GET', url);
-      }
-    }
-
-    const end = performance.now();
-    const duration = end - start;
-
-    // Get the results for each URL
-    const results = urls.map(url => {
-      const match = this.radixRouter.find('GET', url);
-      return {
-        url,
-        found: match.found,
-        handler: match.found ? match.handler : null,
-        params: match.params
-      };
-    });
-
-    return {
-      nativeSupport: hasNativeSupport,
-      routeTime: `${duration.toFixed(2)}ms for ${urls.length * 1000} lookups`,
-      opsPerSecond: Math.floor((urls.length * 1000) / (duration / 1000)),
-      results
-    };
-  }
-
-  @Post('/benchmark')
-  runBenchmark(@Body() options: any) {
-    const iterations = options?.iterations || 10000;
-
-    // HTTP Parser benchmark
-    const httpStart = performance.now();
-    for (let i = 0; i < iterations; i++) {
-      this.httpParser.parse(sampleHttpRequest);
-    }
-    const httpEnd = performance.now();
-    const httpDuration = httpEnd - httpStart;
-
-    // JSON Processor benchmark
-    const jsonString = JSON.stringify(sampleJsonObject);
-    const jsonStart = performance.now();
-    for (let i = 0; i < iterations; i++) {
-      const parsed = this.jsonProcessor.parse(jsonString);
-      this.jsonProcessor.stringify(parsed);
-    }
-    const jsonEnd = performance.now();
-    const jsonDuration = jsonEnd - jsonStart;
-
-    // Router benchmark
-    const urls = ['/users', '/users/123', '/unknown/path'];
-    const routerStart = performance.now();
-    for (let i = 0; i < iterations; i++) {
-      for (const url of urls) {
-        this.radixRouter.find('GET', url);
-      }
-    }
-    const routerEnd = performance.now();
-    const routerDuration = routerEnd - routerStart;
-
-    return {
-      nativeSupport: hasNativeSupport,
-      iterations,
-      results: {
-        httpParser: {
-          time: `${httpDuration.toFixed(2)}ms`,
-          opsPerSecond: Math.floor(iterations / (httpDuration / 1000))
-        },
-        jsonProcessor: {
-          time: `${jsonDuration.toFixed(2)}ms`,
-          opsPerSecond: Math.floor(iterations / (jsonDuration / 1000))
-        },
-        router: {
-          time: `${routerDuration.toFixed(2)}ms`,
-          opsPerSecond: Math.floor((iterations * urls.length) / (routerDuration / 1000))
-        }
-      }
-    };
-  }
+// HTTP Parser comparison
+console.time('Native HTTP Parser');
+for (let i = 0; i < 10000; i++) {
+  httpParser.parse(sampleHttpRequest);
 }
+console.timeEnd('Native HTTP Parser');
 
-// Create and start the application
-const app = new NexureApp();
-app.useController(NativeModulesController);
+// Radix Router comparison
+console.time('Native Radix Router');
+for (let i = 0; i < 10000; i++) {
+  radixRouter.find('GET', '/api/users/123');
+}
+console.timeEnd('Native Radix Router');
 
-const port = 3000;
-app.listen(port, () => {
-  console.log(`NexureJS Native Modules Example running at http://localhost:${port}`);
-  console.log(`Native modules support: ${hasNativeSupport ? 'Enabled' : 'Disabled (using JavaScript fallbacks)'}`);
-  console.log('\nAvailable endpoints:');
-  console.log(`- GET  http://localhost:${port}/native - Check native module status`);
-  console.log(`- GET  http://localhost:${port}/native/http-parser - Test HTTP parser performance`);
-  console.log(`- GET  http://localhost:${port}/native/json-processor - Test JSON processor performance`);
-  console.log(`- GET  http://localhost:${port}/native/router - Test router performance`);
-  console.log(`- POST http://localhost:${port}/native/benchmark - Run comprehensive benchmark`);
-});
+// JSON Processor comparison
+console.time('Native JSON Parse');
+for (let i = 0; i < 10000; i++) {
+  jsonProcessor.parse(jsonBuffer);
+}
+console.timeEnd('Native JSON Parse');
+
+console.time('Native JSON Stringify');
+for (let i = 0; i < 10000; i++) {
+  jsonProcessor.stringify(sampleJson);
+}
+console.timeEnd('Native JSON Stringify');
+
+console.log('\nExample completed successfully!');

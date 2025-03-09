@@ -274,3 +274,197 @@ app.use((err, req, res, next) => {
 ## Conclusion
 
 NexureJS provides a flexible and powerful routing system that can handle simple to complex routing requirements. Whether you prefer the traditional Express-like approach or the more structured controller-based approach, NexureJS has you covered.
+
+# Radix Router
+
+The Radix Router in NexureJS is a high-performance routing system based on a radix tree (also known as a prefix tree or trie). It provides efficient URL matching and parameter extraction.
+
+## Features
+
+- **High Performance**: Optimized C++ implementation for maximum speed
+- **Parameter Extraction**: Automatically extracts parameters from URL paths
+- **Route Caching**: Caches route lookups for even faster performance
+- **JavaScript Fallback**: Automatic fallback to JavaScript implementation if native module is not available
+- **Performance Metrics**: Built-in metrics for comparing native and JavaScript implementations
+
+## Usage
+
+### Basic Usage
+
+```typescript
+import { RadixRouter } from 'nexurejs/native';
+
+// Create a new router
+const router = new RadixRouter();
+
+// Add routes
+router.add('GET', '/api/users', getUsersHandler);
+router.add('GET', '/api/users/:id', getUserByIdHandler);
+router.add('GET', '/api/posts', getPostsHandler);
+router.add('GET', '/api/posts/:id', getPostByIdHandler);
+router.add('GET', '/api/posts/:id/comments', getPostCommentsHandler);
+
+// Find a route
+const match = router.find('GET', '/api/users/123');
+
+console.log(match);
+// {
+//   handler: getUserByIdHandler,
+//   params: { id: '123' },
+//   found: true
+// }
+
+// Find another route
+const match2 = router.find('GET', '/api/posts/456/comments');
+
+console.log(match2);
+// {
+//   handler: getPostCommentsHandler,
+//   params: { id: '456' },
+//   found: true
+// }
+
+// Route not found
+const match3 = router.find('GET', '/api/unknown');
+
+console.log(match3);
+// {
+//   handler: null,
+//   params: {},
+//   found: false
+// }
+```
+
+### Removing Routes
+
+```typescript
+import { RadixRouter } from 'nexurejs/native';
+
+const router = new RadixRouter();
+
+// Add a route
+router.add('GET', '/api/users/:id', getUserByIdHandler);
+
+// Find the route
+const match = router.find('GET', '/api/users/123');
+console.log(match.found); // true
+
+// Remove the route
+const removed = router.remove('GET', '/api/users/:id');
+console.log(removed); // true
+
+// Try to find the route again
+const match2 = router.find('GET', '/api/users/123');
+console.log(match2.found); // false
+```
+
+## API Reference
+
+### RadixRouter
+
+#### Constructor
+
+```typescript
+constructor(options?: { maxCacheSize?: number })
+```
+
+Creates a new RadixRouter instance.
+
+- **options.maxCacheSize**: Maximum number of routes to cache (default: 1000)
+
+#### Methods
+
+##### add(method: string, path: string, handler: any): this
+
+Adds a route to the router.
+
+- **method**: The HTTP method (GET, POST, etc.)
+- **path**: The URL path pattern
+- **handler**: The handler to associate with the route
+- **Returns**: The router instance for chaining
+
+##### find(method: string, path: string): RouteMatch
+
+Finds a route matching the given method and path.
+
+- **method**: The HTTP method (GET, POST, etc.)
+- **path**: The URL path to match
+- **Returns**: A RouteMatch object
+
+##### remove(method: string, path: string): boolean
+
+Removes a route from the router.
+
+- **method**: The HTTP method (GET, POST, etc.)
+- **path**: The URL path pattern to remove
+- **Returns**: true if the route was removed, false otherwise
+
+#### Static Methods
+
+##### getPerformanceMetrics(): object
+
+Gets performance metrics for the RadixRouter.
+
+##### resetPerformanceMetrics(): void
+
+Resets performance metrics for the RadixRouter.
+
+### RouteMatch
+
+```typescript
+interface RouteMatch {
+  handler: any;
+  params: Record<string, string>;
+  found: boolean;
+}
+```
+
+## Performance Metrics
+
+You can get performance metrics for the RadixRouter:
+
+```typescript
+import { RadixRouter } from 'nexurejs/native';
+
+// Reset metrics
+RadixRouter.resetPerformanceMetrics();
+
+// Use the router...
+const router = new RadixRouter();
+router.add('GET', '/api/users/:id', getUserByIdHandler);
+router.find('GET', '/api/users/123');
+
+// Get metrics
+const metrics = RadixRouter.getPerformanceMetrics();
+console.log(metrics);
+```
+
+## Benchmarking
+
+You can run benchmarks to compare the performance of the native and JavaScript implementations:
+
+```bash
+npm run benchmark:router
+```
+
+## Implementation Details
+
+The RadixRouter is implemented in C++ for maximum performance. It uses a radix tree data structure to efficiently match URL paths. The router handles:
+
+- Static routes (e.g., `/api/users`)
+- Parameterized routes (e.g., `/api/users/:id`)
+- Mixed routes (e.g., `/api/users/:id/posts`)
+
+The JavaScript implementation provides a fallback in case the native module is not available.
+
+## How It Works
+
+A radix tree is a space-optimized tree structure where each node represents a common prefix of a set of strings. In the context of URL routing:
+
+1. Each node in the tree represents a segment of a URL path
+2. Child nodes represent possible continuations of the path
+3. Parameters (`:id`) are treated as special nodes that can match any value
+4. When finding a route, the router traverses the tree to find the best match
+5. If a match is found, the router extracts parameters from the path
+
+This approach is much more efficient than linear matching, especially for large numbers of routes.

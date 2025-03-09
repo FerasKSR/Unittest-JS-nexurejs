@@ -63,6 +63,11 @@ const sampleJson = {
   }
 };
 
+// Create a dummy handler function
+const dummyHandler = (req, res) => {
+  return { success: true };
+};
+
 // Reset performance metrics
 resetAllPerformanceMetrics();
 
@@ -102,13 +107,13 @@ console.log('Stream parser reset, state:', streamParser.getState());
 
 // Test Radix Router
 console.log('\n=== Radix Router Test ===');
-radixRouter.addRoute('/api/users', 'getUsersHandler');
-radixRouter.addRoute('/api/users/:id', 'getUserHandler');
-radixRouter.addRoute('/api/posts', 'getPostsHandler');
-radixRouter.addRoute('/api/posts/:id', 'getPostHandler');
+radixRouter.add('GET', '/api/users', dummyHandler);
+radixRouter.add('GET', '/api/users/:id', dummyHandler);
+radixRouter.add('GET', '/api/posts', dummyHandler);
+radixRouter.add('GET', '/api/posts/:id', dummyHandler);
 
 console.time('Radix Router');
-const routeMatch = radixRouter.findRoute('/api/users/123');
+const routeMatch = radixRouter.find('GET', '/api/users/123');
 console.timeEnd('Radix Router');
 console.log('Route Match:');
 console.log(JSON.stringify(routeMatch, null, 2));
@@ -122,7 +127,7 @@ const parsedJson = jsonProcessor.parse(jsonBuffer);
 console.timeEnd('JSON Parse (Buffer)');
 
 console.time('JSON Parse (String)');
-const parsedJsonString = jsonProcessor.parseString(JSON.stringify(sampleJson));
+const parsedJsonString = jsonProcessor.parse(JSON.stringify(sampleJson));
 console.timeEnd('JSON Parse (String)');
 
 console.time('JSON Stringify');

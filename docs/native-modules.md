@@ -31,7 +31,7 @@ The native modules are included with NexureJS and will be automatically installe
 
 To build from source, you need:
 
-- Node.js 16 or later
+- Node.js 18 or later
 - npm or yarn
 - C++ compiler (GCC, Clang, or MSVC)
 - Python 2.7 or 3.x
@@ -73,9 +73,6 @@ You can configure the native modules behavior:
 configureNativeModules({
   enabled: true,        // Enable/disable all native modules
   verbose: false,       // Enable/disable verbose logging
-  httpParser: true,     // Enable/disable HTTP parser
-  radixRouter: true,    // Enable/disable Radix router
-  jsonProcessor: true,  // Enable/disable JSON processor
   maxCacheSize: 1000    // Maximum size for route cache
 });
 ```
@@ -138,6 +135,30 @@ console.log(result);
 // }
 ```
 
+#### Streaming HTTP Parser
+
+For parsing HTTP requests in chunks:
+
+```typescript
+import { HttpStreamParser } from 'nexurejs/http';
+
+const streamParser = new HttpStreamParser();
+
+// Process the request in chunks
+const chunk1 = buffer.slice(0, 50);
+const chunk2 = buffer.slice(50);
+
+streamParser.write(chunk1);
+console.log('Chunk 1 processed, state:', streamParser.getState());
+
+streamParser.write(chunk2);
+const result = streamParser.getResult();
+console.log('Request parsed:', result);
+
+// Reset the parser for the next request
+streamParser.reset();
+```
+
 ### Radix Router
 
 The Radix Router is responsible for matching URLs to routes. It provides methods for adding, finding, and removing routes.
@@ -148,16 +169,17 @@ import { RadixRouter } from 'nexurejs/native';
 const router = new RadixRouter();
 
 // Add routes
-router.addRoute('/api/users', 'getUsersHandler');
-router.addRoute('/api/users/:id', 'getUserHandler');
+router.add('GET', '/api/users', getUsersHandler);
+router.add('GET', '/api/users/:id', getUserHandler);
 
 // Find a route
-const match = router.findRoute('/api/users/123');
+const match = router.find('GET', '/api/users/123');
 
 console.log(match);
 // {
-//   handler: 'getUserHandler',
-//   params: { id: '123' }
+//   handler: getUserHandler,
+//   params: { id: '123' },
+//   found: true
 // }
 ```
 
@@ -172,10 +194,14 @@ const jsonProcessor = new JsonProcessor();
 
 // Parse JSON
 const jsonString = '{"name":"John","age":30}';
-const parsed = jsonProcessor.parseString(jsonString);
+const parsed = jsonProcessor.parse(jsonString);
 
 console.log(parsed);
 // { name: 'John', age: 30 }
+
+// Parse JSON from Buffer
+const jsonBuffer = Buffer.from(jsonString);
+const parsedFromBuffer = jsonProcessor.parse(jsonBuffer);
 
 // Stringify JSON
 const obj = { name: 'John', age: 30 };
@@ -183,6 +209,22 @@ const stringified = jsonProcessor.stringify(obj);
 
 console.log(stringified);
 // '{"name":"John","age":30}'
+```
+
+## Benchmarking
+
+NexureJS includes benchmarks to compare the performance of native and JavaScript implementations:
+
+```bash
+# Run all benchmarks
+npm run benchmark
+
+# Run specific benchmarks
+npm run benchmark:http
+npm run benchmark:json
+
+# Compare native vs JavaScript implementations
+npm run benchmark:native
 ```
 
 ## Troubleshooting

@@ -75,10 +75,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/nexurejs.git"
+    "url": "https://github.com/nexurejs/nexurejs.git"
   },
   "bugs": {
-    "url": "https://github.com/yourusername/nexurejs/issues"
+    "url": "https://github.com/nexurejs/nexurejs/issues"
   },
-  "homepage": "https://github.com/yourusername/nexurejs#readme"
+  "homepage": "https://github.com/nexurejs/nexurejs#readme"
 }

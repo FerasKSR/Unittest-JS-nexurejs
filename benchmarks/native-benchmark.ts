@@ -16,10 +16,12 @@ import {
   configureNativeModules,
   resetAllPerformanceMetrics,
   getAllPerformanceMetrics
-} from '../src/native/index';
+} from '../src/native/index.js';
 
-import { HttpParser as JsHttpParser } from '../src/http/http-parser';
-import { RadixRouter as JsRadixRouter } from '../src/routing/radix-router';
+import { HttpParser as JsHttpParser } from '../src/http/http-parser.js';
+import { RadixRouter as JsRadixRouter } from '../src/routing/radix-router.js';
+import { HttpMethod } from '../src/http/http-method.js';
+import { IncomingMessage, ServerResponse } from 'node:http';
 
 // Enable verbose logging for native modules
 configureNativeModules({ verbose: true });
@@ -56,23 +58,28 @@ const sampleJson = {
   }
 };
 
+// Create a dummy route handler function
+const dummyHandler = async (req: IncomingMessage, res: ServerResponse) => {
+  return { success: true };
+};
+
 // Sample routes for testing
 const sampleRoutes = [
-  { path: '/api/users', handler: 'getUsersHandler' },
-  { path: '/api/users/:id', handler: 'getUserHandler' },
-  { path: '/api/posts', handler: 'getPostsHandler' },
-  { path: '/api/posts/:id', handler: 'getPostHandler' },
-  { path: '/api/posts/:id/comments', handler: 'getPostCommentsHandler' },
-  { path: '/api/comments', handler: 'getCommentsHandler' },
-  { path: '/api/comments/:id', handler: 'getCommentHandler' },
-  { path: '/api/auth/login', handler: 'loginHandler' },
-  { path: '/api/auth/register', handler: 'registerHandler' },
-  { path: '/api/auth/logout', handler: 'logoutHandler' },
-  { path: '/api/profile', handler: 'getProfileHandler' },
-  { path: '/api/settings', handler: 'getSettingsHandler' },
-  { path: '/api/settings/:section', handler: 'getSettingsSectionHandler' },
-  { path: '/api/notifications', handler: 'getNotificationsHandler' },
-  { path: '/api/search', handler: 'searchHandler' }
+  { path: '/api/users', handler: dummyHandler },
+  { path: '/api/users/:id', handler: dummyHandler },
+  { path: '/api/posts', handler: dummyHandler },
+  { path: '/api/posts/:id', handler: dummyHandler },
+  { path: '/api/posts/:id/comments', handler: dummyHandler },
+  { path: '/api/comments', handler: dummyHandler },
+  { path: '/api/comments/:id', handler: dummyHandler },
+  { path: '/api/auth/login', handler: dummyHandler },
+  { path: '/api/auth/register', handler: dummyHandler },
+  { path: '/api/auth/logout', handler: dummyHandler },
+  { path: '/api/profile', handler: dummyHandler },
+  { path: '/api/settings', handler: dummyHandler },
+  { path: '/api/settings/:section', handler: dummyHandler },
+  { path: '/api/notifications', handler: dummyHandler },
+  { path: '/api/search', handler: dummyHandler }
 ];
 
 // Sample routes to lookup
@@ -162,25 +169,25 @@ function benchmarkRadixRouter() {
 
   // Create routers
   const nativeRouter = new NativeRadixRouter();
-  const jsRouter = new JsRadixRouter();
+  const jsRouter = new JsRadixRouter('');
 
   // Add routes
   for (const route of sampleRoutes) {
-    nativeRouter.addRoute(route.path, route.handler);
-    jsRouter.addRoute(route.path, route.handler);
+    nativeRouter.add('GET', route.path, route.handler);
+    jsRouter.addRoute(HttpMethod.GET, route.path, route.handler);
   }
 
   // Benchmark native implementation
   const nativeOps = runBenchmark('Native Radix Router', () => {
     for (const path of sampleLookups) {
-      nativeRouter.findRoute(path);
+      nativeRouter.find('GET', path);
     }
   }, 1000);
 
   // Benchmark JavaScript implementation
   const jsOps = runBenchmark('JS Radix Router', () => {
     for (const path of sampleLookups) {
-      jsRouter.findRoute(path);
+      jsRouter.findRoute(HttpMethod.GET, path);
     }
   }, 1000);
 
@@ -217,7 +224,7 @@ function benchmarkJsonProcessor() {
 
   // Benchmark native parse string implementation
   const nativeParseStringOps = runBenchmark('Native JSON Parse (String)', () => {
-    nativeJson.parseString(jsonString);
+    nativeJson.parse(jsonString);
   });
 
   // Benchmark JavaScript parse implementation
