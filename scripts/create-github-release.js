@@ -175,33 +175,104 @@ async function uploadReleaseAssets(release, assetPaths) {
   }
 
   const uploadUrl = release.upload_url.replace(/{.*}/, '');
+  const successfulUploads = [];
+  const failedUploads = [];
 
   for (const assetPath of assetPaths) {
     const assetName = path.basename(assetPath);
     log(`Uploading ${assetName}...`, colors.dim);
 
-    const fileData = fs.readFileSync(assetPath);
-    const contentType = 'application/octet-stream';
+    // Try up to 3 times to upload each asset
+    let success = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const fileData = fs.readFileSync(assetPath);
+        const contentType = 'application/octet-stream';
 
-    const options = {
-      hostname: new URL(uploadUrl).hostname,
-      path: `${new URL(uploadUrl).pathname}?name=${encodeURIComponent(assetName)}`,
-      method: 'POST',
-      headers: {
-        'Content-Type': contentType,
-        'Content-Length': fileData.length,
-        'User-Agent': 'NexureJS-Release-Script',
-        'Authorization': `token ${token}`
+        const options = {
+          hostname: new URL(uploadUrl).hostname,
+          path: `${new URL(uploadUrl).pathname}?name=${encodeURIComponent(assetName)}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': fileData.length,
+            'User-Agent': 'NexureJS-Release-Script',
+            'Authorization': `token ${token}`
+          },
+          timeout: 30000 // 30 second timeout
+        };
+
+        await new Promise((resolve, reject) => {
+          const req = https.request(options, (res) => {
+            let responseData = '';
+
+            res.on('data', (chunk) => {
+              responseData += chunk;
+            });
+
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                resolve(responseData);
+              } else {
+                reject(new Error(`HTTP Error: ${res.statusCode} - ${responseData}`));
+              }
+            });
+          });
+
+          req.on('error', reject);
+
+          req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Request timed out'));
+          });
+
+          // Write data in smaller chunks to avoid EPIPE errors
+          const chunkSize = 1024 * 1024; // 1MB chunks
+          for (let i = 0; i < fileData.length; i += chunkSize) {
+            const end = Math.min(i + chunkSize, fileData.length);
+            req.write(fileData.slice(i, end));
+          }
+
+          req.end();
+        });
+
+        log(`Uploaded ${assetName} successfully!`, colors.green);
+        success = true;
+        successfulUploads.push(assetName);
+        break; // Exit retry loop on success
+      } catch (error) {
+        if (attempt < 3) {
+          log(`Attempt ${attempt} failed for ${assetName}: ${error.message}. Retrying...`, colors.yellow);
+          // Wait before retrying (exponential backoff)
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+        } else {
+          log(`Failed to upload ${assetName} after ${attempt} attempts: ${error.message}`, colors.red);
+          failedUploads.push(assetName);
+        }
       }
-    };
-
-    try {
-      await makeRequest(options, fileData);
-      log(`Uploaded ${assetName} successfully!`, colors.green);
-    } catch (error) {
-      log(`Failed to upload ${assetName}: ${error.message}`, colors.red);
     }
   }
+
+  // Summary of uploads
+  if (successfulUploads.length > 0) {
+    log(`\nSuccessfully uploaded ${successfulUploads.length} assets:`, colors.green);
+    successfulUploads.forEach(asset => log(`- ${asset}`, colors.green));
+  }
+
+  if (failedUploads.length > 0) {
+    log(`\nFailed to upload ${failedUploads.length} assets:`, colors.red);
+    failedUploads.forEach(asset => log(`- ${asset}`, colors.red));
+
+    // Provide instructions for manual upload
+    log(`\nYou can manually upload the failed assets at:`, colors.yellow);
+    log(`${release.html_url}/assets/upload`, colors.yellow);
+  }
+
+  return {
+    successCount: successfulUploads.length,
+    failureCount: failedUploads.length,
+    release
+  };
 }
 
 // Main function
@@ -238,7 +309,9 @@ async function main() {
     const prebuildsDir = path.join(__dirname, '..', 'prebuilds');
     if (!fs.existsSync(prebuildsDir)) {
       log(`Prebuilds directory not found at ${prebuildsDir}`, colors.yellow);
-      process.exit(1);
+      log(`Release created successfully, but no prebuilt binaries were uploaded.`, colors.yellow);
+      log(`Release URL: ${release.html_url}`, colors.green);
+      process.exit(0);
     }
 
     const assetPaths = fs.readdirSync(prebuildsDir)
@@ -247,14 +320,21 @@ async function main() {
 
     if (assetPaths.length === 0) {
       log(`No prebuilt binaries found in ${prebuildsDir}`, colors.yellow);
-      process.exit(1);
+      log(`Release created successfully, but no prebuilt binaries were uploaded.`, colors.yellow);
+      log(`Release URL: ${release.html_url}`, colors.green);
+      process.exit(0);
     }
 
     // Upload assets to GitHub release
-    await uploadReleaseAssets(release, assetPaths);
+    const uploadResult = await uploadReleaseAssets(release, assetPaths);
 
     log(`\n${colors.green}${colors.bright}GitHub release created successfully!${colors.reset}`);
-    log(`${colors.green}${colors.bright}${assetPaths.length} assets uploaded.${colors.reset}`);
+    log(`${colors.green}${colors.bright}${uploadResult.successCount} of ${assetPaths.length} assets uploaded.${colors.reset}`);
+    log(`${colors.green}${colors.bright}Release URL: ${release.html_url}${colors.reset}`);
+
+    if (uploadResult.failureCount > 0) {
+      process.exit(1); // Exit with error if any uploads failed
+    }
 
   } catch (error) {
     log(`${colors.red}Error: ${error.message}${colors.reset}`);
