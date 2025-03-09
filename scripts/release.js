@@ -4,7 +4,8 @@
  * NexureJS Release Script
  *
  * This script automates the release process for NexureJS.
- * It handles version bumping, changelog updates, git tagging, and GitHub releases.
+ * It handles version bumping, changelog updates, git tagging, GitHub releases,
+ * uploading prebuilt binaries, and publishing to npm.
  *
  * Usage:
  *   node scripts/release.js [major|minor|patch|<version>] [--dry-run]
@@ -23,6 +24,7 @@ import path from 'path';
 import { execSync } from 'child_process';
 import readline from 'readline';
 import { fileURLToPath } from 'url';
+import https from 'https';
 
 // Get __dirname equivalent in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -123,9 +125,166 @@ function createAndPushTag(version) {
   exec('git push origin main --tags');
 }
 
+// Helper function to make HTTP requests
+function makeRequest(options, data = null) {
+  return new Promise((resolve, reject) => {
+    const req = https.request(options, (res) => {
+      let responseData = '';
+
+      res.on('data', (chunk) => {
+        responseData += chunk;
+      });
+
+      res.on('end', () => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          try {
+            const parsedData = JSON.parse(responseData);
+            resolve(parsedData);
+          } catch (error) {
+            resolve(responseData);
+          }
+        } else {
+          reject(new Error(`HTTP Error: ${res.statusCode} - ${responseData}`));
+        }
+      });
+    });
+
+    req.on('error', (error) => {
+      reject(error);
+    });
+
+    if (data) {
+      req.write(typeof data === 'string' ? data : JSON.stringify(data));
+    }
+
+    req.end();
+  });
+}
+
+// Helper function to upload assets to GitHub release
+async function uploadReleaseAssets(release, assetPaths) {
+  console.log(`${colors.blue}Uploading assets to GitHub release...${colors.reset}`);
+
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error('GITHUB_TOKEN environment variable is not set');
+  }
+
+  const uploadUrl = release.upload_url.replace(/{.*}/, '');
+  const successfulUploads = [];
+  const failedUploads = [];
+
+  for (const assetPath of assetPaths) {
+    const assetName = path.basename(assetPath);
+    console.log(`${colors.dim}Uploading ${assetName}...${colors.reset}`);
+
+    let success = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const fileData = fs.readFileSync(assetPath);
+        const contentType = 'application/octet-stream';
+
+        const options = {
+          hostname: new URL(uploadUrl).hostname,
+          path: `${new URL(uploadUrl).pathname}?name=${encodeURIComponent(assetName)}`,
+          method: 'POST',
+          headers: {
+            'Content-Type': contentType,
+            'Content-Length': fileData.length,
+            'User-Agent': 'NexureJS-Release-Script',
+            'Authorization': `token ${token}`
+          },
+          timeout: 30000
+        };
+
+        await new Promise((resolve, reject) => {
+          const req = https.request(options, (res) => {
+            let responseData = '';
+
+            res.on('data', (chunk) => {
+              responseData += chunk;
+            });
+
+            res.on('end', () => {
+              if (res.statusCode >= 200 && res.statusCode < 300) {
+                resolve(responseData);
+              } else {
+                reject(new Error(`HTTP Error: ${res.statusCode} - ${responseData}`));
+              }
+            });
+          });
+
+          req.on('error', reject);
+
+          req.on('timeout', () => {
+            req.destroy();
+            reject(new Error('Request timed out'));
+          });
+
+          const chunkSize = 1024 * 1024;
+          for (let i = 0; i < fileData.length; i += chunkSize) {
+            const end = Math.min(i + chunkSize, fileData.length);
+            req.write(fileData.slice(i, end));
+          }
+
+          req.end();
+        });
+
+        console.log(`${colors.green}Uploaded ${assetName} successfully!${colors.reset}`);
+        success = true;
+        successfulUploads.push(assetName);
+        break;
+      } catch (error) {
+        if (attempt < 3) {
+          console.log(`${colors.yellow}Attempt ${attempt} failed for ${assetName}: ${error.message}. Retrying...${colors.reset}`);
+          await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt)));
+        } else {
+          console.log(`${colors.red}Failed to upload ${assetName} after ${attempt} attempts: ${error.message}${colors.reset}`);
+          failedUploads.push(assetName);
+        }
+      }
+    }
+  }
+
+  if (successfulUploads.length > 0) {
+    console.log(`\n${colors.green}Successfully uploaded ${successfulUploads.length} assets:${colors.reset}`);
+    successfulUploads.forEach(asset => console.log(`${colors.green}- ${asset}${colors.reset}`));
+  }
+
+  if (failedUploads.length > 0) {
+    console.log(`\n${colors.red}Failed to upload ${failedUploads.length} assets:${colors.reset}`);
+    failedUploads.forEach(asset => console.log(`${colors.red}- ${asset}${colors.reset}`));
+    console.log(`\n${colors.yellow}You can manually upload the failed assets at:${colors.reset}`);
+    console.log(`${colors.yellow}${release.html_url}/assets/upload${colors.reset}`);
+  }
+
+  return {
+    successCount: successfulUploads.length,
+    failureCount: failedUploads.length,
+    release
+  };
+}
+
 // Helper function to create GitHub release
 async function createGitHubRelease(version) {
   console.log(`${colors.blue}Creating GitHub release...${colors.reset}`);
+
+  // Get GitHub token from environment variable
+  const token = process.env.GITHUB_TOKEN;
+  if (!token) {
+    throw new Error('GITHUB_TOKEN environment variable is not set');
+  }
+
+  // Get repository info from package.json
+  const packageInfo = getPackageInfo();
+  const repoUrl = packageInfo.repository?.url || '';
+  const repoMatch = repoUrl.match(/github\.com\/([^\/]+)\/([^\/\.]+)/);
+
+  if (!repoMatch) {
+    throw new Error('Could not determine GitHub repository from package.json');
+  }
+
+  const [, owner, repo] = repoMatch;
 
   // Extract release notes from CHANGELOG.md
   const changelog = fs.readFileSync('CHANGELOG.md', 'utf-8');
@@ -140,35 +299,66 @@ async function createGitHubRelease(version) {
     releaseNotes = await prompt(`${colors.bright}Please enter release notes:${colors.reset}\n`);
   }
 
-  // Create a temporary file with release notes
-  const tempFile = path.join(process.cwd(), '.release-notes.md');
-  fs.writeFileSync(tempFile, releaseNotes, 'utf-8');
+  // Create release
+  const releaseData = {
+    tag_name: `v${version}`,
+    name: `NexureJS v${version}`,
+    body: releaseNotes,
+    draft: false,
+    prerelease: false
+  };
+
+  const options = {
+    hostname: 'api.github.com',
+    path: `/repos/${owner}/${repo}/releases`,
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': 'NexureJS-Release-Script',
+      'Authorization': `token ${token}`
+    }
+  };
 
   try {
-    // Use GitHub CLI if available
-    try {
-      exec('gh --version', { silent: true });
-      exec(`gh release create v${version} --title "NexureJS v${version}" --notes-file .release-notes.md`);
+    const release = await makeRequest(options, releaseData);
+    console.log(`${colors.green}GitHub release created successfully!${colors.reset}`);
 
-      // Upload prebuilt binaries if they exist
-      const prebuildsDir = path.join(process.cwd(), 'prebuilds');
-      if (fs.existsSync(prebuildsDir)) {
-        const files = fs.readdirSync(prebuildsDir);
-        for (const file of files) {
-          if (file.endsWith('.tar.gz')) {
-            exec(`gh release upload v${version} ${path.join(prebuildsDir, file)}`);
-          }
+    // Upload prebuilt binaries if they exist
+    const prebuildsDir = path.join(process.cwd(), 'prebuilds');
+    if (fs.existsSync(prebuildsDir)) {
+      const assetPaths = fs.readdirSync(prebuildsDir)
+        .filter(file => file.endsWith('.tar.gz'))
+        .map(file => path.join(prebuildsDir, file));
+
+      if (assetPaths.length > 0) {
+        const uploadResult = await uploadReleaseAssets(release, assetPaths);
+        if (uploadResult.failureCount > 0) {
+          console.log(`${colors.yellow}Some assets failed to upload. Please upload them manually.${colors.reset}`);
         }
       }
-    } catch (error) {
-      console.log(`${colors.yellow}GitHub CLI not available or error occurred.${colors.reset}`);
-      console.log(`${colors.yellow}Please create the release manually on GitHub:${colors.reset}`);
-      console.log(`${colors.bright}https://github.com/nexurejs/nexurejs/releases/new?tag=v${version}&title=NexureJS%20v${version}${colors.reset}`);
-      console.log(`${colors.yellow}Release notes:${colors.reset}\n${releaseNotes}`);
     }
-  } finally {
-    // Clean up temporary file
-    fs.unlinkSync(tempFile);
+
+    return release;
+  } catch (error) {
+    if (error.message.includes('already exists')) {
+      console.log(`${colors.yellow}Release for v${version} already exists.${colors.reset}`);
+
+      // Get the existing release
+      const getOptions = {
+        hostname: 'api.github.com',
+        path: `/repos/${owner}/${repo}/releases/tags/v${version}`,
+        method: 'GET',
+        headers: {
+          'User-Agent': 'NexureJS-Release-Script',
+          'Authorization': `token ${token}`
+        }
+      };
+
+      const release = await makeRequest(getOptions);
+      return release;
+    }
+
+    throw error;
   }
 }
 
@@ -182,14 +372,23 @@ async function publishToNpm() {
     try {
       // Check if user is logged in to npm
       exec('npm whoami', { silent: true });
+      console.log(`${colors.green}You are logged in to npm.${colors.reset}`);
     } catch (error) {
       console.log(`${colors.yellow}You are not logged in to npm. Please login:${colors.reset}`);
       exec('npm login');
     }
 
     // Publish to npm
-    exec('npm publish');
-    console.log(`${colors.green}Successfully published to npm!${colors.reset}`);
+    try {
+      exec('npm publish');
+      console.log(`${colors.green}Successfully published to npm!${colors.reset}`);
+    } catch (error) {
+      if (error.message.includes('You cannot publish over the previously published versions')) {
+        console.log(`${colors.yellow}Package version is already published to npm.${colors.reset}`);
+      } else {
+        throw error;
+      }
+    }
   } else {
     console.log(`${colors.yellow}Skipping npm publish.${colors.reset}`);
   }
@@ -409,19 +608,11 @@ async function main() {
       console.log(`${colors.yellow}DRY RUN: Would create and push tag v${newVersion}${colors.reset}`);
     }
 
-    // Create GitHub release
-    if (!isDryRun) {
-      await createGitHubRelease(newVersion);
-    } else {
-      console.log(`${colors.yellow}DRY RUN: Would create GitHub release for v${newVersion}${colors.reset}`);
-    }
+    // Create GitHub release and upload assets
+    await createGitHubRelease(newVersion);
 
     // Publish to npm
-    if (!isDryRun) {
-      await publishToNpm();
-    } else {
-      console.log(`${colors.yellow}DRY RUN: Would publish to npm${colors.reset}`);
-    }
+    await publishToNpm();
 
     if (isDryRun) {
       console.log(`\n${colors.green}${colors.bright}Dry run completed successfully for v${newVersion}!${colors.reset}`);
