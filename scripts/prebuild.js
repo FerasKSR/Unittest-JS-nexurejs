@@ -83,6 +83,34 @@ async function createTarball(sourceFile, targetFile) {
   });
 }
 
+// Test the native module
+async function testNativeModule(modulePath) {
+  if (!fs.existsSync(modulePath)) {
+    log(`Native module not found at ${modulePath}`, colors.red);
+    return false;
+  }
+
+  try {
+    // In ESM, we need to use node:module to load native modules
+    const { createRequire } = await import('node:module');
+    const require = createRequire(import.meta.url);
+
+    // Now use require to load the native module
+    const nativeModule = require(modulePath);
+
+    if (typeof nativeModule.isAvailable !== 'function' || !nativeModule.isAvailable()) {
+      log('Native module loaded but isAvailable check failed', colors.yellow);
+      return false;
+    }
+
+    log('Native module loaded and verified successfully!', colors.green);
+    return true;
+  } catch (error) {
+    log(`Error loading native module: ${error.message}`, colors.red);
+    return false;
+  }
+}
+
 // Build for a specific platform and architecture
 async function buildForPlatform(platform, arch) {
   log(`Building for ${platform}-${arch}...`, colors.cyan);
@@ -118,6 +146,12 @@ async function buildForPlatform(platform, arch) {
 
     if (!fs.existsSync(nativeModulePath)) {
       throw new Error(`Native module not found at ${nativeModulePath}`);
+    }
+
+    // Test the native module
+    const testResult = await testNativeModule(nativeModulePath);
+    if (!testResult) {
+      throw new Error('Native module test failed');
     }
 
     // Create the prebuilds directory if it doesn't exist

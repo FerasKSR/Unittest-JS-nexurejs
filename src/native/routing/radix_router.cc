@@ -131,7 +131,7 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
 
   if (info.Length() < 2 || !info[0].IsString() || !info[1].IsString()) {
     Napi::TypeError::New(env, "Expected method (string) and path (string)").ThrowAsJavaScriptException();
-    return env.Boolean(false);
+    return Napi::Boolean::New(env, false);
   }
 
   std::string method = info[0].As<Napi::String>().Utf8Value();
@@ -152,7 +152,7 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
     if (firstChar == ':') {
       // Parameter node
       if (!node->paramChild) {
-        return env.Boolean(false);
+        return Napi::Boolean::New(env, false);
       }
 
       // Extract parameter name
@@ -167,7 +167,7 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
     } else if (firstChar == '*') {
       // Wildcard node
       if (!node->wildcardChild) {
-        return env.Boolean(false);
+        return Napi::Boolean::New(env, false);
       }
 
       // Move to wildcard child
@@ -176,12 +176,12 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
     } else {
       // Static node - find the longest common prefix
       if (!node->hasBit(firstChar)) {
-        return env.Boolean(false);
+        return Napi::Boolean::New(env, false);
       }
 
       auto it = node->children.find(firstChar);
       if (it == node->children.end()) {
-        return env.Boolean(false);
+        return Napi::Boolean::New(env, false);
       }
 
       RadixNode* child = it->second.get();
@@ -195,7 +195,7 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
 
       if (i < child->path.length()) {
         // Partial match, not found
-        return env.Boolean(false);
+        return Napi::Boolean::New(env, false);
       }
 
       // Move to child node
@@ -216,10 +216,10 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
     routeCache_.clear();
     cacheSize_ = 0;
 
-    return env.Boolean(true);
+    return Napi::Boolean::New(env, true);
   }
 
-  return env.Boolean(false);
+  return Napi::Boolean::New(env, false);
 }
 
 // Insert a route into the radix tree

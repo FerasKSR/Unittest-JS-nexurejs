@@ -215,8 +215,12 @@ async function testNativeModule() {
   }
 
   try {
-    // In ESM, we need to use dynamic import for native modules
-    const nativeModule = await import(modulePath);
+    // In ESM, we need to use node:module to load native modules
+    const { createRequire } = await import('node:module');
+    const require = createRequire(import.meta.url);
+
+    // Now use require to load the native module
+    const nativeModule = require(modulePath);
 
     if (typeof nativeModule.isAvailable !== 'function' || !nativeModule.isAvailable()) {
       log('Native module loaded but isAvailable check failed', colors.yellow);
