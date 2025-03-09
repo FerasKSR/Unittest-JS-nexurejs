@@ -6,6 +6,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "build:native": "node-gyp rebuild",
+    "install": "node-gyp rebuild",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node dist/index.js",
     "test": "jest",
@@ -22,6 +24,10 @@
     "benchmark:worker": "node run-typescript.js benchmarks/worker-pool-benchmark.ts",
     "benchmark:v8": "node run-typescript.js benchmarks/v8-optimizer-benchmark.ts",
     "benchmark:simple": "node run-typescript.js benchmarks/simple-benchmark.ts",
+    "benchmark:simple:js": "node benchmarks/simple-benchmark.js",
+    "benchmark:native": "node run-typescript.js benchmarks/native-benchmark.ts",
+    "build:native:test": "node build-native.js",
+    "run-benchmark": "node run-benchmark.js",
     "run-ts": "node run-typescript.js"
   },
   "keywords": [
@@ -41,6 +47,8 @@
   "type": "module",
   "devDependencies": {
     "@types/node": "^22.13.10",
+    "node-addon-api": "^7.1.0",
+    "node-gyp": "^10.0.1",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.2"
