@@ -302,20 +302,77 @@ async function main() {
     // Run tests
     console.log(`${colors.blue}Running tests...${colors.reset}`);
     try {
-      exec('npm test');
+      if (!isDryRun) {
+        exec('npm test');
+      } else {
+        try {
+          exec('npm test', { silent: true });
+          console.log(`${colors.yellow}DRY RUN: Tests passed${colors.reset}`);
+        } catch (error) {
+          console.log(`${colors.yellow}DRY RUN: Tests would fail in a real release${colors.reset}`);
+          const skipTests = await prompt(`${colors.bright}Tests are failing. Skip tests for dry run? (y/N)${colors.reset} `);
+          if (skipTests.toLowerCase() !== 'y') {
+            console.log(`${colors.yellow}Dry run cancelled.${colors.reset}`);
+            process.exit(0);
+          }
+        }
+      }
     } catch (error) {
       console.log(`${colors.red}Error: Tests failed. Fix the tests before releasing.${colors.reset}`);
-      process.exit(1);
+
+      // In case of dry run, ask if we want to continue despite failing tests
+      if (isDryRun) {
+        const skipTests = await prompt(`${colors.bright}Skip tests for this dry run? (y/N)${colors.reset} `);
+        if (skipTests.toLowerCase() !== 'y') {
+          process.exit(1);
+        }
+      } else {
+        process.exit(1);
+      }
     }
 
     // Build the project
     console.log(`${colors.blue}Building the project...${colors.reset}`);
-    exec('npm run build');
+    try {
+      if (!isDryRun) {
+        exec('npm run build');
+      } else {
+        try {
+          exec('npm run build', { silent: true });
+          console.log(`${colors.yellow}DRY RUN: Build successful${colors.reset}`);
+        } catch (error) {
+          console.log(`${colors.yellow}DRY RUN: Build would fail in a real release${colors.reset}`);
+          const skipBuild = await prompt(`${colors.bright}Build is failing. Skip build for dry run? (y/N)${colors.reset} `);
+          if (skipBuild.toLowerCase() !== 'y') {
+            console.log(`${colors.yellow}Dry run cancelled.${colors.reset}`);
+            process.exit(0);
+          }
+        }
+      }
+    } catch (error) {
+      console.log(`${colors.red}Error: Build failed. Fix the build before releasing.${colors.reset}`);
+      process.exit(1);
+    }
 
     // Build native modules for all platforms
     console.log(`${colors.blue}Building native modules...${colors.reset}`);
     try {
-      exec('npm run build:native:all');
+      if (!isDryRun) {
+        exec('npm run build:native:all');
+      } else {
+        try {
+          // Just try to build for the current platform in dry run mode
+          exec('npm run build:native', { silent: true });
+          console.log(`${colors.yellow}DRY RUN: Native module build successful${colors.reset}`);
+        } catch (error) {
+          console.log(`${colors.yellow}DRY RUN: Native module build would fail in a real release${colors.reset}`);
+          const skipNativeBuild = await prompt(`${colors.bright}Native module build is failing. Skip for dry run? (y/N)${colors.reset} `);
+          if (skipNativeBuild.toLowerCase() !== 'y') {
+            console.log(`${colors.yellow}Dry run cancelled.${colors.reset}`);
+            process.exit(0);
+          }
+        }
+      }
     } catch (error) {
       console.log(`${colors.yellow}Warning: Failed to build native modules for all platforms.${colors.reset}`);
       const proceed = await prompt(`${colors.bright}Do you want to proceed anyway? (y/N)${colors.reset} `);
