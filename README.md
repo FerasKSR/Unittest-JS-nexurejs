@@ -4,7 +4,7 @@
   <img src="assets/images/nexurejs-logo.png" alt="NexureJS Logo" width="200" height="200">
 </p>
 
-A high-performance, modular Node.js framework with modern developer experience.
+A high-performance, lightweight Node.js framework with native C++ modules for maximum speed.
 
 [![npm version](https://img.shields.io/npm/v/nexurejs.svg)](https://www.npmjs.com/package/nexurejs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -12,16 +12,21 @@ A high-performance, modular Node.js framework with modern developer experience.
 
 ## Features
 
-- **High Performance**: Built from the ground up for maximum throughput and minimal latency
-- **Native Optimizations**: Optional C++ addons for performance-critical components
-- **Modern TypeScript**: Full TypeScript support with strong typing
-- **Modular Architecture**: Use only what you need, minimal overhead
-- **Dependency Injection**: Built-in DI container for clean, testable code
-- **Middleware System**: Flexible middleware pipeline for request processing
-- **Routing**: Fast, feature-rich router with parameter extraction
-- **HTTP Optimizations**: Zero-copy parsing and other optimizations
-- **Worker Pool**: Adaptive worker pool for CPU-intensive tasks
-- **Benchmarking Tools**: Built-in tools for performance measurement
+- **High Performance**: Optimized for speed with native C++ modules
+- **Lightweight**: Minimal dependencies and small footprint
+- **Modern**: Built with TypeScript and modern JavaScript features
+- **Flexible**: Modular design allows for easy customization
+- **Developer-Friendly**: Clear API and comprehensive documentation
+
+## Native Modules
+
+NexureJS includes native C++ modules for performance-critical operations:
+
+- **HTTP Parser**: Ultra-fast HTTP request parsing
+- **Radix Router**: Efficient route matching and parameter extraction
+- **JSON Processor**: High-performance JSON parsing and stringification
+
+These native modules can provide up to 10x performance improvement over pure JavaScript implementations.
 
 ## Installation
 
@@ -29,128 +34,98 @@ A high-performance, modular Node.js framework with modern developer experience.
 npm install nexurejs
 ```
 
+The installation process will attempt to download pre-built binaries for your platform. If no pre-built binary is available, it will build from source (requires a C++ compiler and node-gyp).
+
 ## Quick Start
 
-```typescript
-import { NexureApp } from 'nexurejs';
-import { Controller, Get, Post, Body, Param } from 'nexurejs/decorators';
+```javascript
+import { createServer } from 'nexurejs';
 
-@Controller('/users')
-class UserController {
-  private users = [];
+const app = createServer();
 
-  @Get()
-  getAllUsers() {
-    return this.users;
-  }
+app.get('/', (req, res) => {
+  res.send('Hello, NexureJS!');
+});
 
-  @Get('/:id')
-  getUserById(@Param('id') id: string) {
-    return this.users.find(user => user.id === id);
-  }
+app.get('/users/:id', (req, res) => {
+  res.json({ userId: req.params.id, message: 'User details' });
+});
 
-  @Post()
-  createUser(@Body() userData: any) {
-    const newUser = { id: Date.now().toString(), ...userData };
-    this.users.push(newUser);
-    return newUser;
-  }
-}
-
-const app = new NexureApp();
-app.useController(UserController);
 app.listen(3000, () => {
   console.log('Server running on http://localhost:3000');
 });
 ```
 
-## Performance
+## Native Module Configuration
 
-NexureJS is designed for high performance, with benchmarks showing it outperforms many popular frameworks:
+You can configure the native modules behavior:
 
-| Framework | Requests/sec | Latency (ms) |
-|-----------|--------------|--------------|
-| NexureJS   | 50,000+      | 0.5          |
-| Express   | 15,000       | 2.1          |
-| Fastify   | 35,000       | 0.9          |
-| Koa       | 20,000       | 1.5          |
+```javascript
+import { configureNativeModules } from 'nexurejs';
 
-*Benchmark details: Running on Node.js 18, MacBook Pro M1, 16GB RAM, simple JSON response*
+// Configure native modules
+configureNativeModules({
+  enabled: true,        // Enable/disable all native modules
+  verbose: false,       // Enable/disable verbose logging
+  httpParser: true,     // Enable/disable HTTP parser
+  radixRouter: true,    // Enable/disable Radix router
+  jsonProcessor: true,  // Enable/disable JSON processor
+  maxCacheSize: 1000    // Maximum size for route cache
+});
+```
 
-## Native Modules
+## Performance Metrics
 
-NexureJS includes optional C++ native modules for performance-critical components:
+NexureJS includes built-in performance metrics:
 
-- HTTP Parser
-- Radix Router
-- JSON Processor
+```javascript
+import { getAllPerformanceMetrics, resetAllPerformanceMetrics } from 'nexurejs';
 
-To build and use the native modules:
+// Reset metrics before tests
+resetAllPerformanceMetrics();
+
+// Run your application...
+
+// Get performance metrics
+const metrics = getAllPerformanceMetrics();
+console.log(metrics);
+```
+
+## Building from Source
+
+If you want to build the native modules from source:
+
+```bash
+npm run build:native
+```
+
+For development and testing:
 
 ```bash
 npm run build:native:test
 ```
 
-See [Native Modules Documentation](src/native/README.md) for more details.
+## Examples
+
+Check out the examples directory for more usage examples:
+
+- Basic server setup
+- Middleware usage
+- Performance optimization
+- Native module usage
+- Security best practices
 
 ## Documentation
 
-- [Getting Started](docs/getting-started.md)
-- [Routing](docs/routing.md)
-- [Middleware](docs/middleware.md)
-- [Dependency Injection](docs/dependency-injection.md)
-- [Performance Optimization](docs/performance-optimization.md)
-- [API Reference](docs/api-reference.md)
-- [Benchmarking Guide](docs/benchmarking-guide.md)
-
-## Examples
-
-The repository includes several examples to help you get started:
-
-- [Basic Server](examples/basic)
-- [REST API](examples/rest-api)
-- [Middleware Usage](examples/middleware)
-- [Performance Optimization](examples/performance)
-- [Security Best Practices](examples/security)
-
-To run an example:
-
-```bash
-npm run example:basic
-```
-
-## Benchmarking
-
-NexureJS includes built-in benchmarking tools to measure performance:
-
-```bash
-# Run all benchmarks
-npm run benchmark
-
-# Run specific benchmarks
-npm run benchmark:http
-npm run benchmark:json
-npm run benchmark:worker
-
-# Compare native vs JavaScript implementations
-npm run benchmark:native
-```
+For detailed documentation, see the [docs](./docs) directory.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-Please make sure your code follows the existing style and includes appropriate tests.
+Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT
 
 ## Acknowledgments
 

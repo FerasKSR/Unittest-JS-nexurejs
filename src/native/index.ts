@@ -7,6 +7,7 @@
 import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { performance } from 'node:perf_hooks';
 import { HttpParser as JsHttpParser, HttpParseResult } from '../http/http-parser.js';
 import { RadixRouter as JsRadixRouter } from '../routing/radix-router.js';
 import { HttpMethod } from '../http/http-method.js';
@@ -15,22 +16,144 @@ import { HttpMethod } from '../http/http-method.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Try to load the native module
-let nativeBinding: any;
-try {
-  // Determine the path to the native module
-  const bindingPath = join(__dirname, '..', '..', '..', 'build', 'Release', 'nexurejs_native.node');
+/**
+ * Configuration options for native modules
+ */
+export interface NativeModuleOptions {
+  /** Whether native modules are enabled (default: true) */
+  enabled?: boolean;
+  /** Whether to log verbose information (default: false) */
+  verbose?: boolean;
+  /** Path to the native module (default: auto-detected) */
+  modulePath?: string;
+}
 
-  if (existsSync(bindingPath)) {
-    // Load the native module
-    nativeBinding = require(bindingPath);
-  } else {
-    throw new Error(`Native module not found at ${bindingPath}`);
+/**
+ * Status of native module components
+ */
+export interface NativeModuleStatus {
+  /** Whether the native module is loaded */
+  loaded: boolean;
+  /** Whether the HTTP parser is available */
+  httpParser: boolean;
+  /** Whether the radix router is available */
+  radixRouter: boolean;
+  /** Whether the JSON processor is available */
+  jsonProcessor: boolean;
+  /** Error message if loading failed */
+  error?: string;
+}
+
+// Default configuration
+let nativeOptions: NativeModuleOptions = {
+  enabled: true,
+  verbose: false
+};
+
+// Native module loading state
+let nativeBinding: any = null;
+let nativeBindingAttempted = false;
+let nativeModuleStatus: NativeModuleStatus = {
+  loaded: false,
+  httpParser: false,
+  radixRouter: false,
+  jsonProcessor: false
+};
+
+/**
+ * Configure native module options
+ * @param options Configuration options
+ * @returns Current configuration
+ */
+export function configureNativeModules(options: NativeModuleOptions): NativeModuleOptions {
+  nativeOptions = { ...nativeOptions, ...options };
+
+  // Reset loading state if options change
+  if (nativeBindingAttempted) {
+    nativeBindingAttempted = false;
+    nativeBinding = null;
+    nativeModuleStatus = {
+      loaded: false,
+      httpParser: false,
+      radixRouter: false,
+      jsonProcessor: false
+    };
   }
-} catch (err: any) {
-  console.warn(`Failed to load native module: ${err.message}`);
-  console.warn('Using JavaScript fallbacks instead');
-  nativeBinding = null;
+
+  return nativeOptions;
+}
+
+/**
+ * Get the status of native module components
+ * @returns Status object
+ */
+export function getNativeModuleStatus(): NativeModuleStatus {
+  // Ensure native module is loaded
+  loadNativeBinding();
+  return { ...nativeModuleStatus };
+}
+
+/**
+ * Load the native module
+ * @returns The native module or null if not available
+ */
+function loadNativeBinding(): any {
+  // Return cached result if already attempted
+  if (nativeBindingAttempted) return nativeBinding;
+
+  nativeBindingAttempted = true;
+
+  // Skip if disabled
+  if (!nativeOptions.enabled) {
+    if (nativeOptions.verbose) {
+      console.log('Native modules disabled by configuration');
+    }
+    nativeModuleStatus.error = 'Disabled by configuration';
+    return null;
+  }
+
+  try {
+    // Determine the path to the native module
+    const bindingPath = nativeOptions.modulePath ||
+      join(__dirname, '..', '..', '..', 'build', 'Release', 'nexurejs_native.node');
+
+    if (existsSync(bindingPath)) {
+      // Load the native module
+      nativeBinding = require(bindingPath);
+
+      // Update status
+      nativeModuleStatus.loaded = true;
+      nativeModuleStatus.httpParser = !!nativeBinding.HttpParser;
+      nativeModuleStatus.radixRouter = !!nativeBinding.RadixRouter;
+      nativeModuleStatus.jsonProcessor = !!nativeBinding.JsonProcessor;
+
+      if (nativeOptions.verbose) {
+        console.log(`Native module loaded successfully from ${bindingPath}`);
+        console.log(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
+      }
+    } else {
+      throw new Error(`Native module not found at ${bindingPath}`);
+    }
+  } catch (err: any) {
+    if (nativeOptions.verbose || process.env.NODE_ENV !== 'production') {
+      console.warn(`Failed to load native module: ${err.message}`);
+
+      if (err.code === 'MODULE_NOT_FOUND') {
+        console.warn('Native module not built. Run "npm run build:native:test" to build it.');
+      } else if (err.code === 'ENOENT') {
+        console.warn('Native module file not found. Check build configuration.');
+      } else {
+        console.warn(`Error type: ${err.code || 'Unknown'}`);
+      }
+
+      console.warn('Using JavaScript fallbacks instead');
+    }
+
+    nativeModuleStatus.error = err.message;
+    nativeBinding = null;
+  }
+
+  return nativeBinding;
 }
 
 /**
@@ -43,14 +166,23 @@ export class HttpParser {
   private useNative: boolean;
   private jsParser: JsHttpParser | null = null;
 
+  // Performance metrics
+  private static jsParseTime = 0;
+  private static jsParseCount = 0;
+  private static nativeParseTime = 0;
+  private static nativeParseCount = 0;
+
   constructor() {
-    this.useNative = !!nativeBinding;
+    const nativeModule = loadNativeBinding();
+    this.useNative = !!(nativeModule && nativeModule.HttpParser && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
-        this.parser = new nativeBinding.HttpParser();
+        this.parser = new nativeModule.HttpParser();
       } catch (err: any) {
-        console.warn(`Failed to create native HTTP parser: ${err.message}`);
+        if (nativeOptions.verbose) {
+          console.warn(`Failed to create native HTTP parser: ${err.message}`);
+        }
         this.useNative = false;
       }
     }
@@ -67,13 +199,22 @@ export class HttpParser {
    * @returns Parsed HTTP request
    */
   parse(buffer: Buffer): HttpParseResult {
+    const start = performance.now();
+    let result: HttpParseResult;
+
     if (this.useNative && this.parser) {
-      return this.parser.parse(buffer);
+      result = this.parser.parse(buffer);
+      HttpParser.nativeParseTime += performance.now() - start;
+      HttpParser.nativeParseCount++;
     } else if (this.jsParser) {
-      return this.jsParser.parse(buffer);
+      result = this.jsParser.parse(buffer);
+      HttpParser.jsParseTime += performance.now() - start;
+      HttpParser.jsParseCount++;
     } else {
       throw new Error('No HTTP parser implementation available');
     }
+
+    return result;
   }
 
   /**
@@ -85,6 +226,38 @@ export class HttpParser {
     } else if (this.jsParser) {
       this.jsParser.reset();
     }
+  }
+
+  /**
+   * Get performance metrics for HTTP parsing
+   * @returns Performance metrics
+   */
+  static getPerformanceMetrics() {
+    return {
+      js: {
+        avgTime: HttpParser.jsParseCount > 0 ? HttpParser.jsParseTime / HttpParser.jsParseCount : 0,
+        count: HttpParser.jsParseCount,
+        totalTime: HttpParser.jsParseTime
+      },
+      native: {
+        avgTime: HttpParser.nativeParseCount > 0 ? HttpParser.nativeParseTime / HttpParser.nativeParseCount : 0,
+        count: HttpParser.nativeParseCount,
+        totalTime: HttpParser.nativeParseTime
+      },
+      comparison: HttpParser.nativeParseCount > 0 && HttpParser.jsParseCount > 0
+        ? (HttpParser.jsParseTime / HttpParser.jsParseCount) / (HttpParser.nativeParseTime / HttpParser.nativeParseCount)
+        : 0
+    };
+  }
+
+  /**
+   * Reset performance metrics
+   */
+  static resetPerformanceMetrics() {
+    HttpParser.jsParseTime = 0;
+    HttpParser.jsParseCount = 0;
+    HttpParser.nativeParseTime = 0;
+    HttpParser.nativeParseCount = 0;
   }
 }
 
@@ -102,14 +275,23 @@ export class RadixRouter {
   private useNative: boolean;
   private jsRouter: JsRadixRouter | null = null;
 
+  // Performance metrics
+  private static jsFindTime = 0;
+  private static jsFindCount = 0;
+  private static nativeFindTime = 0;
+  private static nativeFindCount = 0;
+
   constructor(options?: { maxCacheSize?: number }) {
-    this.useNative = !!nativeBinding;
+    const nativeModule = loadNativeBinding();
+    this.useNative = !!(nativeModule && nativeModule.RadixRouter && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
-        this.router = new nativeBinding.RadixRouter(options);
+        this.router = new nativeModule.RadixRouter(options);
       } catch (err: any) {
-        console.warn(`Failed to create native radix router: ${err.message}`);
+        if (nativeOptions.verbose) {
+          console.warn(`Failed to create native radix router: ${err.message}`);
+        }
         this.useNative = false;
       }
     }
@@ -145,18 +327,27 @@ export class RadixRouter {
    * @returns Route match result
    */
   find(method: string, path: string): RouteMatch {
+    const start = performance.now();
+    let result: RouteMatch;
+
     if (this.useNative && this.router) {
-      return this.router.find(method, path);
+      result = this.router.find(method, path);
+      RadixRouter.nativeFindTime += performance.now() - start;
+      RadixRouter.nativeFindCount++;
     } else if (this.jsRouter) {
-      const result = this.jsRouter.findRoute(method as HttpMethod, path);
-      return {
-        handler: result?.route?.handler || null,
-        params: result?.params || {},
-        found: !!result
+      const jsResult = this.jsRouter.findRoute(method as HttpMethod, path);
+      result = {
+        handler: jsResult?.route?.handler || null,
+        params: jsResult?.params || {},
+        found: !!jsResult
       };
+      RadixRouter.jsFindTime += performance.now() - start;
+      RadixRouter.jsFindCount++;
     } else {
       throw new Error('No router implementation available');
     }
+
+    return result;
   }
 
   /**
@@ -176,6 +367,38 @@ export class RadixRouter {
       throw new Error('No router implementation available');
     }
   }
+
+  /**
+   * Get performance metrics for route finding
+   * @returns Performance metrics
+   */
+  static getPerformanceMetrics() {
+    return {
+      js: {
+        avgTime: RadixRouter.jsFindCount > 0 ? RadixRouter.jsFindTime / RadixRouter.jsFindCount : 0,
+        count: RadixRouter.jsFindCount,
+        totalTime: RadixRouter.jsFindTime
+      },
+      native: {
+        avgTime: RadixRouter.nativeFindCount > 0 ? RadixRouter.nativeFindTime / RadixRouter.nativeFindCount : 0,
+        count: RadixRouter.nativeFindCount,
+        totalTime: RadixRouter.nativeFindTime
+      },
+      comparison: RadixRouter.nativeFindCount > 0 && RadixRouter.jsFindCount > 0
+        ? (RadixRouter.jsFindTime / RadixRouter.jsFindCount) / (RadixRouter.nativeFindTime / RadixRouter.nativeFindCount)
+        : 0
+    };
+  }
+
+  /**
+   * Reset performance metrics
+   */
+  static resetPerformanceMetrics() {
+    RadixRouter.jsFindTime = 0;
+    RadixRouter.jsFindCount = 0;
+    RadixRouter.nativeFindTime = 0;
+    RadixRouter.nativeFindCount = 0;
+  }
 }
 
 /**
@@ -185,14 +408,27 @@ export class JsonProcessor {
   private processor: any;
   private useNative: boolean;
 
+  // Performance metrics
+  private static jsParseTime = 0;
+  private static jsParseCount = 0;
+  private static jsStringifyTime = 0;
+  private static jsStringifyCount = 0;
+  private static nativeParseTime = 0;
+  private static nativeParseCount = 0;
+  private static nativeStringifyTime = 0;
+  private static nativeStringifyCount = 0;
+
   constructor() {
-    this.useNative = !!nativeBinding;
+    const nativeModule = loadNativeBinding();
+    this.useNative = !!(nativeModule && nativeModule.JsonProcessor && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
-        this.processor = new nativeBinding.JsonProcessor();
+        this.processor = new nativeModule.JsonProcessor();
       } catch (err: any) {
-        console.warn(`Failed to create native JSON processor: ${err.message}`);
+        if (nativeOptions.verbose) {
+          console.warn(`Failed to create native JSON processor: ${err.message}`);
+        }
         this.useNative = false;
       }
     }
@@ -204,12 +440,21 @@ export class JsonProcessor {
    * @returns Parsed JavaScript value
    */
   parse(json: string | Buffer): any {
+    const start = performance.now();
+    let result: any;
+
     if (this.useNative && this.processor) {
-      return this.processor.parse(json);
+      result = this.processor.parse(json);
+      JsonProcessor.nativeParseTime += performance.now() - start;
+      JsonProcessor.nativeParseCount++;
     } else {
       // JavaScript fallback implementation
-      return JSON.parse(typeof json === 'string' ? json : json.toString());
+      result = JSON.parse(typeof json === 'string' ? json : json.toString());
+      JsonProcessor.jsParseTime += performance.now() - start;
+      JsonProcessor.jsParseCount++;
     }
+
+    return result;
   }
 
   /**
@@ -218,12 +463,21 @@ export class JsonProcessor {
    * @returns JSON string
    */
   stringify(value: any): string {
+    const start = performance.now();
+    let result: string;
+
     if (this.useNative && this.processor) {
-      return this.processor.stringify(value);
+      result = this.processor.stringify(value);
+      JsonProcessor.nativeStringifyTime += performance.now() - start;
+      JsonProcessor.nativeStringifyCount++;
     } else {
       // JavaScript fallback implementation
-      return JSON.stringify(value);
+      result = JSON.stringify(value);
+      JsonProcessor.jsStringifyTime += performance.now() - start;
+      JsonProcessor.jsStringifyCount++;
     }
+
+    return result;
   }
 
   /**
@@ -255,7 +509,80 @@ export class JsonProcessor {
       return values.map(v => JSON.stringify(v)).join('\n');
     }
   }
+
+  /**
+   * Get performance metrics for JSON processing
+   * @returns Performance metrics
+   */
+  static getPerformanceMetrics() {
+    return {
+      parse: {
+        js: {
+          avgTime: JsonProcessor.jsParseCount > 0 ? JsonProcessor.jsParseTime / JsonProcessor.jsParseCount : 0,
+          count: JsonProcessor.jsParseCount,
+          totalTime: JsonProcessor.jsParseTime
+        },
+        native: {
+          avgTime: JsonProcessor.nativeParseCount > 0 ? JsonProcessor.nativeParseTime / JsonProcessor.nativeParseCount : 0,
+          count: JsonProcessor.nativeParseCount,
+          totalTime: JsonProcessor.nativeParseTime
+        },
+        comparison: JsonProcessor.nativeParseCount > 0 && JsonProcessor.jsParseCount > 0
+          ? (JsonProcessor.jsParseTime / JsonProcessor.jsParseCount) / (JsonProcessor.nativeParseTime / JsonProcessor.nativeParseCount)
+          : 0
+      },
+      stringify: {
+        js: {
+          avgTime: JsonProcessor.jsStringifyCount > 0 ? JsonProcessor.jsStringifyTime / JsonProcessor.jsStringifyCount : 0,
+          count: JsonProcessor.jsStringifyCount,
+          totalTime: JsonProcessor.jsStringifyTime
+        },
+        native: {
+          avgTime: JsonProcessor.nativeStringifyCount > 0 ? JsonProcessor.nativeStringifyTime / JsonProcessor.nativeStringifyCount : 0,
+          count: JsonProcessor.nativeStringifyCount,
+          totalTime: JsonProcessor.nativeStringifyTime
+        },
+        comparison: JsonProcessor.nativeStringifyCount > 0 && JsonProcessor.jsStringifyCount > 0
+          ? (JsonProcessor.jsStringifyTime / JsonProcessor.jsStringifyCount) / (JsonProcessor.nativeStringifyTime / JsonProcessor.nativeStringifyCount)
+          : 0
+      }
+    };
+  }
+
+  /**
+   * Reset performance metrics
+   */
+  static resetPerformanceMetrics() {
+    JsonProcessor.jsParseTime = 0;
+    JsonProcessor.jsParseCount = 0;
+    JsonProcessor.jsStringifyTime = 0;
+    JsonProcessor.jsStringifyCount = 0;
+    JsonProcessor.nativeParseTime = 0;
+    JsonProcessor.nativeParseCount = 0;
+    JsonProcessor.nativeStringifyTime = 0;
+    JsonProcessor.nativeStringifyCount = 0;
+  }
+}
+
+/**
+ * Reset all performance metrics
+ */
+export function resetAllPerformanceMetrics() {
+  HttpParser.resetPerformanceMetrics();
+  RadixRouter.resetPerformanceMetrics();
+  JsonProcessor.resetPerformanceMetrics();
+}
+
+/**
+ * Get all performance metrics
+ */
+export function getAllPerformanceMetrics() {
+  return {
+    httpParser: HttpParser.getPerformanceMetrics(),
+    radixRouter: RadixRouter.getPerformanceMetrics(),
+    jsonProcessor: JsonProcessor.getPerformanceMetrics()
+  };
 }
 
 // Export native module status
-export const hasNativeSupport = !!nativeBinding;
+export const hasNativeSupport = !!loadNativeBinding();

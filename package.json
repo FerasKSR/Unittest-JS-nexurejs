@@ -7,7 +7,9 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "build:native": "node-gyp rebuild",
-    "install": "node-gyp rebuild",
+    "build:native:test": "node build-native.js",
+    "build:native:all": "BUILD_ALL_PLATFORMS=true node scripts/prebuild.js",
+    "install": "node scripts/install.js",
     "dev": "node --loader ts-node/esm src/index.ts",
     "start": "node dist/index.js",
     "test": "jest",
@@ -18,6 +20,8 @@
     "example:middleware": "node --loader ts-node/esm examples/middleware/index.ts",
     "example:performance": "node --loader ts-node/esm examples/performance/index.ts",
     "example:security": "node --loader ts-node/esm examples/security/index.ts",
+    "example:native": "node run-typescript.js examples/native-modules/index.ts",
+    "example:native:simple": "node examples/native-modules/simple.js",
     "benchmark": "node run-typescript.js benchmarks/run-all.ts",
     "benchmark:http": "node run-typescript.js benchmarks/http-benchmark.ts",
     "benchmark:json": "node run-typescript.js benchmarks/json-benchmark.ts",
@@ -26,7 +30,6 @@
     "benchmark:simple": "node run-typescript.js benchmarks/simple-benchmark.ts",
     "benchmark:simple:js": "node benchmarks/simple-benchmark.js",
     "benchmark:native": "node run-typescript.js benchmarks/native-benchmark.ts",
-    "build:native:test": "node build-native.js",
     "run-benchmark": "node run-benchmark.js",
     "run-ts": "node run-typescript.js"
   },
@@ -49,6 +52,8 @@
     "@types/node": "^22.13.10",
     "node-addon-api": "^7.1.0",
     "node-gyp": "^10.0.1",
+    "tar-pack": "^3.4.1",
+    "tar-stream": "^3.1.6",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
     "typescript": "^5.8.2"
@@ -59,7 +64,11 @@
   "optionalDependencies": {
     "ioredis": "^5.3.2",
     "simdjson": "^0.9.2",
-    "zlib-sync": "^0.1.8"
+    "zlib-sync": "^0.1.8",
+    "nexurejs-native-linux-x64": "^0.1.0",
+    "nexurejs-native-darwin-x64": "^0.1.0",
+    "nexurejs-native-darwin-arm64": "^0.1.0",
+    "nexurejs-native-win32-x64": "^0.1.0"
   },
   "engines": {
     "node": ">=18.0.0"

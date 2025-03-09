@@ -1,89 +1,102 @@
 # Contributing to NexureJS
 
-Thank you for considering contributing to NexureJS! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to NexureJS! This document provides guidelines and instructions for contributing to the project.
 
 ## Code of Conduct
 
-By participating in this project, you agree to abide by our Code of Conduct. Please read it before contributing.
+Please be respectful and considerate of others when contributing to this project. We aim to foster an inclusive and welcoming community.
 
-## How Can I Contribute?
-
-### Reporting Bugs
-
-Before creating bug reports, please check the issue tracker to see if the problem has already been reported. If it has and the issue is still open, add a comment to the existing issue instead of opening a new one.
-
-When you are creating a bug report, please include as many details as possible:
-
-- Use a clear and descriptive title
-- Describe the exact steps to reproduce the problem
-- Provide specific examples to demonstrate the steps
-- Describe the behavior you observed after following the steps
-- Explain which behavior you expected to see instead and why
-- Include screenshots or animated GIFs if possible
-- Include details about your environment (OS, Node.js version, etc.)
-
-### Suggesting Enhancements
-
-Enhancement suggestions are tracked as GitHub issues. When creating an enhancement suggestion, please include:
-
-- A clear and descriptive title
-- A detailed description of the proposed enhancement
-- An explanation of why this enhancement would be useful
-- Any relevant examples or mockups
-
-### Pull Requests
-
-- Fill in the required template
-- Follow the coding style of the project
-- Include tests for your changes
-- Document new code based on the project's documentation style
-- End all files with a newline
-
-## Development Workflow
+## Getting Started
 
 1. Fork the repository
-2. Clone your fork: `git clone https://github.com/your-username/nexurejs.git`
-3. Create a new branch: `git checkout -b feature/your-feature-name`
-4. Make your changes
+2. Clone your fork: `git clone https://github.com/yourusername/nexurejs.git`
+3. Install dependencies: `npm install`
+4. Build the project: `npm run build`
 5. Run tests: `npm test`
-6. Commit your changes: `git commit -m "Add some feature"`
-7. Push to the branch: `git push origin feature/your-feature-name`
-8. Submit a pull request
 
-## Styleguides
+## Development Environment
 
-### Git Commit Messages
+### Prerequisites
 
-- Use the present tense ("Add feature" not "Added feature")
-- Use the imperative mood ("Move cursor to..." not "Moves cursor to...")
-- Limit the first line to 72 characters or less
-- Reference issues and pull requests liberally after the first line
+- Node.js (v16 or later)
+- npm or yarn
+- C++ compiler (for native modules)
+- node-gyp
 
-### TypeScript Styleguide
+### Building Native Modules
 
-- Use 2 spaces for indentation
-- Use camelCase for variables and functions
-- Use PascalCase for classes and interfaces
-- Use kebab-case for file names
-- Prefer `const` over `let` when possible
-- Avoid using `any` type when possible
-- Add JSDoc comments for public APIs
+To build the native modules:
 
-### Documentation Styleguide
+```bash
+npm run build:native:test
+```
 
-- Use Markdown for documentation
-- Reference methods and classes with backticks: \`Nexure\`
-- Use code blocks for examples
-- Keep documentation up-to-date with code changes
+This will compile the C++ code and verify that the native modules are working correctly.
 
-## Additional Notes
+## Pull Request Process
 
-### Issue and Pull Request Labels
+1. Create a new branch for your feature or bugfix: `git checkout -b feature/your-feature-name`
+2. Make your changes
+3. Add tests for your changes
+4. Ensure all tests pass: `npm test`
+5. Update documentation if necessary
+6. Commit your changes with a descriptive commit message
+7. Push to your fork: `git push origin feature/your-feature-name`
+8. Submit a pull request to the main repository
 
-- `bug`: Bug reports
-- `enhancement`: Feature requests
-- `documentation`: Documentation improvements
-- `good first issue`: Good for newcomers
-- `help wanted`: Extra attention is needed
+## Coding Standards
+
+- Follow the existing code style
+- Use TypeScript for all new code
+- Write comprehensive tests for new features
+- Document public APIs
+- Keep commits focused and atomic
+
+## Working with Native Modules
+
+When working with the native C++ modules:
+
+1. Make sure you have the necessary build tools installed
+2. Modify the C++ code in the `src/native` directory
+3. Build and test your changes: `npm run build:native:test`
+4. Ensure both the native and JavaScript implementations work correctly
+5. Add benchmarks for performance-critical changes
+
+## Testing
+
+- Write unit tests for all new features
+- Ensure existing tests pass with your changes
+- Add integration tests for complex features
+- Test both native and JavaScript implementations
+
+## Documentation
+
+- Update documentation for any changed functionality
+- Document new features thoroughly
+- Keep API documentation up-to-date
+- Add examples for new features
+
+## Reporting Bugs
+
+When reporting bugs, please include:
+
+- A clear description of the issue
+- Steps to reproduce the problem
+- Expected behavior
+- Actual behavior
+- Environment details (OS, Node.js version, etc.)
+- Any relevant logs or error messages
+
+## Feature Requests
+
+Feature requests are welcome! Please provide:
+
+- A clear description of the feature
+- The motivation for adding this feature
+- Any relevant examples or use cases
+
+## Questions?
+
+If you have any questions about contributing, please open an issue or reach out to the maintainers.
 
 Thank you for contributing to NexureJS!

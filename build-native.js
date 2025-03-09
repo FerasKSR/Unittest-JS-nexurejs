@@ -1,15 +1,15 @@
 /**
  * NexureJS Native Module Build Script
  *
- * This script handles the building of native C++ modules for NexureJS.
- * It provides a convenient way to build and test the native modules.
+ * This script builds the native module for testing purposes.
+ * It uses node-gyp to compile the C++ code and then tests if the module can be loaded.
  */
 
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
-// Colors for console output
+// ANSI color codes for console output
 const colors = {
   reset: '\x1b[0m',
   bright: '\x1b[1m',
@@ -22,23 +22,9 @@ const colors = {
   cyan: '\x1b[36m',
 };
 
-// Log with color
+// Helper function for logging with colors
 function log(message, color = colors.reset) {
   console.log(`${color}${message}${colors.reset}`);
-}
-
-// Execute a command and return its output
-function execute(command, silent = false) {
-  try {
-    if (!silent) {
-      log(`Executing: ${command}`, colors.dim);
-    }
-    return execSync(command, { stdio: silent ? 'ignore' : 'inherit' });
-  } catch (error) {
-    log(`Error executing command: ${command}`, colors.red);
-    log(error.message, colors.red);
-    return false;
-  }
 }
 
 // Check if node-gyp is installed
@@ -51,155 +37,95 @@ function checkNodeGyp() {
   }
 }
 
-// Check if necessary build tools are installed
-function checkBuildTools() {
-  log('Checking build prerequisites...', colors.cyan);
+// Build the native module
+function buildNativeModule() {
+  log('Building native module...', colors.cyan);
 
-  // Check for node-gyp
-  if (!checkNodeGyp()) {
-    log('node-gyp is not installed. Installing...', colors.yellow);
-    execute('npm install -g node-gyp');
-  }
-
-  // Check for python
   try {
-    execSync('python --version || python3 --version', { stdio: 'ignore' });
+    // Clean previous builds
+    execSync('node-gyp clean', { stdio: 'inherit' });
+
+    // Configure the build
+    execSync('node-gyp configure', { stdio: 'inherit' });
+
+    // Build the module
+    execSync('node-gyp build', { stdio: 'inherit' });
+
+    log('Native module built successfully!', colors.green);
+    return true;
   } catch (error) {
-    log('Python is required for building native modules but was not found.', colors.red);
-    log('Please install Python and try again.', colors.red);
+    log(`Error building native module: ${error.message}`, colors.red);
+    return false;
+  }
+}
+
+// Test if the native module can be loaded
+function testNativeModule() {
+  const buildPath = path.join(__dirname, 'build', 'Release');
+  const modulePath = path.join(buildPath, 'nexurejs_native.node');
+
+  if (!fs.existsSync(modulePath)) {
+    log(`Native module not found at ${modulePath}`, colors.red);
     return false;
   }
 
-  // Check for C++ compiler
-  if (process.platform === 'win32') {
-    try {
-      execSync('cl', { stdio: 'ignore' });
-    } catch (error) {
-      log('Visual C++ build tools are required but not found.', colors.red);
-      log('Please install Visual Studio Build Tools and try again.', colors.red);
+  try {
+    const nativeModule = require(modulePath);
+
+    if (typeof nativeModule.isAvailable !== 'function' || !nativeModule.isAvailable()) {
+      log('Native module loaded but isAvailable check failed', colors.yellow);
       return false;
     }
-  } else if (process.platform === 'darwin') {
-    try {
-      execSync('clang --version', { stdio: 'ignore' });
-    } catch (error) {
-      log('Clang compiler is required but not found.', colors.red);
-      log('Please install Xcode Command Line Tools and try again.', colors.red);
-      return false;
+
+    log('Native module loaded and verified successfully!', colors.green);
+    log(`Module version: ${nativeModule.version}`, colors.cyan);
+
+    // Test each component
+    if (nativeModule.HttpParser) {
+      log('HttpParser is available', colors.green);
     }
-  } else {
-    try {
-      execSync('g++ --version', { stdio: 'ignore' });
-    } catch (error) {
-      log('G++ compiler is required but not found.', colors.red);
-      log('Please install build-essential package and try again.', colors.red);
-      return false;
+
+    if (nativeModule.RadixRouter) {
+      log('RadixRouter is available', colors.green);
     }
-  }
 
-  log('All build prerequisites are met!', colors.green);
-  return true;
-}
-
-// Clean build artifacts
-function clean() {
-  log('Cleaning previous build artifacts...', colors.cyan);
-
-  const buildDir = path.join(__dirname, 'build');
-  if (fs.existsSync(buildDir)) {
-    if (process.platform === 'win32') {
-      execute('rmdir /s /q build');
-    } else {
-      execute('rm -rf build');
+    if (nativeModule.JsonProcessor) {
+      log('JsonProcessor is available', colors.green);
     }
-  }
 
-  log('Build directory cleaned!', colors.green);
-}
-
-// Build the native modules
-function build() {
-  log('Building native modules...', colors.cyan);
-
-  // Make sure node-addon-api is installed
-  if (!fs.existsSync(path.join(__dirname, 'node_modules', 'node-addon-api'))) {
-    log('Installing node-addon-api...', colors.yellow);
-    execute('npm install node-addon-api');
-  }
-
-  // Run node-gyp configure and build
-  if (!execute('node-gyp configure')) return false;
-  if (!execute('node-gyp build')) return false;
-
-  log('Native modules built successfully!', colors.green);
-  return true;
-}
-
-// Test the native modules
-function test() {
-  log('Testing native modules...', colors.cyan);
-
-  // Check if the built module exists
-  const buildPath = path.join(__dirname, 'build', 'Release', 'nexurejs_native.node');
-  if (!fs.existsSync(buildPath)) {
-    log('Built module not found. Build may have failed.', colors.red);
+    return true;
+  } catch (error) {
+    log(`Error loading native module: ${error.message}`, colors.red);
     return false;
   }
-
-  // Create a simple test script
-  const testScript = `
-    try {
-      const native = require('./build/Release/nexurejs_native');
-      console.log('Native module loaded successfully!');
-      console.log('Available exports:', Object.keys(native));
-      process.exit(0);
-    } catch (error) {
-      console.error('Failed to load native module:', error.message);
-      process.exit(1);
-    }
-  `;
-
-  fs.writeFileSync('test-native.js', testScript);
-
-  // Run the test script
-  const result = execute('node test-native.js');
-
-  // Clean up
-  fs.unlinkSync('test-native.js');
-
-  if (result === false) {
-    log('Native module test failed!', colors.red);
-    return false;
-  }
-
-  log('Native module test passed!', colors.green);
-  return true;
 }
 
 // Main function
 function main() {
-  log('NexureJS Native Module Build Script', colors.bright + colors.magenta);
-  log('==============================\n', colors.magenta);
+  log('NexureJS Native Module Build Test', colors.bright + colors.blue);
+  log('================================', colors.bright + colors.blue);
 
-  if (!checkBuildTools()) {
+  // Check if node-gyp is installed
+  if (!checkNodeGyp()) {
+    log('node-gyp is not installed. Please install it with: npm install -g node-gyp', colors.red);
     process.exit(1);
   }
 
-  clean();
-
-  if (!build()) {
-    log('Build failed!', colors.red);
+  // Build the native module
+  const buildSuccess = buildNativeModule();
+  if (!buildSuccess) {
+    log('Failed to build native module', colors.red);
     process.exit(1);
   }
 
-  if (!test()) {
-    log('Tests failed!', colors.red);
+  // Test the native module
+  const testSuccess = testNativeModule();
+  if (!testSuccess) {
+    log('Native module test failed', colors.red);
     process.exit(1);
   }
 
-  log('\n==============================', colors.magenta);
   log('Build and test completed successfully!', colors.bright + colors.green);
-  log('The native modules are ready to use.', colors.green);
 }
 
 // Run the main function
