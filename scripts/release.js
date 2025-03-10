@@ -97,7 +97,7 @@ function updateVersion(newVersion) {
 async function updateChangelog(newVersion) {
   console.log(`${colors.blue}Updating CHANGELOG.md...${colors.reset}`);
 
-  const changelogPath = path.join(process.cwd(), 'CHANGELOG.md');
+  const changelogPath = path.join(process.cwd(), 'docs', 'CHANGELOG.md');
   let changelog = fs.readFileSync(changelogPath, 'utf-8');
 
   // Get the date in YYYY-MM-DD format
@@ -112,7 +112,7 @@ async function updateChangelog(newVersion) {
   fs.writeFileSync(changelogPath, newChangelog, 'utf-8');
 
   // Open the changelog for editing
-  console.log(`${colors.yellow}Please review and edit the CHANGELOG.md file.${colors.reset}`);
+  console.log(`${colors.yellow}Please review and edit the CHANGELOG.md file in the docs folder.${colors.reset}`);
 
   // Wait for user to confirm they've edited the changelog
   await prompt(`${colors.bright}Press Enter when you've finished editing the CHANGELOG.md file...${colors.reset}`);
@@ -121,8 +121,8 @@ async function updateChangelog(newVersion) {
 // Helper function to commit changes
 function commitChanges(version) {
   console.log(`${colors.blue}Committing changes...${colors.reset}`);
-  exec('git add package.json package-lock.json CHANGELOG.md');
-  exec(`git commit -m "chore: prepare release v${version}"`);
+  exec('git add package.json package-lock.json docs/CHANGELOG.md');
+  exec(`git commit -m "chore: release v${version}"`);
 }
 
 // Helper function to create and push git tag
@@ -294,7 +294,7 @@ async function createGitHubRelease(version) {
   const [, owner, repo] = repoMatch;
 
   // Extract release notes from CHANGELOG.md
-  const changelog = fs.readFileSync('CHANGELOG.md', 'utf-8');
+  const changelog = fs.readFileSync(path.join(process.cwd(), 'docs', 'CHANGELOG.md'), 'utf-8');
   const releaseNotesRegex = new RegExp(`## \\[${version}\\].*?\\n(.*?)\\n## \\[`, 's');
   const match = changelog.match(releaseNotesRegex);
 
@@ -302,8 +302,8 @@ async function createGitHubRelease(version) {
   if (match && match[1]) {
     releaseNotes = match[1].trim();
   } else {
-    console.log(`${colors.yellow}Could not extract release notes from CHANGELOG.md${colors.reset}`);
-    releaseNotes = await prompt(`${colors.bright}Please enter release notes:${colors.reset}\n`);
+    console.log(`${colors.yellow}Could not extract release notes from docs/CHANGELOG.md${colors.reset}`);
+    releaseNotes = await prompt(`${colors.bright}Please enter release notes:${colors.reset}`);
   }
 
   // Create release
@@ -598,14 +598,14 @@ async function main() {
     if (!isDryRun) {
       await updateChangelog(newVersion);
     } else {
-      console.log(`${colors.yellow}DRY RUN: Would update CHANGELOG.md for version ${newVersion}${colors.reset}`);
+      console.log(`${colors.yellow}DRY RUN: Would update docs/CHANGELOG.md for version ${newVersion}${colors.reset}`);
     }
 
     // Commit changes
     if (!isDryRun) {
       commitChanges(newVersion);
     } else {
-      console.log(`${colors.yellow}DRY RUN: Would commit changes with message "chore: prepare release v${newVersion}"${colors.reset}`);
+      console.log(`${colors.yellow}DRY RUN: Would commit changes with message "chore: release v${newVersion}"${colors.reset}`);
     }
 
     // Create and push git tag
