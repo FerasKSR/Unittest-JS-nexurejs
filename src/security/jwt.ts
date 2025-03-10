@@ -173,8 +173,8 @@ export function verifyJwt(token: string, secret: string, options: JwtOptions = {
   // Decode header
   let header: JwtHeader;
   try {
-    header = JSON.parse(Buffer.from(encodedHeader, 'base64url').toString());
-  } catch (error) {
+    header = JSON.parse(Buffer.from(encodedHeader!, 'base64url').toString());
+  } catch (_error) {
     throw new Error('Invalid JWT header');
   }
 
@@ -190,21 +190,21 @@ export function verifyJwt(token: string, secret: string, options: JwtOptions = {
   const expectedSignature = createHmac(hmacAlgorithm, secret).update(data).digest('base64url');
 
   try {
-    const signatureBuffer = Buffer.from(signature, 'base64url');
+    const signatureBuffer = Buffer.from(signature!, 'base64url');
     const expectedSignatureBuffer = Buffer.from(expectedSignature, 'base64url');
 
     if (!timingSafeEqual(signatureBuffer, expectedSignatureBuffer)) {
       throw new Error('Invalid JWT signature');
     }
-  } catch (error) {
+  } catch (_error) {
     throw new Error('Invalid JWT signature');
   }
 
   // Decode payload
   let payload: JwtPayload;
   try {
-    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString());
-  } catch (error) {
+    payload = JSON.parse(Buffer.from(encodedPayload!, 'base64url').toString());
+  } catch (_error) {
     throw new Error('Invalid JWT payload');
   }
 
@@ -240,7 +240,7 @@ export function verifyJwt(token: string, secret: string, options: JwtOptions = {
 function defaultExtractToken(req: IncomingMessage): string | null {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+  if (!authHeader?.startsWith('Bearer ')) {
     return null;
   }
 
@@ -252,20 +252,20 @@ function defaultExtractToken(req: IncomingMessage): string | null {
  * @param options JWT options
  */
 export function createJwtAuthMiddleware(options: JwtOptions): MiddlewareHandler {
-  const extractToken = options.extractToken || defaultExtractToken;
+  const { secret, extractToken = defaultExtractToken } = options;
 
-  return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
-    const token = extractToken(req);
+  return async (_req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
+    const token = extractToken(_req);
 
     if (!token) {
       throw HttpException.unauthorized('No authentication token provided');
     }
 
     try {
-      const payload = verifyJwt(token, options.secret, options);
+      const payload = verifyJwt(token, secret, options);
 
       // Attach user to request
-      (req as any).user = payload;
+      (_req as any).user = payload;
 
       await next();
     } catch (error) {
