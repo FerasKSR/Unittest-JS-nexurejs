@@ -54,7 +54,7 @@ export class JsonSerializer extends Transform {
   /**
    * Transform implementation
    */
-  _transform(chunk: any, encoding: string, callback: (error?: Error, data?: any) => void): void {
+  override _transform(chunk: any, encoding: string, callback: (error?: Error, data?: any) => void): void {
     try {
       if (this.isFirstChunk) {
         this.isFirstChunk = false;
@@ -85,7 +85,7 @@ export class JsonSerializer extends Transform {
   /**
    * Flush any remaining data
    */
-  _flush(callback: (error?: Error, data?: any) => void): void {
+  override _flush(callback: (error?: Error, data?: any) => void): void {
     // Close any open arrays or objects
     while (this.stack.length > 0) {
       const top = this.stack.pop()!;
@@ -223,7 +223,7 @@ export class JsonParser extends Transform {
   /**
    * Transform implementation
    */
-  _transform(chunk: Buffer | string, encoding: string, callback: (error?: Error, data?: any) => void): void {
+  override _transform(chunk: Buffer | string, encoding: string, callback: (error?: Error, data?: any) => void): void {
     try {
       if (this.complete) {
         callback(new Error('Parser already completed'));
@@ -243,7 +243,7 @@ export class JsonParser extends Transform {
   /**
    * Flush any remaining data
    */
-  _flush(callback: (error?: Error, data?: any) => void): void {
+  override _flush(callback: (error?: Error, data?: any) => void): void {
     try {
       // Try to parse any remaining data
       this.parse();

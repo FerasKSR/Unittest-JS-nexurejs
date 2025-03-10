@@ -64,10 +64,10 @@ npm run release 1.2.3  # For specific versions
 The release script will:
 
 1. Update the version in package.json
-2. Update the CHANGELOG.md file (you'll be prompted to review and edit)
+2. Update the docs/CHANGELOG.md file (you'll be prompted to review and edit)
 3. Commit the changes
 4. Create and push a git tag
-5. Create a GitHub release with release notes from the CHANGELOG.md
+5. Create a GitHub release with release notes from the docs/CHANGELOG.md
 6. Upload prebuilt binaries to the GitHub release with retry logic
 7. Publish the package to npm
 
@@ -90,7 +90,7 @@ If you need to perform the release steps manually:
    npm version <new-version> --no-git-tag-version
    ```
 
-3. Update the CHANGELOG.md file with details of the changes in this release:
+3. Update the docs/CHANGELOG.md file with details of the changes in this release:
    - New features
    - Bug fixes
    - Performance improvements
@@ -98,7 +98,7 @@ If you need to perform the release steps manually:
 
 4. Commit the version and changelog changes:
    ```bash
-   git add package.json CHANGELOG.md
+   git add package.json docs/CHANGELOG.md
    git commit -m "chore: prepare release v<new-version>"
    ```
 
@@ -121,7 +121,7 @@ If you need to perform the release steps manually:
 
    This unified script will:
    - Create a GitHub release for the current version
-   - Extract release notes from CHANGELOG.md
+   - Extract release notes from docs/CHANGELOG.md
    - Upload all prebuilt binaries from the `prebuilds` directory with retry logic
    - Publish the package to npm (if you choose to)
 
@@ -156,7 +156,7 @@ For urgent fixes that need to be released outside the normal release cycle:
 
 2. Make the necessary fixes and commit them.
 
-3. Update the version in `package.json` and update the CHANGELOG.md.
+3. Update the version in `package.json` and update the docs/CHANGELOG.md.
 
 4. Use the release script to complete the process:
    ```bash
@@ -169,7 +169,7 @@ For urgent fixes that need to be released outside the normal release cycle:
 - [ ] Code built successfully
 - [ ] Native modules built for all platforms
 - [ ] Version updated in package.json
-- [ ] CHANGELOG.md updated
+- [ ] docs/CHANGELOG.md updated
 - [ ] Git tag created and pushed
 - [ ] GitHub release created with release notes
 - [ ] Prebuilt binaries uploaded to GitHub release

@@ -207,7 +207,7 @@ export function createCsrfMiddleware(options: CsrfOptions = {}): MiddlewareHandl
 
     // Get token from request
     const requestToken = (req.headers[headerName.toLowerCase()] as string)
-      || ((req as any).body && (req as any).body[fieldName]);
+      || ((req as any).body?.[fieldName]);
 
     // Verify token
     if (!requestToken || !tokenGenerator.verifyToken(requestToken, sessionId)) {

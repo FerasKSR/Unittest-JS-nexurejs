@@ -86,8 +86,8 @@ export function Controller(path: string = '/'): ClassDecorator {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-function createRouteDecorator(method: HttpMethod, path: string = '/', statusCode: number = 200) {
-  return function(target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor) {
+function createRouteDecorator(method: HttpMethod, path: string = '/', statusCode: number = 200): MethodDecorator {
+  return function(target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor): PropertyDescriptor {
     setRouteMetadata({ method, path, statusCode }, target, propertyKey);
     return descriptor;
   };
@@ -98,8 +98,8 @@ function createRouteDecorator(method: HttpMethod, path: string = '/', statusCode
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function Get(path: string = '/', statusCode: number = 200) {
-  return createRouteDecorator(HttpMethod.GET, path, statusCode);
+export function Get(path: string, statusCode = 200): MethodDecorator {
+  return createRouteDecorator(HttpMethod._GET, path, statusCode);
 }
 
 /**
@@ -107,8 +107,8 @@ export function Get(path: string = '/', statusCode: number = 200) {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function Post(path: string = '/', statusCode: number = 201) {
-  return createRouteDecorator(HttpMethod.POST, path, statusCode);
+export function Post(path: string, statusCode = 201): MethodDecorator {
+  return createRouteDecorator(HttpMethod._POST, path, statusCode);
 }
 
 /**
@@ -116,8 +116,8 @@ export function Post(path: string = '/', statusCode: number = 201) {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function Put(path: string = '/', statusCode: number = 200) {
-  return createRouteDecorator(HttpMethod.PUT, path, statusCode);
+export function Put(path: string, statusCode = 200): MethodDecorator {
+  return createRouteDecorator(HttpMethod._PUT, path, statusCode);
 }
 
 /**
@@ -125,8 +125,8 @@ export function Put(path: string = '/', statusCode: number = 200) {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function Delete(path: string = '/', statusCode: number = 200) {
-  return createRouteDecorator(HttpMethod.DELETE, path, statusCode);
+export function Delete(path: string, statusCode = 204): MethodDecorator {
+  return createRouteDecorator(HttpMethod._DELETE, path, statusCode);
 }
 
 /**
@@ -134,8 +134,8 @@ export function Delete(path: string = '/', statusCode: number = 200) {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function Patch(path: string = '/', statusCode: number = 200) {
-  return createRouteDecorator(HttpMethod.PATCH, path, statusCode);
+export function Patch(path: string, statusCode = 200): MethodDecorator {
+  return createRouteDecorator(HttpMethod._PATCH, path, statusCode);
 }
 
 /**
@@ -143,8 +143,8 @@ export function Patch(path: string = '/', statusCode: number = 200) {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function Head(path: string = '/', statusCode: number = 200) {
-  return createRouteDecorator(HttpMethod.HEAD, path, statusCode);
+export function Head(path: string, statusCode = 200): MethodDecorator {
+  return createRouteDecorator(HttpMethod._HEAD, path, statusCode);
 }
 
 /**
@@ -152,8 +152,8 @@ export function Head(path: string = '/', statusCode: number = 200) {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function Options(path: string = '/', statusCode: number = 200) {
-  return createRouteDecorator(HttpMethod.OPTIONS, path, statusCode);
+export function Options(path: string, statusCode = 200): MethodDecorator {
+  return createRouteDecorator(HttpMethod._OPTIONS, path, statusCode);
 }
 
 /**
@@ -161,8 +161,8 @@ export function Options(path: string = '/', statusCode: number = 200) {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-export function All(path: string = '/', statusCode: number = 200) {
-  return createRouteDecorator(HttpMethod.ALL, path, statusCode);
+export function All(path: string, statusCode = 200): MethodDecorator {
+  return createRouteDecorator(HttpMethod._ALL, path, statusCode);
 }
 
 /**

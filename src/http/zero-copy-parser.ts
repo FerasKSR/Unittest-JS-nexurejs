@@ -12,13 +12,13 @@ import { Buffer } from 'node:buffer';
 type HeadersInit = Record<string, string | string[] | undefined>;
 
 // Define constants for common header names to avoid string allocations
-const H_CONTENT_LENGTH = Buffer.from('content-length');
-const H_CONTENT_TYPE = Buffer.from('content-type');
-const H_CONNECTION = Buffer.from('connection');
-const H_TRANSFER_ENCODING = Buffer.from('transfer-encoding');
-const H_HOST = Buffer.from('host');
-const H_ACCEPT = Buffer.from('accept');
-const H_USER_AGENT = Buffer.from('user-agent');
+const _H_CONTENT_LENGTH = Buffer.from('content-length');
+const _H_CONTENT_TYPE = Buffer.from('content-type');
+const _H_CONNECTION = Buffer.from('connection');
+const _H_TRANSFER_ENCODING = Buffer.from('transfer-encoding');
+const _H_HOST = Buffer.from('host');
+const _H_ACCEPT = Buffer.from('accept');
+const _H_USER_AGENT = Buffer.from('user-agent');
 
 // Common HTTP methods as buffers
 const M_GET = Buffer.from('GET');
@@ -37,7 +37,7 @@ const COLON_SPACE = Buffer.from(': ');
 const stringBufferPool = new Map<string, Buffer>();
 
 // Get a buffer from the pool or create a new one
-function getBufferForString(str: string): Buffer {
+function _getBufferForString(str: string): Buffer {
   let buffer = stringBufferPool.get(str);
   if (!buffer) {
     buffer = Buffer.from(str);

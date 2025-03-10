@@ -95,7 +95,7 @@ export class Nexure {
 
       // Run middleware pipeline
       let middlewareIndex = 0;
-      const next = async () => {
+      const next = async (): Promise<void> => {
         if (middlewareIndex < this.middlewares.length) {
           const middleware = this.middlewares[middlewareIndex++];
           await middleware(req, res, next);

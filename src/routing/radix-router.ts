@@ -9,7 +9,7 @@ import { MiddlewareHandler } from '../middleware/middleware.js';
 /**
  * Route handler function
  */
-export type RouteHandler = (req: IncomingMessage, res: ServerResponse) => Promise<any>;
+export type RouteHandler = (_req: IncomingMessage, _res: ServerResponse) => Promise<void>;
 
 /**
  * Route definition
@@ -51,25 +51,10 @@ export interface RadixRouteMatch {
   params: Record<string, string>;
 }
 
-/**
- * Node type in the radix tree
- */
-enum NodeType {
-  /**
-   * Static node (exact match)
-   */
-  STATIC,
-
-  /**
-   * Parameter node (captures a path segment)
-   */
-  PARAM,
-
-  /**
-   * Wildcard node (captures the rest of the path)
-   */
-  WILDCARD
-}
+// Node types
+const _STATIC = 0;
+const _PARAM = 1;
+const _WILDCARD = 2;
 
 /**
  * Node in the radix tree
@@ -78,7 +63,7 @@ class RadixNode {
   /**
    * Node type
    */
-  type: NodeType = NodeType.STATIC;
+  type: number = _STATIC;
 
   /**
    * Path segment
@@ -130,12 +115,12 @@ class RadixNode {
 
       // Find or create a parameter node
       let paramNode = this.children.find(child =>
-        child.type === NodeType.PARAM && child.paramName === paramName
+        child.type === _PARAM && child.paramName === paramName
       );
 
       if (!paramNode) {
         paramNode = new RadixNode();
-        paramNode.type = NodeType.PARAM;
+        paramNode.type = _PARAM;
         paramNode.paramName = paramName;
         this.children.push(paramNode);
       }
@@ -148,11 +133,11 @@ class RadixNode {
     // Check if this is a wildcard segment
     if (segment === '*') {
       // Find or create a wildcard node
-      let wildcardNode = this.children.find(child => child.type === NodeType.WILDCARD);
+      let wildcardNode = this.children.find(child => child.type === _WILDCARD);
 
       if (!wildcardNode) {
         wildcardNode = new RadixNode();
-        wildcardNode.type = NodeType.WILDCARD;
+        wildcardNode.type = _WILDCARD;
         this.children.push(wildcardNode);
       }
 
@@ -164,13 +149,13 @@ class RadixNode {
     // This is a static segment
     // Find or create a static node
     let staticNode = this.children.find(child =>
-      child.type === NodeType.STATIC && child.segment === segment
+      child.type === _STATIC && child.segment === segment
     );
 
     if (!staticNode) {
       staticNode = new RadixNode();
-      staticNode.type = NodeType.STATIC;
-      staticNode.segment = segment;
+      staticNode.type = _STATIC;
+      staticNode.segment = segment!;
       this.children.push(staticNode);
     }
 
@@ -217,8 +202,8 @@ class RadixNode {
       }
 
       // Check for an ALL method match
-      if (this.routes.has(HttpMethod.ALL)) {
-        return this.routes.get(HttpMethod.ALL)!;
+      if (this.routes.has(HttpMethod._ALL)) {
+        return this.routes.get(HttpMethod._ALL)!;
       }
 
       return null;
@@ -228,7 +213,7 @@ class RadixNode {
 
     // Try to match static nodes first (most specific)
     for (const child of this.children) {
-      if (child.type === NodeType.STATIC && child.segment === segment) {
+      if (child.type === _STATIC && child.segment === segment) {
         const route = child.searchInternal(segments, method, params, index + 1);
         if (route) {
           return route;
@@ -238,9 +223,9 @@ class RadixNode {
 
     // Try to match parameter nodes next
     for (const child of this.children) {
-      if (child.type === NodeType.PARAM) {
+      if (child.type === _PARAM) {
         // Store the parameter value
-        params[child.paramName] = segment;
+        params[child.paramName] = segment!;
 
         const route = child.searchInternal(segments, method, params, index + 1);
         if (route) {
@@ -254,15 +239,15 @@ class RadixNode {
 
     // Try to match wildcard nodes last (least specific)
     for (const child of this.children) {
-      if (child.type === NodeType.WILDCARD) {
+      if (child.type === _WILDCARD) {
         // Check for an exact method match
         if (child.routes.has(method)) {
           return child.routes.get(method)!;
         }
 
         // Check for an ALL method match
-        if (child.routes.has(HttpMethod.ALL)) {
-          return child.routes.get(HttpMethod.ALL)!;
+        if (child.routes.has(HttpMethod._ALL)) {
+          return child.routes.get(HttpMethod._ALL)!;
         }
       }
     }

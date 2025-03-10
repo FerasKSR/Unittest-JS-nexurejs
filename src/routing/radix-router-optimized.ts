@@ -15,7 +15,7 @@ import { MiddlewareHandler } from '../middleware/middleware.js';
 import { performance } from 'node:perf_hooks';
 
 // Define route handler type
-export type RouteHandler = (req: IncomingMessage, res: ServerResponse) => Promise<any>;
+export type RouteHandler = (_req: IncomingMessage, _res: ServerResponse) => Promise<void>;
 
 // Define route type
 export interface RadixRoute {
@@ -32,16 +32,14 @@ export interface RadixRouteMatch {
 }
 
 // Node types in radix tree
-enum NodeType {
-  STATIC,    // Exact match
-  PARAM,     // Parameter node (e.g. /:id)
-  WILDCARD   // Wildcard node (e.g. /*)
-}
+const _STATIC = 0;
+const _PARAM = 1;
+const _WILDCARD = 2;
 
 // Memory-efficient node class with optimization for static nodes
 class RadixNode {
   // Node properties
-  type: NodeType = NodeType.STATIC;
+  type: number = _STATIC;
   segment: string = '';
   paramName: string = '';
   children: RadixNode[] = [];
@@ -78,7 +76,7 @@ class RadixNode {
 
   // Reset node to initial state
   reset(): void {
-    this.type = NodeType.STATIC;
+    this.type = _STATIC;
     this.segment = '';
     this.paramName = '';
     this.children = [];
@@ -112,7 +110,7 @@ class RadixNode {
     this.insertInternal(segments, route, 0);
 
     // Build fast paths for common routes (direct children)
-    if (segments.length === 1 && this.type === NodeType.STATIC) {
+    if (segments.length === 1 && this.type === _STATIC) {
       this.fastPaths.set(`${route.method}:${segments[0]}`, this.children.find(c => c.segment === segments[0]) || this);
     }
 
@@ -139,11 +137,11 @@ class RadixNode {
     if (segment.startsWith(':')) {
       // Parameter node
       const paramName = segment.slice(1);
-      let paramNode = this.children.find(child => child.type === NodeType.PARAM);
+      let paramNode = this.children.find(child => child.type === _PARAM);
 
       if (!paramNode) {
         paramNode = RadixNode.getNode();
-        paramNode.type = NodeType.PARAM;
+        paramNode.type = _PARAM;
         paramNode.paramName = paramName;
         this.children.push(paramNode);
       } else if (paramNode.paramName !== paramName) {
@@ -157,11 +155,11 @@ class RadixNode {
     // Check if this is a wildcard segment (*)
     if (segment === '*') {
       // Wildcard node
-      let wildcardNode = this.children.find(child => child.type === NodeType.WILDCARD);
+      let wildcardNode = this.children.find(child => child.type === _WILDCARD);
 
       if (!wildcardNode) {
         wildcardNode = RadixNode.getNode();
-        wildcardNode.type = NodeType.WILDCARD;
+        wildcardNode.type = _WILDCARD;
         this.children.push(wildcardNode);
       }
 
@@ -171,13 +169,13 @@ class RadixNode {
 
     // Static node
     let staticNode = this.children.find(child =>
-      child.type === NodeType.STATIC && child.segment === segment
+      child.type === _STATIC && child.segment === segment
     );
 
     if (!staticNode) {
       staticNode = RadixNode.getNode();
-      staticNode.type = NodeType.STATIC;
-      staticNode.segment = segment;
+      staticNode.type = _STATIC;
+      staticNode.segment = segment!;
       this.children.push(staticNode);
     }
 
@@ -186,7 +184,7 @@ class RadixNode {
 
   // Rebuild the bitmap index for static children
   private rebuildStaticIndex(): void {
-    const staticChildren = this.children.filter(child => child.type === NodeType.STATIC);
+    const staticChildren = this.children.filter(child => child.type === _STATIC);
 
     if (staticChildren.length > 5) { // Only use bitmap for sufficient number of children
       // Create a 256-bit (32 byte) bitmap for ASCII chars
@@ -261,7 +259,7 @@ class RadixNode {
       if (this.staticChildrenIndex[bitmapIndex] & (1 << bitPosition)) {
         // We have at least one child with this first character
         for (const child of this.children) {
-          if (child.type === NodeType.STATIC && child.segment === segment) {
+          if (child.type === _STATIC && child.segment === segment) {
             const route = child.searchInternal(segments, method, params, index + 1);
             if (route) return route;
             break;
@@ -271,7 +269,7 @@ class RadixNode {
     } else {
       // Linear search for small number of children
       for (const child of this.children) {
-        if (child.type === NodeType.STATIC && child.segment === segment) {
+        if (child.type === _STATIC && child.segment === segment) {
           const route = child.searchInternal(segments, method, params, index + 1);
           if (route) return route;
           break;
@@ -281,8 +279,8 @@ class RadixNode {
 
     // If no static match, try parameter nodes
     for (const child of this.children) {
-      if (child.type === NodeType.PARAM) {
-        params[child.paramName] = segment;
+      if (child.type === _PARAM) {
+        params[child.paramName] = segment!;
         const route = child.searchInternal(segments, method, params, index + 1);
         if (route) return route;
         delete params[child.paramName]; // Backtrack
@@ -291,7 +289,7 @@ class RadixNode {
 
     // Finally, try wildcard nodes
     for (const child of this.children) {
-      if (child.type === NodeType.WILDCARD) {
+      if (child.type === _WILDCARD) {
         return child.routes.get(method) || null;
       }
     }

@@ -248,3 +248,30 @@ export class CacheManager {
     return namespace ? `${namespace}:${key}` : key;
   }
 }
+
+export interface CacheAdapter {
+  /**
+   * Get a value from cache
+   */
+  get(_key: string): Promise<any>;
+
+  /**
+   * Set a value in cache
+   */
+  set(_key: string, _value: any, _options?: CacheOptions): Promise<void>;
+
+  /**
+   * Delete a value from cache
+   */
+  del(_key: string): Promise<void>;
+
+  /**
+   * Clear all values from cache
+   */
+  clear(_key?: string): Promise<void>;
+
+  /**
+   * Clear all values from a namespace
+   */
+  clearNamespace(_namespace: string): Promise<void>;
+}

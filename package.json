@@ -1,12 +1,12 @@
 {
   "name": "nexurejs",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "A high-performance, modular Node.js framework with modern developer experience",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p config/tsconfig.json",
-    "build:native": "node-gyp rebuild --config=config/binding.gyp",
+    "build": "tsc -p tsconfig.json",
+    "build:native": "node-gyp rebuild",
     "build:native:test": "node scripts/build-native.js",
     "build:native:all": "BUILD_ALL_PLATFORMS=true node scripts/prebuild.js",
     "install": "node scripts/install.js",
@@ -26,9 +26,7 @@
     "release": "node scripts/release.js",
     "release:patch": "node scripts/release.js patch",
     "release:minor": "node scripts/release.js minor",
-    "release:major": "node scripts/release.js major",
-    "create-github-release": "node scripts/create-github-release.js",
-    "publish-to-npm": "node scripts/publish-to-npm.js"
+    "release:major": "node scripts/release.js major"
   },
   "keywords": [
     "nodejs",

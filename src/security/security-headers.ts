@@ -140,7 +140,7 @@ export function createSecurityHeadersMiddleware(
   const crossOriginResourcePolicy = options.crossOriginResourcePolicy;
   const originAgentCluster = options.originAgentCluster;
 
-  return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
+  return async (_req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
     // Set security headers
     if (contentSecurityPolicy) {
       res.setHeader('Content-Security-Policy', contentSecurityPolicy);

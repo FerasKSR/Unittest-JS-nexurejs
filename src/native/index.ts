@@ -198,7 +198,7 @@ export class HttpParser implements NativeHttpParser {
 
   constructor() {
     const nativeModule = loadNativeBinding();
-    this.useNative = !!(nativeModule && nativeModule.HttpParser && nativeOptions.enabled);
+    this.useNative = !!(nativeModule?.HttpParser && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
@@ -285,28 +285,19 @@ export class HttpParser implements NativeHttpParser {
    * Get performance metrics for HTTP parsing
    * @returns Performance metrics
    */
-  static getPerformanceMetrics() {
+  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number } {
     return {
-      js: {
-        avgTime: HttpParser.jsParseCount > 0 ? HttpParser.jsParseTime / HttpParser.jsParseCount : 0,
-        count: HttpParser.jsParseCount,
-        totalTime: HttpParser.jsParseTime
-      },
-      native: {
-        avgTime: HttpParser.nativeParseCount > 0 ? HttpParser.nativeParseTime / HttpParser.nativeParseCount : 0,
-        count: HttpParser.nativeParseCount,
-        totalTime: HttpParser.nativeParseTime
-      },
-      comparison: HttpParser.nativeParseCount > 0 && HttpParser.jsParseCount > 0
-        ? (HttpParser.jsParseTime / HttpParser.jsParseCount) / (HttpParser.nativeParseTime / HttpParser.nativeParseCount)
-        : 0
+      jsTime: HttpParser.jsParseTime,
+      jsCount: HttpParser.jsParseCount,
+      nativeTime: HttpParser.nativeParseTime,
+      nativeCount: HttpParser.nativeParseCount
     };
   }
 
   /**
    * Reset performance metrics
    */
-  static resetPerformanceMetrics() {
+  static resetPerformanceMetrics(): void {
     HttpParser.jsParseTime = 0;
     HttpParser.jsParseCount = 0;
     HttpParser.nativeParseTime = 0;
@@ -336,7 +327,7 @@ export class RadixRouter {
 
   constructor(options?: { maxCacheSize?: number }) {
     const nativeModule = loadNativeBinding();
-    this.useNative = !!(nativeModule && nativeModule.RadixRouter && nativeOptions.enabled);
+    this.useNative = !!(nativeModule?.RadixRouter && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
@@ -427,28 +418,19 @@ export class RadixRouter {
    * Get performance metrics for route finding
    * @returns Performance metrics
    */
-  static getPerformanceMetrics() {
+  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number } {
     return {
-      js: {
-        avgTime: RadixRouter.jsFindCount > 0 ? RadixRouter.jsFindTime / RadixRouter.jsFindCount : 0,
-        count: RadixRouter.jsFindCount,
-        totalTime: RadixRouter.jsFindTime
-      },
-      native: {
-        avgTime: RadixRouter.nativeFindCount > 0 ? RadixRouter.nativeFindTime / RadixRouter.nativeFindCount : 0,
-        count: RadixRouter.nativeFindCount,
-        totalTime: RadixRouter.nativeFindTime
-      },
-      comparison: RadixRouter.nativeFindCount > 0 && RadixRouter.jsFindCount > 0
-        ? (RadixRouter.jsFindTime / RadixRouter.jsFindCount) / (RadixRouter.nativeFindTime / RadixRouter.nativeFindCount)
-        : 0
+      jsTime: RadixRouter.jsFindTime,
+      jsCount: RadixRouter.jsFindCount,
+      nativeTime: RadixRouter.nativeFindTime,
+      nativeCount: RadixRouter.nativeFindCount
     };
   }
 
   /**
    * Reset performance metrics
    */
-  static resetPerformanceMetrics() {
+  static resetPerformanceMetrics(): void {
     RadixRouter.jsFindTime = 0;
     RadixRouter.jsFindCount = 0;
     RadixRouter.nativeFindTime = 0;
@@ -475,7 +457,7 @@ export class JsonProcessor {
 
   constructor() {
     const nativeModule = loadNativeBinding();
-    this.useNative = !!(nativeModule && nativeModule.JsonProcessor && nativeOptions.enabled);
+    this.useNative = !!(nativeModule?.JsonProcessor && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
@@ -569,45 +551,32 @@ export class JsonProcessor {
    * Get performance metrics for JSON processing
    * @returns Performance metrics
    */
-  static getPerformanceMetrics() {
+  static getPerformanceMetrics(): {
+    jsParseTime: number;
+    jsParseCount: number;
+    jsStringifyTime: number;
+    jsStringifyCount: number;
+    nativeParseTime: number;
+    nativeParseCount: number;
+    nativeStringifyTime: number;
+    nativeStringifyCount: number;
+  } {
     return {
-      parse: {
-        js: {
-          avgTime: JsonProcessor.jsParseCount > 0 ? JsonProcessor.jsParseTime / JsonProcessor.jsParseCount : 0,
-          count: JsonProcessor.jsParseCount,
-          totalTime: JsonProcessor.jsParseTime
-        },
-        native: {
-          avgTime: JsonProcessor.nativeParseCount > 0 ? JsonProcessor.nativeParseTime / JsonProcessor.nativeParseCount : 0,
-          count: JsonProcessor.nativeParseCount,
-          totalTime: JsonProcessor.nativeParseTime
-        },
-        comparison: JsonProcessor.nativeParseCount > 0 && JsonProcessor.jsParseCount > 0
-          ? (JsonProcessor.jsParseTime / JsonProcessor.jsParseCount) / (JsonProcessor.nativeParseTime / JsonProcessor.nativeParseCount)
-          : 0
-      },
-      stringify: {
-        js: {
-          avgTime: JsonProcessor.jsStringifyCount > 0 ? JsonProcessor.jsStringifyTime / JsonProcessor.jsStringifyCount : 0,
-          count: JsonProcessor.jsStringifyCount,
-          totalTime: JsonProcessor.jsStringifyTime
-        },
-        native: {
-          avgTime: JsonProcessor.nativeStringifyCount > 0 ? JsonProcessor.nativeStringifyTime / JsonProcessor.nativeStringifyCount : 0,
-          count: JsonProcessor.nativeStringifyCount,
-          totalTime: JsonProcessor.nativeStringifyTime
-        },
-        comparison: JsonProcessor.nativeStringifyCount > 0 && JsonProcessor.jsStringifyCount > 0
-          ? (JsonProcessor.jsStringifyTime / JsonProcessor.jsStringifyCount) / (JsonProcessor.nativeStringifyTime / JsonProcessor.nativeStringifyCount)
-          : 0
-      }
+      jsParseTime: JsonProcessor.jsParseTime,
+      jsParseCount: JsonProcessor.jsParseCount,
+      jsStringifyTime: JsonProcessor.jsStringifyTime,
+      jsStringifyCount: JsonProcessor.jsStringifyCount,
+      nativeParseTime: JsonProcessor.nativeParseTime,
+      nativeParseCount: JsonProcessor.nativeParseCount,
+      nativeStringifyTime: JsonProcessor.nativeStringifyTime,
+      nativeStringifyCount: JsonProcessor.nativeStringifyCount
     };
   }
 
   /**
    * Reset performance metrics
    */
-  static resetPerformanceMetrics() {
+  static resetPerformanceMetrics(): void {
     JsonProcessor.jsParseTime = 0;
     JsonProcessor.jsParseCount = 0;
     JsonProcessor.jsStringifyTime = 0;
@@ -622,7 +591,7 @@ export class JsonProcessor {
 /**
  * Reset all performance metrics
  */
-export function resetAllPerformanceMetrics() {
+export function resetAllPerformanceMetrics(): void {
   HttpParser.resetPerformanceMetrics();
   RadixRouter.resetPerformanceMetrics();
   JsonProcessor.resetPerformanceMetrics();
@@ -631,7 +600,11 @@ export function resetAllPerformanceMetrics() {
 /**
  * Get all performance metrics
  */
-export function getAllPerformanceMetrics() {
+export function getAllPerformanceMetrics(): {
+  httpParser: ReturnType<typeof HttpParser.getPerformanceMetrics>;
+  radixRouter: ReturnType<typeof RadixRouter.getPerformanceMetrics>;
+  jsonProcessor: ReturnType<typeof JsonProcessor.getPerformanceMetrics>;
+} {
   return {
     httpParser: HttpParser.getPerformanceMetrics(),
     radixRouter: RadixRouter.getPerformanceMetrics(),
