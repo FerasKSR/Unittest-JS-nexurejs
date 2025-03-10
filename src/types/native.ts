@@ -24,9 +24,9 @@ export interface HttpParseResult {
  * Native HTTP parser interface
  */
 export interface NativeHttpParser {
-  parse(buffer: Buffer): HttpParseResult;
-  parseHeaders(buffer: Buffer): Record<string, string>;
-  parseBody(buffer: Buffer, contentLength: number): Buffer;
+  parse(_buffer: Buffer): HttpParseResult;
+  parseHeaders(_buffer: Buffer): Record<string, string>;
+  parseBody(_buffer: Buffer, _contentLength: number): Buffer;
   reset(): void;
 }
 
@@ -34,17 +34,17 @@ export interface NativeHttpParser {
  * Native radix router interface
  */
 export interface NativeRadixRouter {
-  add(method: string, path: string, handler: any): void;
-  find(method: string, path: string): { handler: any; params: Record<string, string>; found: boolean };
-  remove(method: string, path: string): boolean;
+  add(_method: string, _path: string, _handler: any): void;
+  find(_method: string, _path: string): { handler: any; params: Record<string, string>; found: boolean };
+  remove(_method: string, _path: string): boolean;
 }
 
 /**
  * Native JSON processor interface
  */
 export interface NativeJsonProcessor {
-  parse(json: string | Buffer): any;
-  stringify(value: any): string;
-  parseStream(buffer: Buffer): any[];
-  stringifyStream(values: any[]): string;
+  parse(_json: string | Buffer): any;
+  stringify(_value: any): string;
+  parseStream(_buffer: Buffer): any[];
+  stringifyStream(_values: any[]): string;
 }
