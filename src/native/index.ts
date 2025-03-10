@@ -8,9 +8,10 @@ import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { HttpParser as JsHttpParser, HttpParseResult } from '../http/http-parser.js';
+import { JsHttpParser } from '../http/http-parser.js';
 import { RadixRouter as JsRadixRouter } from '../routing/radix-router.js';
 import { HttpMethod } from '../http/http-method.js';
+import type { HttpParseResult, NativeHttpParser } from '../types/native.js';
 
 // Get __dirname equivalent in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -182,11 +183,9 @@ function loadNativeBinding(): any {
 }
 
 /**
- * HTTP Parser Interface
+ * HTTP Parser class that automatically chooses between native and JS implementations
  */
-export { HttpParseResult };
-
-export class HttpParser {
+export class HttpParser implements NativeHttpParser {
   private parser: any;
   private useNative: boolean;
   private jsParser: JsHttpParser | null = null;
@@ -240,6 +239,35 @@ export class HttpParser {
     }
 
     return result;
+  }
+
+  /**
+   * Parse HTTP headers from a buffer
+   * @param buffer Buffer containing HTTP headers
+   * @returns Parsed headers
+   */
+  parseHeaders(buffer: Buffer): Record<string, string> {
+    if (this.useNative && this.parser) {
+      return this.parser.parseHeaders(buffer);
+    } else if (this.jsParser) {
+      return this.jsParser.parseHeaders(buffer);
+    }
+    throw new Error('No HTTP parser implementation available');
+  }
+
+  /**
+   * Parse HTTP body from a buffer
+   * @param buffer Buffer containing HTTP body
+   * @param contentLength Expected content length
+   * @returns Parsed body
+   */
+  parseBody(buffer: Buffer, contentLength: number): Buffer {
+    if (this.useNative && this.parser) {
+      return this.parser.parseBody(buffer, contentLength);
+    } else if (this.jsParser) {
+      return this.jsParser.parseBody(buffer, contentLength);
+    }
+    throw new Error('No HTTP parser implementation available');
   }
 
   /**
