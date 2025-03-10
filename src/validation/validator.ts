@@ -2,6 +2,8 @@
  * Validation system for input validation and sanitization
  */
 
+import { URL } from 'node:url';
+
 /**
  * Validation rule
  */
@@ -93,6 +95,11 @@ export type SanitizerFunction = (
   value: any,
   params?: Record<string, any>
 ) => any;
+
+/**
+ * Custom validator function
+ */
+export type ValidatorFn = (_value: any, _params?: Record<string, any>, _data?: any) => boolean;
 
 /**
  * Validator class
