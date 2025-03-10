@@ -142,7 +142,7 @@ export class Container {
   private getInjectedParams(target: any): any[] {
     const metadata = getInjectionMetadata(target);
 
-    if (!metadata || !metadata.params) {
+    if (!metadata?.params) {
       return [];
     }
 
@@ -163,7 +163,7 @@ export class Container {
   private injectProperties(instance: any, target: any): void {
     const metadata = getInjectionMetadata(target);
 
-    if (!metadata || !metadata.properties) {
+    if (!metadata?.properties) {
       return;
     }
 
