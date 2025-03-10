@@ -6,7 +6,6 @@
 
 import * as http2 from 'node:http2';
 import { IncomingMessage, ServerResponse } from 'node:http';
-import { readFileSync } from 'node:fs';
 import { Socket } from 'node:net';
 import { Http2SecureServer, constants } from 'node:http2';
 import { Router } from '../routing/router.js';
@@ -86,7 +85,7 @@ class Http2ResponseAdapter extends ServerResponse {
     this.stream = req.stream;
   }
 
-  writeHead(statusCode: number, statusMessage?: string | object, headers?: object): this {
+  override writeHead(statusCode: number, statusMessage?: string | object, headers?: object): this {
     this.statusCode = statusCode;
 
     // Handle headers
@@ -107,7 +106,7 @@ class Http2ResponseAdapter extends ServerResponse {
     return this;
   }
 
-  end(
+  override end(
     chunk?: any,
     encodingOrCallback?: BufferEncoding | (() => void),
     callback?: () => void
@@ -130,17 +129,17 @@ class Http2ResponseAdapter extends ServerResponse {
     return this;
   }
 
-  write(
+  override write(
     chunk: any,
-    encodingOrCallback?: BufferEncoding | ((error: Error | null | undefined) => void),
-    callback?: (error: Error | null | undefined) => void
+    encodingOrCallback?: BufferEncoding | ((_error: Error | null | undefined) => void),
+    _callback?: (_error: Error | null | undefined) => void
   ): boolean {
     if (typeof encodingOrCallback === 'function') {
-      callback = encodingOrCallback;
+      _callback = encodingOrCallback;
       encodingOrCallback = undefined;
     }
 
-    return this.stream.write(chunk, encodingOrCallback as BufferEncoding, callback);
+    return this.stream.write(chunk, encodingOrCallback as BufferEncoding, _callback);
   }
 }
 
@@ -215,7 +214,7 @@ export class Http2ServerAdapter {
       // Process middleware
       let middlewareIndex = 0;
 
-      const next = async () => {
+      const next = async (): Promise<void> => {
         if (middlewareIndex < this.middlewares.length) {
           const middleware = this.middlewares[middlewareIndex++];
           await middleware(req, res, next);
