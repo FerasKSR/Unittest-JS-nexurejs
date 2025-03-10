@@ -66,7 +66,7 @@ parentPort.on('message', async (message) => {
         }
       });
     } catch (error) {
-      sendError(error.message, taskId);
+      sendError(/** @type {any} */ (error).message, taskId);
     }
   } else if (type === 'terminate') {
     // Clean up and exit
