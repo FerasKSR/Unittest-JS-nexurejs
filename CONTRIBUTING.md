@@ -10,14 +10,14 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ### Reporting Bugs
 
-- Check if the bug has already been reported in the [Issues](https://github.com/nexurejs/nexurejs/issues)
+- Check if the bug has already been reported in the [Issues](https://github.com/braineanear/nexurejs/issues)
 - If not, create a new issue with a clear title and description
 - Include steps to reproduce, expected behavior, and actual behavior
 - Include code samples, error messages, and screenshots if applicable
 
 ### Suggesting Features
 
-- Check if the feature has already been suggested in the [Issues](https://github.com/nexurejs/nexurejs/issues)
+- Check if the feature has already been suggested in the [Issues](https://github.com/braineanear/nexurejs/issues)
 - If not, create a new issue with a clear title and description
 - Explain why this feature would be useful to most NexureJS users
 
@@ -33,7 +33,7 @@ Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/nexurejs/nexurejs.git
+   git clone https://github.com/braineanear/nexurejs.git
    cd nexurejs
    ```
 
