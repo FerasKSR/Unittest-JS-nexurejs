@@ -51,7 +51,7 @@
     "dependency-injection",
     "performance"
   ],
-  "author": "",
+  "author": "Mahmoud Yasser",
   "license": "MIT",
   "type": "module",
   "devDependencies": {
