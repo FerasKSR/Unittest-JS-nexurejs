@@ -6,6 +6,8 @@
  * that users can download instead of building from source.
  */
 
+/* global console, process */
+
 import fs from 'fs';
 import path from 'path';
 import { execSync } from 'child_process';
@@ -180,18 +182,18 @@ async function main() {
   // Check if node-gyp is installed
   try {
     execute('node-gyp --version', true);
-  } catch (error) {
+  } catch (_error) {
     log('node-gyp is not installed. Installing...', colors.yellow);
     execute('npm install --no-save node-gyp');
   }
 
-  // Get package version
-  let version = '0.1.0';
+  // Get version from package.json
+  let version = '0.0.0';
   try {
     const packageJsonPath = path.join(__dirname, '..', 'package.json');
     const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'));
     version = packageJson.version || version;
-  } catch (error) {
+  } catch (_error) {
     log(`Could not read package.json, using default version ${version}`, colors.yellow);
   }
 
