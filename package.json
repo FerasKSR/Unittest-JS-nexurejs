@@ -5,8 +5,8 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "tsc -p config/tsconfig.json",
-    "build:native": "node-gyp rebuild --config=config/binding.gyp",
+    "build": "tsc -p tsconfig.json",
+    "build:native": "node-gyp rebuild",
     "build:native:test": "node scripts/build-native.js",
     "build:native:all": "BUILD_ALL_PLATFORMS=true node scripts/prebuild.js",
     "install": "node scripts/install.js",
