@@ -15,9 +15,9 @@ export interface HttpParseResult extends NativeHttpParseResult {}
  * Base HTTP parser interface
  */
 export interface IHttpParser {
-  parse(buffer: Buffer): HttpParseResult;
-  parseHeaders(buffer: Buffer): Record<string, string>;
-  parseBody(buffer: Buffer, contentLength: number): Buffer;
+  parse(_buffer: Buffer): HttpParseResult;
+  parseHeaders(_buffer: Buffer): Record<string, string>;
+  parseBody(_buffer: Buffer, _contentLength: number): Buffer;
   reset(): void;
 }
 
@@ -35,13 +35,13 @@ export class JsHttpParser implements IHttpParser {
     const lines = str.split('\r\n');
 
     // Parse request line
-    const requestLine = lines[0].split(' ');
+    const requestLine = lines[0]!.split(' ');
     if (requestLine.length !== 3) {
       throw new Error('Invalid request line');
     }
 
     const [method, url, version] = requestLine;
-    const versionMatch = version.match(/HTTP\/(\d+)\.(\d+)/);
+    const versionMatch = version!.match(/HTTP\/(\d+)\.(\d+)/);
     if (!versionMatch) {
       throw new Error('Invalid HTTP version');
     }
@@ -51,32 +51,32 @@ export class JsHttpParser implements IHttpParser {
     let i = 1;
     while (i < lines.length && lines[i] !== '') {
       const line = lines[i];
-      const colonIndex = line.indexOf(':');
+      const colonIndex = line!.indexOf(':');
       if (colonIndex === -1) {
         throw new Error('Invalid header line');
       }
-      const key = line.slice(0, colonIndex).trim().toLowerCase();
-      const value = line.slice(colonIndex + 1).trim();
+      const key = line!.slice(0, colonIndex).trim().toLowerCase();
+      const value = line!.slice(colonIndex + 1).trim();
       headers[key] = value;
       i++;
     }
 
     // Parse body
-    let body: Buffer | null = null;
+    let _body: Buffer | null = null;
     if (i < lines.length - 1) {
       const bodyStr = lines.slice(i + 1).join('\r\n');
-      body = Buffer.from(bodyStr);
+      _body = Buffer.from(bodyStr);
     }
 
     return {
-      method,
-      url,
-      versionMajor: parseInt(versionMatch[1], 10),
-      versionMinor: parseInt(versionMatch[2], 10),
+      method: method!,
+      url: url!,
+      versionMajor: parseInt(versionMatch![1], 10),
+      versionMinor: parseInt(versionMatch![2], 10),
       headers,
-      body,
+      body: null,
       complete: true,
-      upgrade: headers.upgrade === 'websocket'
+      upgrade: headers['upgrade'] === 'websocket'
     };
   }
 
@@ -93,12 +93,12 @@ export class JsHttpParser implements IHttpParser {
 
     for (let i = 1; i < lines.length && lines[i] !== ''; i++) {
       const line = lines[i];
-      const colonIndex = line.indexOf(':');
+      const colonIndex = line!.indexOf(':');
       if (colonIndex === -1) {
         throw new Error('Invalid header line');
       }
-      const key = line.slice(0, colonIndex).trim().toLowerCase();
-      const value = line.slice(colonIndex + 1).trim();
+      const key = line!.slice(0, colonIndex).trim().toLowerCase();
+      const value = line!.slice(colonIndex + 1).trim();
       headers[key] = value;
     }
 

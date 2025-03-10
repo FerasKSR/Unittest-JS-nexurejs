@@ -1,5 +1,7 @@
 import { IncomingMessage } from 'node:http';
 import { HttpException } from './http-exception.js';
+import { Readable } from 'node:stream';
+import { URLSearchParams } from 'node:url';
 
 /**
  * Parse the request body
@@ -101,7 +103,7 @@ async function parseRaw(req: IncomingMessage): Promise<Buffer> {
       resolve(Buffer.concat(chunks));
     });
 
-    req.on('error', (err) => {
+    req.on('error', (_err) => {
       reject(HttpException.badRequest('Error parsing request body'));
     });
   });
