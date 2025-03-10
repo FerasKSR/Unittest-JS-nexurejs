@@ -29,6 +29,12 @@ const availableBindings: Record<BindingType, any> = {
   [BindingType.URL_PARSER]: null
 };
 
+// Native module types
+const _JSON_PARSER = 'json-parser';
+const _COMPRESSION = 'compression';
+const _CRYPTO = 'crypto';
+const _URL_PARSER = 'url-parser';
+
 /**
  * Try to load a native binding module
  * @param type The binding type to load
@@ -41,7 +47,7 @@ export function tryLoadNativeBinding(type: BindingType, moduleName: string): boo
     availableBindings[type] = binding;
     logger.info(`Native binding loaded for ${type}: ${moduleName}`);
     return true;
-  } catch (error) {
+  } catch (_error) {
     logger.debug(`Native binding not available for ${type}: ${moduleName}`);
     return false;
   }

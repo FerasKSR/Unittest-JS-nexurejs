@@ -2,10 +2,10 @@
  * Log levels
  */
 export enum LogLevel {
-  DEBUG = 'debug',
-  INFO = 'info',
-  WARN = 'warn',
-  ERROR = 'error'
+  _DEBUG,
+  _INFO,
+  _WARN,
+  _ERROR
 }
 
 /**
@@ -45,10 +45,10 @@ export class Logger {
   constructor(options: LoggerOptions | boolean = {}) {
     if (typeof options === 'boolean') {
       this.enabled = options;
-      this.level = LogLevel.INFO;
+      this.level = LogLevel._INFO;
     } else {
       this.enabled = options.enabled !== false;
-      this.level = options.level || LogLevel.INFO;
+      this.level = options.level || LogLevel._INFO;
       this.handler = options.handler;
     }
   }
@@ -59,7 +59,7 @@ export class Logger {
    * @param args Additional arguments
    */
   debug(message: string, ...args: any[]): void {
-    this.log(LogLevel.DEBUG, message, ...args);
+    this.log(LogLevel._DEBUG, message, ...args);
   }
 
   /**
@@ -68,7 +68,7 @@ export class Logger {
    * @param args Additional arguments
    */
   info(message: string, ...args: any[]): void {
-    this.log(LogLevel.INFO, message, ...args);
+    this.log(LogLevel._INFO, message, ...args);
   }
 
   /**
@@ -77,7 +77,7 @@ export class Logger {
    * @param args Additional arguments
    */
   warn(message: string, ...args: any[]): void {
-    this.log(LogLevel.WARN, message, ...args);
+    this.log(LogLevel._WARN, message, ...args);
   }
 
   /**
@@ -86,7 +86,7 @@ export class Logger {
    * @param args Additional arguments
    */
   error(message: string, ...args: any[]): void {
-    this.log(LogLevel.ERROR, message, ...args);
+    this.log(LogLevel._ERROR, message, ...args);
   }
 
   /**
@@ -106,19 +106,20 @@ export class Logger {
     }
 
     const timestamp = new Date().toISOString();
-    const formattedMessage = `[${timestamp}] [${level.toUpperCase()}] ${message}`;
+    const levelName = LogLevel[level].substring(1);
+    const formattedMessage = `[${timestamp}] [${levelName}] ${message}`;
 
     switch (level) {
-      case LogLevel.DEBUG:
+      case LogLevel._DEBUG:
         console.debug(formattedMessage, ...args);
         break;
-      case LogLevel.INFO:
+      case LogLevel._INFO:
         console.info(formattedMessage, ...args);
         break;
-      case LogLevel.WARN:
+      case LogLevel._WARN:
         console.warn(formattedMessage, ...args);
         break;
-      case LogLevel.ERROR:
+      case LogLevel._ERROR:
         console.error(formattedMessage, ...args);
         break;
     }
@@ -129,10 +130,18 @@ export class Logger {
    * @param level The log level to check
    */
   private shouldLog(level: LogLevel): boolean {
-    const levels = [LogLevel.DEBUG, LogLevel.INFO, LogLevel.WARN, LogLevel.ERROR];
+    const levels = [LogLevel._DEBUG, LogLevel._INFO, LogLevel._WARN, LogLevel._ERROR];
     const levelIndex = levels.indexOf(level);
     const minLevelIndex = levels.indexOf(this.level);
 
     return levelIndex >= minLevelIndex;
+  }
+
+  setHandler(_level: LogLevel, _message: string, ..._args: any[]): void {
+    // ... existing code ...
+  }
+
+  setCustomHandler(_level: LogLevel, _message: string, ..._args: any[]): void {
+    // ... existing code ...
   }
 }
