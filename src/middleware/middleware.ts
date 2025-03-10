@@ -4,9 +4,9 @@ import { IncomingMessage, ServerResponse } from 'node:http';
  * Type definition for middleware handlers
  */
 export type MiddlewareHandler = (
-  req: IncomingMessage,
-  res: ServerResponse,
-  next: () => Promise<void>
+  _req: IncomingMessage,
+  _res: ServerResponse,
+  _next: () => Promise<void>
 ) => Promise<void>;
 
 /**
@@ -16,7 +16,7 @@ export abstract class Middleware {
   /**
    * Method to be implemented by middleware classes
    */
-  abstract use(req: IncomingMessage, res: ServerResponse, next: () => Promise<void>): Promise<void>;
+  abstract use(_req: IncomingMessage, _res: ServerResponse, _next: () => Promise<void>): Promise<void>;
 
   /**
    * Returns the middleware handler
