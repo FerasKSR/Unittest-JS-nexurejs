@@ -8,11 +8,12 @@ A high-performance, lightweight Node.js framework with native C++ modules for ma
 
 [![npm version](https://img.shields.io/npm/v/nexurejs.svg)](https://www.npmjs.com/package/nexurejs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Node.js CI](https://github.com/nexurejs/nexurejs/actions/workflows/node.js.yml/badge.svg)](https://github.com/nexurejs/nexurejs/actions/workflows/node.js.yml)
+[![Test](https://github.com/nexurejs/nexurejs/actions/workflows/test.yml/badge.svg)](https://github.com/nexurejs/nexurejs/actions/workflows/test.yml)
 
 ## Features
 
 - **High Performance**: Optimized for speed with native C++ modules
+- **Cross-Platform**: Fully supported on Linux, macOS, and Windows
 - **Lightweight**: Minimal dependencies and small footprint
 - **Modern**: Built with TypeScript and modern JavaScript features
 - **Flexible**: Modular design allows for easy customization
@@ -27,6 +28,16 @@ NexureJS includes native C++ modules for performance-critical operations:
 - **JSON Processor**: High-performance JSON parsing and stringification
 
 These native modules can provide up to 10x performance improvement over pure JavaScript implementations. **Native modules are enabled by default** for maximum performance.
+
+## Cross-Platform Support
+
+NexureJS is fully tested and supported on:
+
+- **Linux** (Ubuntu, Debian, etc.)
+- **macOS** (Intel and Apple Silicon)
+- **Windows** (10, 11)
+
+Prebuilt binaries are available for common platforms and architectures, with automatic fallback to building from source when needed.
 
 ## Installation
 
@@ -140,6 +151,19 @@ For detailed documentation, see the [docs](./docs) directory:
   - Python 2.7 or 3.x
   - node-gyp
 
+### Platform-Specific Requirements
+
+**Windows:**
+- Visual Studio Build Tools
+- Windows-build-tools (`npm install --global --production windows-build-tools`)
+
+**macOS:**
+- Xcode Command Line Tools (`xcode-select --install`)
+
+**Linux:**
+- build-essential package (`sudo apt-get install build-essential`)
+- Python 3 (`sudo apt-get install python3`)
+
 ## Contributing
 
 Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
@@ -147,8 +171,6 @@ Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for d
 ## Releasing
 
 NexureJS follows [Semantic Versioning](https://semver.org/) for releases.
-
-### Manual Release
 
 To create a new release:
 
@@ -166,17 +188,9 @@ npm run release:major
 npm run release 1.2.3
 ```
 
+The release script handles version bumping, changelog updates, git tagging, GitHub releases, prebuilt binary uploads, and npm publishing.
+
 For detailed information about the release process, see [Release Documentation](./docs/releasing.md).
-
-### Automated Release
-
-Releases can also be triggered via GitHub Actions:
-
-1. Go to the [Actions tab](https://github.com/nexurejs/nexurejs/actions)
-2. Select the "Release" workflow
-3. Click "Run workflow"
-4. Enter the version type (patch, minor, major) or a specific version number
-5. Click "Run workflow"
 
 ## License
 

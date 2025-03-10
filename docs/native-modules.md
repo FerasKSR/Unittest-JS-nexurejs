@@ -10,6 +10,16 @@ The native modules in NexureJS include:
 2. **Radix Router**: Efficient route matching and parameter extraction
 3. **JSON Processor**: High-performance JSON parsing and stringification
 
+## Cross-Platform Support
+
+NexureJS native modules are fully supported on:
+
+- **Linux** (x64, arm64)
+- **macOS** (x64, arm64)
+- **Windows** (x64)
+
+Prebuilt binaries are available for these platforms, and the installation process will automatically download the appropriate binary for your system. If a prebuilt binary is not available, the installation will fall back to building from source.
+
 ## Performance Benefits
 
 The native modules provide significant performance improvements:
@@ -37,6 +47,19 @@ To build from source, you need:
 - Python 2.7 or 3.x
 - node-gyp
 
+#### Platform-Specific Requirements
+
+**Windows:**
+- Visual Studio Build Tools
+- Windows-build-tools (`npm install --global --production windows-build-tools`)
+
+**macOS:**
+- Xcode Command Line Tools (`xcode-select --install`)
+
+**Linux:**
+- build-essential package (`sudo apt-get install build-essential`)
+- Python 3 (`sudo apt-get install python3`)
+
 ### Building from Source
 
 If you want to build the native modules from source:
@@ -49,6 +72,12 @@ For development and testing:
 
 ```bash
 npm run build:native:test
+```
+
+For building on all supported platforms (typically done in CI):
+
+```bash
+npm run build:native:all
 ```
 
 ## Usage
@@ -245,7 +274,30 @@ If you encounter build errors, make sure you have the necessary build tools inst
 - Python 2.7 or 3.x
 - node-gyp
 
-On Windows, you may need to install the Visual Studio Build Tools. On macOS, you may need to install the Xcode Command Line Tools. On Linux, you may need to install the build-essential package.
+On Windows, you may need to install the Visual Studio Build Tools:
+```bash
+npm install --global --production windows-build-tools
+```
+
+On macOS, you may need to install the Xcode Command Line Tools:
+```bash
+xcode-select --install
+```
+
+On Linux, you may need to install the build-essential package:
+```bash
+sudo apt-get update
+sudo apt-get install -y build-essential python3
+```
+
+### C++ Standard Issues
+
+NexureJS native modules require C++17 support. If you encounter compilation errors related to C++ features, ensure your compiler supports C++17:
+
+```bash
+# When building manually, specify C++17
+CXXFLAGS="-std=c++17" npm run build:native
+```
 
 ### Performance Issues
 
