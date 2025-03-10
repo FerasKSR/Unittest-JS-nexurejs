@@ -7,7 +7,6 @@
 import { signJwt, verifyJwt, createJwtAuthMiddleware } from '../src/security/jwt.js';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
-import assert from 'node:assert';
 
 // Mock request and response objects
 function createMockRequest(headers: Record<string, string> = {}): IncomingMessage {
@@ -40,10 +39,7 @@ function createMockResponse(): ServerResponse {
   return res;
 }
 
-// Test JWT token signing and verification
-async function testJwtSignAndVerify() {
-  console.log('Testing JWT token signing and verification...');
-
+describe('JWT Authentication', () => {
   const secret = 'test-secret-key';
   const payload = {
     sub: '123',
@@ -51,161 +47,103 @@ async function testJwtSignAndVerify() {
     role: 'user'
   };
 
-  // Sign token
-  const token = signJwt(payload, secret);
-  console.log('✓ Token generated successfully');
+  describe('JWT token signing and verification', () => {
+    it('should sign and verify tokens correctly', () => {
+      // Sign token
+      const token = signJwt(payload, secret);
+      expect(token).toBeTruthy();
 
-  // Verify token
-  const verified = verifyJwt(token, secret);
-  console.log('✓ Token verified successfully');
+      // Verify token
+      const verified = verifyJwt(token, secret);
+      expect(verified).toBeTruthy();
 
-  // Check payload
-  assert.strictEqual(verified.sub, payload.sub);
-  assert.strictEqual(verified.username, payload.username);
-  assert.strictEqual(verified.role, payload.role);
-  console.log('✓ Payload matches original data');
+      // Check payload
+      expect(verified.sub).toBe(payload.sub);
+      expect(verified.username).toBe(payload.username);
+      expect(verified.role).toBe(payload.role);
 
-  // Check expiration
-  assert(verified.exp && verified.exp > Math.floor(Date.now() / 1000));
-  console.log('✓ Expiration time set correctly');
-
-  return true;
-}
-
-// Test JWT middleware with valid token
-async function testJwtMiddlewareWithValidToken() {
-  console.log('\nTesting JWT middleware with valid token...');
-
-  const secret = 'test-secret-key';
-  const payload = {
-    sub: '123',
-    username: 'testuser',
-    role: 'user'
-  };
-
-  // Sign token
-  const token = signJwt(payload, secret);
-
-  // Create middleware
-  const jwtMiddleware = createJwtAuthMiddleware({ secret });
-
-  // Create mock request with token
-  const req = createMockRequest({
-    'authorization': `Bearer ${token}`
+      // Check expiration
+      expect(verified.exp).toBeDefined();
+      expect(verified.exp).toBeGreaterThan(Math.floor(Date.now() / 1000));
+    });
   });
 
-  // Create mock response
-  const res = createMockResponse();
+  describe('JWT middleware', () => {
+    it('should handle valid tokens correctly', async () => {
+      // Sign token
+      const token = signJwt(payload, secret);
 
-  // Create next function
-  let nextCalled = false;
-  const next = async () => {
-    nextCalled = true;
-  };
+      // Create middleware
+      const jwtMiddleware = createJwtAuthMiddleware({ secret });
 
-  // Call middleware
-  await jwtMiddleware(req, res, next);
+      // Create mock request with token
+      const req = createMockRequest({
+        'authorization': `Bearer ${token}`
+      });
 
-  // Check if next was called
-  assert(nextCalled, 'Next function should be called');
-  console.log('✓ Next function called');
+      // Create mock response
+      const res = createMockResponse();
 
-  // Check if user was attached to request
-  assert((req as any).user, 'User should be attached to request');
-  assert.strictEqual((req as any).user.sub, payload.sub);
-  assert.strictEqual((req as any).user.username, payload.username);
-  assert.strictEqual((req as any).user.role, payload.role);
-  console.log('✓ User attached to request');
+      // Create next function
+      const next = jest.fn();
 
-  return true;
-}
+      // Call middleware
+      await jwtMiddleware(req, res, next);
 
-// Test JWT middleware with invalid token
-async function testJwtMiddlewareWithInvalidToken() {
-  console.log('\nTesting JWT middleware with invalid token...');
+      // Check if next was called
+      expect(next).toHaveBeenCalled();
 
-  const secret = 'test-secret-key';
+      // Check if user was attached to request
+      expect((req as any).user).toBeDefined();
+      expect((req as any).user.sub).toBe(payload.sub);
+      expect((req as any).user.username).toBe(payload.username);
+      expect((req as any).user.role).toBe(payload.role);
+    });
 
-  // Create middleware
-  const jwtMiddleware = createJwtAuthMiddleware({ secret });
+    it('should reject invalid tokens', async () => {
+      // Create middleware
+      const jwtMiddleware = createJwtAuthMiddleware({ secret });
 
-  // Create mock request with invalid token
-  const req = createMockRequest({
-    'authorization': 'Bearer invalid.token.here'
+      // Create mock request with invalid token
+      const req = createMockRequest({
+        'authorization': 'Bearer invalid.token.here'
+      });
+
+      // Create mock response
+      const res = createMockResponse();
+
+      // Create next function
+      const next = jest.fn();
+
+      // Call middleware and expect error
+      await expect(jwtMiddleware(req, res, next))
+        .rejects
+        .toThrow();
+
+      // Check that next was not called
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('should reject missing tokens', async () => {
+      // Create middleware
+      const jwtMiddleware = createJwtAuthMiddleware({ secret });
+
+      // Create mock request without token
+      const req = createMockRequest();
+
+      // Create mock response
+      const res = createMockResponse();
+
+      // Create next function
+      const next = jest.fn();
+
+      // Call middleware and expect error
+      await expect(jwtMiddleware(req, res, next))
+        .rejects
+        .toThrow();
+
+      // Check that next was not called
+      expect(next).not.toHaveBeenCalled();
+    });
   });
-
-  // Create mock response
-  const res = createMockResponse();
-
-  // Create next function
-  let nextCalled = false;
-  const next = async () => {
-    nextCalled = true;
-  };
-
-  // Call middleware and expect error
-  try {
-    await jwtMiddleware(req, res, next);
-    assert.fail('Middleware should throw an error for invalid token');
-  } catch (error) {
-    console.log('✓ Middleware rejected invalid token');
-    assert(!nextCalled, 'Next function should not be called');
-    console.log('✓ Next function not called');
-  }
-
-  return true;
-}
-
-// Test JWT middleware with missing token
-async function testJwtMiddlewareWithMissingToken() {
-  console.log('\nTesting JWT middleware with missing token...');
-
-  const secret = 'test-secret-key';
-
-  // Create middleware
-  const jwtMiddleware = createJwtAuthMiddleware({ secret });
-
-  // Create mock request without token
-  const req = createMockRequest();
-
-  // Create mock response
-  const res = createMockResponse();
-
-  // Create next function
-  let nextCalled = false;
-  const next = async () => {
-    nextCalled = true;
-  };
-
-  // Call middleware and expect error
-  try {
-    await jwtMiddleware(req, res, next);
-    assert.fail('Middleware should throw an error for missing token');
-  } catch (error) {
-    console.log('✓ Middleware rejected request with missing token');
-    assert(!nextCalled, 'Next function should not be called');
-    console.log('✓ Next function not called');
-  }
-
-  return true;
-}
-
-// Run all tests
-async function runTests() {
-  console.log('=== JWT Authentication Tests ===\n');
-
-  try {
-    await testJwtSignAndVerify();
-    await testJwtMiddlewareWithValidToken();
-    await testJwtMiddlewareWithInvalidToken();
-    await testJwtMiddlewareWithMissingToken();
-
-    console.log('\n✅ All tests passed!');
-  } catch (error) {
-    console.error('\n❌ Test failed:', error);
-    process.exit(1);
-  }
-}
-
-// Run tests
-runTests();
+});
