@@ -2,7 +2,7 @@ import { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
 import { Container } from '../di/container.js';
 import { HttpMethod } from '../http/http-method.js';
-import { RouteMetadata, getRouteMetadata } from '../decorators/route-decorators.js';
+import { getRouteMetadata } from '../decorators/route-decorators.js';
 import { MiddlewareHandler, composeMiddleware } from '../middleware/middleware.js';
 import { parseBody } from '../http/body-parser.js';
 import { HttpException } from '../http/http-exception.js';
@@ -10,7 +10,7 @@ import { HttpException } from '../http/http-exception.js';
 interface Route {
   path: string;
   method: HttpMethod;
-  handler: (req: IncomingMessage, res: ServerResponse) => Promise<any>;
+  handler: (_req: IncomingMessage, _res: ServerResponse) => Promise<any>;
   middlewares: MiddlewareHandler[];
   controller: any;
 }
@@ -37,7 +37,7 @@ export class Router {
     const controllerInstance = container.resolve(controller);
     const controllerMetadata = getRouteMetadata(controller);
 
-    if (!controllerMetadata || !controllerMetadata.path) {
+    if (!controllerMetadata?.path) {
       return;
     }
 
@@ -49,14 +49,14 @@ export class Router {
       if (propertyKey === 'constructor') continue;
 
       const routeMetadata = getRouteMetadata(controller.prototype, propertyKey);
-      if (!routeMetadata || !routeMetadata.method) continue;
+      if (!routeMetadata?.method) continue;
 
       const routePath = this.normalizePath(routeMetadata.path || '/');
       const fullPath = this.combinePaths(this.globalPrefix, controllerPath, routePath);
       const methodMiddlewares = routeMetadata.middlewares || [];
 
       // Create route handler
-      const routeHandler = async (req: IncomingMessage, res: ServerResponse) => {
+      const routeHandler = async (req: IncomingMessage, res: ServerResponse): Promise<any> => {
         const method = controller.prototype[propertyKey];
         const params = this.extractParams(req);
         const query = this.extractQuery(req);
@@ -157,7 +157,7 @@ export class Router {
     const paramNames: string[] = [];
     let pattern = routePath
       .replace(/\/+$/, '')  // Remove trailing slashes
-      .replace(/\/:([^\/]+)/g, (_, paramName) => {
+      .replace(/\/:([^/]+)/g, (_, paramName) => {
         paramNames.push(paramName);
         return '/([^/]+)';
       })
