@@ -44,7 +44,7 @@ export function validateBody(
   const sanitize = options.sanitize !== false;
   const statusCode = options.statusCode || 400;
 
-  return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
+  return async (req: IncomingMessage, _res: ServerResponse, next: () => Promise<void>) => {
     // Skip validation for methods that don't have a body
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
       return next();
@@ -89,7 +89,7 @@ export function validateQuery(
   const sanitize = options.sanitize !== false;
   const statusCode = options.statusCode || 400;
 
-  return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
+  return async (req: IncomingMessage, _res: ServerResponse, next: () => Promise<void>) => {
     // Get query parameters
     const query = (req as any).query || {};
 
@@ -129,7 +129,7 @@ export function validateParams(
   const sanitize = options.sanitize !== false;
   const statusCode = options.statusCode || 400;
 
-  return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
+  return async (req: IncomingMessage, _res: ServerResponse, next: () => Promise<void>) => {
     // Get parameters
     const params = (req as any).params || {};
 
