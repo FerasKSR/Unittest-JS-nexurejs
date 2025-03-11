@@ -23,9 +23,14 @@ A high-performance, lightweight Node.js framework with native C++ modules for ma
 
 NexureJS includes native C++ modules for performance-critical operations:
 
+### Core Modules
+
 - **HTTP Parser**: Ultra-fast HTTP request parsing
 - **Radix Router**: Efficient route matching and parameter extraction
 - **JSON Processor**: High-performance JSON parsing and stringification
+- **URL Parser**: Fast URL and query string parsing
+- **Schema Validator**: Efficient JSON schema validation
+- **Compression**: High-performance zlib compression and decompression
 
 These native modules can provide up to 10x performance improvement over pure JavaScript implementations. **Native modules are enabled by default** for maximum performance.
 
@@ -80,6 +85,34 @@ configureNativeModules({
   verbose: false,       // Enable/disable verbose logging (default: false)
   maxCacheSize: 1000    // Maximum size for route cache (default: 1000)
 });
+```
+
+```javascript
+import {
+  UrlParser,
+  SchemaValidator,
+  Compression
+} from 'nexurejs/native';
+
+// Fast URL parsing
+const urlParser = new UrlParser();
+const parsedUrl = urlParser.parse('https://example.com/path?query=value');
+const queryParams = urlParser.parseQueryString('a=1&b=2');
+
+// Efficient schema validation
+const validator = new SchemaValidator();
+const schema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', minLength: 3 }
+  }
+};
+const result = validator.validate(schema, { name: 'test' });
+
+// High-performance compression
+const compression = new Compression();
+const compressed = compression.compress('large text or buffer');
+const decompressed = compression.decompress(compressed, true); // true to get string
 ```
 
 ## Performance Metrics
@@ -154,13 +187,16 @@ For detailed documentation, see the [docs](./docs) directory:
 ### Platform-Specific Requirements
 
 **Windows:**
+
 - Visual Studio Build Tools
 - Windows-build-tools (`npm install --global --production windows-build-tools`)
 
 **macOS:**
+
 - Xcode Command Line Tools (`xcode-select --install`)
 
 **Linux:**
+
 - build-essential package (`sudo apt-get install build-essential`)
 - Python 3 (`sudo apt-get install python3`)
 

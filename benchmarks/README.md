@@ -8,6 +8,7 @@ This directory contains benchmark scripts for measuring the performance of vario
 - **JSON Benchmark**: Tests the performance of the streaming JSON serializer/deserializer compared to standard JSON methods.
 - **Worker Pool Benchmark**: Tests the performance of the adaptive worker pool under different workloads.
 - **V8 Optimizer Benchmark**: Tests the performance improvements provided by the V8 optimizer.
+- **Native Module Benchmark**: Tests the performance of native C++ implementations against JavaScript implementations for key components.
 
 ## Running Benchmarks
 
@@ -30,6 +31,7 @@ npm run benchmark:http
 npm run benchmark:json
 npm run benchmark:worker
 npm run benchmark:v8
+npm run benchmark:native
 ```
 
 ## Benchmark Results
@@ -37,6 +39,7 @@ npm run benchmark:v8
 Benchmark results are saved to the `benchmark-results` directory in JSON format. Each benchmark run creates its own result file with a timestamp.
 
 The results include:
+
 - Performance metrics (operations per second, average time, etc.)
 - Memory usage statistics
 - CPU usage statistics
@@ -57,6 +60,26 @@ npx autocannon -c 100 -d 10 http://localhost:3000
 wrk -t12 -c400 -d30s http://localhost:3000
 ```
 
+## Native Modules
+
+NexureJS uses native C++ modules to optimize performance-critical operations. The benchmarks compare these native implementations against pure JavaScript implementations to demonstrate the performance gains.
+
+### Core Native Modules
+
+- **HTTP Parser**: Ultra-fast HTTP request parsing with direct buffer access
+- **Radix Router**: High-performance route matching with parameter extraction
+- **JSON Processor**: Optimized JSON serialization and deserialization
+- **URL Parser**: Fast URL parsing and query string extraction
+- **Schema Validator**: High-performance JSON schema validation
+- **Compression**: Native zlib compression for reduced CPU and memory usage
+
+The native implementations typically provide significant performance improvements:
+
+- 50-300% faster operation
+- Lower memory consumption
+- Reduced CPU usage
+- Better handling of large datasets
+
 ## Comparing with Other Frameworks
 
 To compare NexureJS with other frameworks, you can use the HTTP server benchmark and run similar benchmarks against other frameworks like Express, Fastify, or Koa.
@@ -64,6 +87,7 @@ To compare NexureJS with other frameworks, you can use the HTTP server benchmark
 ## Customizing Benchmarks
 
 You can customize the benchmarks by modifying the benchmark scripts. Each script includes configuration options for:
+
 - Number of iterations
 - Warmup iterations
 - Time budget

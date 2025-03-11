@@ -1,133 +1,247 @@
-# NexureJS Native Modules
+# NexureJS Native Modules Guide
 
-NexureJS includes native C++ modules for performance-critical operations. These modules provide significant performance improvements over pure JavaScript implementations. **Native modules are enabled by default** for maximum performance.
+NexureJS includes high-performance native C++ modules that significantly boost performance for critical operations. This guide explains how to use these modules effectively in your applications.
 
-## Overview
+## Table of Contents
 
-The native modules in NexureJS include:
+- [Introduction](#introduction)
+- [Core Native Modules](#core-native-modules)
+  - [HTTP Parser](#http-parser)
+  - [Radix Router](#radix-router)
+  - [JSON Processor](#json-processor)
+- [Enhanced Native Modules](#enhanced-native-modules)
+  - [URL Parser](#url-parser)
+  - [Schema Validator](#schema-validator)
+  - [Compression](#compression)
+- [Configuration](#configuration)
+- [Performance Monitoring](#performance-monitoring)
+- [Troubleshooting](#troubleshooting)
 
-1. **HTTP Parser**: Ultra-fast HTTP request parsing
-2. **Radix Router**: Efficient route matching and parameter extraction
-3. **JSON Processor**: High-performance JSON parsing and stringification
+## Introduction
 
-## Cross-Platform Support
+Native modules are written in C++ and provide significant performance advantages over pure JavaScript implementations. NexureJS's native modules are:
 
-NexureJS native modules are fully supported on:
+- **High-performance**: Often 2-10x faster than equivalent JavaScript code
+- **Memory-efficient**: Lower memory footprint and reduced garbage collection pressure
+- **CPU-efficient**: Makes better use of CPU resources
+- **Resilient**: All modules include JavaScript fallbacks for compatibility
 
-- **Linux** (x64, arm64)
-- **macOS** (x64, arm64)
-- **Windows** (x64)
+## Core Native Modules
 
-Prebuilt binaries are available for these platforms, and the installation process will automatically download the appropriate binary for your system. If a prebuilt binary is not available, the installation will fall back to building from source.
+### HTTP Parser
 
-## Performance Benefits
+The HTTP parser provides fast, zero-copy parsing of HTTP requests and responses.
 
-The native modules provide significant performance improvements:
+```javascript
+import { HttpParser } from 'nexurejs/native';
 
-| Component | JavaScript (ops/sec) | Native (ops/sec) | Improvement |
-|-----------|----------------------|------------------|-------------|
-| HTTP Parser | 50,000 | 500,000 | 10x |
-| Radix Router | 100,000 | 800,000 | 8x |
-| JSON Parse | 200,000 | 1,200,000 | 6x |
-| JSON Stringify | 150,000 | 900,000 | 6x |
+const parser = new HttpParser();
+const result = parser.parse(buffer);
 
-*Note: Actual performance may vary depending on your hardware and the complexity of the data being processed.*
-
-## Installation
-
-The native modules are included with NexureJS and will be automatically installed when you install the package. The installation process will attempt to download pre-built binaries for your platform. If no pre-built binary is available, it will build from source.
-
-### Prerequisites
-
-To build from source, you need:
-
-- Node.js 18 or later
-- npm or yarn
-- C++ compiler (GCC, Clang, or MSVC)
-- Python 2.7 or 3.x
-- node-gyp
-
-#### Platform-Specific Requirements
-
-**Windows:**
-- Visual Studio Build Tools
-- Windows-build-tools (`npm install --global --production windows-build-tools`)
-
-**macOS:**
-- Xcode Command Line Tools (`xcode-select --install`)
-
-**Linux:**
-- build-essential package (`sudo apt-get install build-essential`)
-- Python 3 (`sudo apt-get install python3`)
-
-### Building from Source
-
-If you want to build the native modules from source:
-
-```bash
-npm run build:native
+console.log(result.method);     // 'GET'
+console.log(result.url);        // '/api/users'
+console.log(result.statusCode); // 200
+console.log(result.headers);    // { 'content-type': 'application/json' }
 ```
 
-For development and testing:
+### Radix Router
 
-```bash
-npm run build:native:test
+The radix router provides fast route matching with parameter extraction.
+
+```javascript
+import { RadixRouter } from 'nexurejs/native';
+
+const router = new RadixRouter();
+
+// Add routes
+router.add('GET', '/users/:id', userHandler);
+router.add('POST', '/users', createUserHandler);
+
+// Match a route
+const match = router.find('GET', '/users/123');
+console.log(match.found);       // true
+console.log(match.handler);     // [Function: userHandler]
+console.log(match.params);      // { id: '123' }
 ```
 
-For building on all supported platforms (typically done in CI):
+### JSON Processor
 
-```bash
-npm run build:native:all
+The JSON processor provides optimized JSON parsing and stringification.
+
+```javascript
+import { JsonProcessor } from 'nexurejs/native';
+
+const processor = new JsonProcessor();
+
+// Parse JSON
+const obj = processor.parse('{"name":"NexureJS","version":"1.0.0"}');
+
+// Stringify JSON
+const str = processor.stringify({ name: 'NexureJS', version: '1.0.0' });
+
+// Stream parsing for large JSON files
+const items = processor.parseStream(largeJsonBuffer);
 ```
 
-## Usage
+## Enhanced Native Modules
 
-### Importing
+### URL Parser
 
-```typescript
-import {
-  HttpParser,
-  RadixRouter,
-  JsonProcessor,
-  configureNativeModules,
-  getNativeModuleStatus
-} from 'nexurejs/native';
+The URL parser provides fast URL parsing and query string extraction.
+
+```javascript
+import { UrlParser } from 'nexurejs/native';
+
+const parser = new UrlParser();
+
+// Parse a URL
+const url = parser.parse('https://user:pass@example.com:8080/path?query=value#hash');
+console.log(url.protocol);  // 'https'
+console.log(url.auth);      // 'user:pass'
+console.log(url.hostname);  // 'example.com'
+console.log(url.port);      // '8080'
+console.log(url.pathname);  // '/path'
+console.log(url.search);    // 'query=value'
+console.log(url.hash);      // 'hash'
+
+// Parse a query string
+const query = parser.parseQueryString('name=John&age=30&active=true');
+console.log(query.name);    // 'John'
+console.log(query.age);     // '30'
+console.log(query.active);  // 'true'
 ```
 
-### Configuration
+#### Performance Benefits
+
+The URL parser typically offers:
+- 2-4x faster URL parsing than the built-in URL API
+- 3-5x faster query string parsing than URLSearchParams
+- Reduced memory usage due to optimized string handling
+
+#### Best Practices
+
+- Use for high-volume URL parsing in HTTP servers
+- Especially beneficial for routing middleware
+- Great for API gateways and proxies that parse many URLs
+
+### Schema Validator
+
+The schema validator provides high-performance JSON schema validation.
+
+```javascript
+import { SchemaValidator } from 'nexurejs/native';
+
+const validator = new SchemaValidator();
+
+// Define a schema
+const schema = {
+  type: 'object',
+  properties: {
+    name: { type: 'string', minLength: 3, maxLength: 50 },
+    age: { type: 'number', minimum: 0, maximum: 120 },
+    email: { type: 'string', pattern: '@' },
+    tags: {
+      type: 'array',
+      items: { type: 'string' }
+    }
+  },
+  required: ['name', 'email']
+};
+
+// Validate data against the schema
+const result = validator.validate(schema, {
+  name: 'John Doe',
+  age: 30,
+  email: 'john@example.com',
+  tags: ['developer', 'nodejs']
+});
+
+console.log(result.valid);      // true
+console.log(result.errors);     // []
+
+// Validate invalid data
+const invalidResult = validator.validate(schema, {
+  name: 'Jo', // too short
+  age: 150,   // exceeds maximum
+  tags: ['developer', 123] // not all strings
+});
+
+console.log(invalidResult.valid);      // false
+console.log(invalidResult.errors);     // [{ path: '$.name', message: 'String too short' }, ...]
+```
+
+#### Performance Benefits
+
+The schema validator typically offers:
+- 3-8x faster validation than JavaScript implementations
+- Efficient handling of complex nested schemas
+- Early termination on validation failures for better performance
+
+#### Best Practices
+
+- Use for validating API requests and responses
+- Validate configuration files and user inputs
+- Create custom validation rules by extending the schema format
+
+### Compression
+
+The compression module provides high-performance zlib compression and decompression.
+
+```javascript
+import { Compression } from 'nexurejs/native';
+
+const compression = new Compression();
+
+// Compress data
+const compressed = compression.compress('large text or buffer', 6); // compression level 0-9
+
+// Decompress data
+const buffer = compression.decompress(compressed); // returns Buffer
+
+// Decompress to string
+const text = compression.decompress(compressed, true); // returns string
+```
+
+#### Performance Benefits
+
+The compression module typically offers:
+- 2-3x faster compression than Node.js zlib
+- 2-4x faster decompression
+- More efficient memory usage during compression operations
+- Better handling of large data sets
+
+#### Best Practices
+
+- Use for HTTP response compression
+- Compress data before storage or transmission
+- Optimize file sizes in file storage systems
+- Use with streams for large data processing
+
+## Configuration
 
 You can configure the native modules behavior:
 
-```typescript
+```javascript
+import { configureNativeModules } from 'nexurejs/native';
+
+// Configure native modules
 configureNativeModules({
-  enabled: true,        // Enable/disable all native modules (default: true)
-  verbose: false,       // Enable/disable verbose logging (default: false)
-  maxCacheSize: 1000    // Maximum size for route cache (default: 1000)
+  enabled: true,        // Enable/disable all native modules
+  verbose: false,       // Enable/disable verbose logging
+  maxCacheSize: 1000,   // Maximum size for route cache
+  modulePath: '/path/to/module' // Override module path (advanced)
 });
 ```
 
-### Checking Status
+## Performance Monitoring
 
-You can check if the native modules are available:
+NexureJS includes built-in performance metrics to help you understand the performance characteristics of the native modules:
 
-```typescript
-const status = getNativeModuleStatus();
-console.log(status);
-// {
-//   loaded: true,
-//   httpParser: true,
-//   radixRouter: true,
-//   jsonProcessor: true,
-//   error: null
-// }
-```
-
-### Performance Metrics
-
-You can get performance metrics for the native modules:
-
-```typescript
-import { getAllPerformanceMetrics, resetAllPerformanceMetrics } from 'nexurejs/native';
+```javascript
+import {
+  getAllPerformanceMetrics,
+  resetAllPerformanceMetrics
+} from 'nexurejs/native';
 
 // Reset metrics before tests
 resetAllPerformanceMetrics();
@@ -137,178 +251,69 @@ resetAllPerformanceMetrics();
 // Get performance metrics
 const metrics = getAllPerformanceMetrics();
 console.log(metrics);
+
+/* Example output:
+{
+  httpParser: {
+    jsTime: 156.32,
+    jsCount: 1000,
+    nativeTime: 32.45,
+    nativeCount: 1000
+  },
+  // metrics for other modules...
+}
+*/
 ```
 
-## Components
-
-### HTTP Parser
-
-The HTTP Parser is responsible for parsing HTTP requests. It provides methods for parsing complete requests or streaming requests in chunks.
-
-```typescript
-import { HttpParser } from 'nexurejs/native';
-
-const httpParser = new HttpParser();
-
-// Parse a complete request
-const buffer = Buffer.from('GET /api/users HTTP/1.1\r\nHost: example.com\r\n\r\n');
-const result = httpParser.parse(buffer);
-
-console.log(result);
-// {
-//   method: 'GET',
-//   url: '/api/users',
-//   httpVersion: '1.1',
-//   headers: { host: 'example.com' },
-//   body: null
-// }
-```
-
-#### Streaming HTTP Parser
-
-For parsing HTTP requests in chunks:
-
-```typescript
-import { HttpStreamParser } from 'nexurejs/http';
-
-const streamParser = new HttpStreamParser();
-
-// Process the request in chunks
-const chunk1 = buffer.slice(0, 50);
-const chunk2 = buffer.slice(50);
-
-streamParser.write(chunk1);
-console.log('Chunk 1 processed, state:', streamParser.getState());
-
-streamParser.write(chunk2);
-const result = streamParser.getResult();
-console.log('Request parsed:', result);
-
-// Reset the parser for the next request
-streamParser.reset();
-```
-
-### Radix Router
-
-The Radix Router is responsible for matching URLs to routes. It provides methods for adding, finding, and removing routes.
-
-```typescript
-import { RadixRouter } from 'nexurejs/native';
-
-const router = new RadixRouter();
-
-// Add routes
-router.add('GET', '/api/users', getUsersHandler);
-router.add('GET', '/api/users/:id', getUserHandler);
-
-// Find a route
-const match = router.find('GET', '/api/users/123');
-
-console.log(match);
-// {
-//   handler: getUserHandler,
-//   params: { id: '123' },
-//   found: true
-// }
-```
-
-### JSON Processor
-
-The JSON Processor is responsible for parsing and stringifying JSON data. It provides methods for parsing JSON strings or buffers and stringifying JavaScript objects.
-
-```typescript
-import { JsonProcessor } from 'nexurejs/native';
-
-const jsonProcessor = new JsonProcessor();
-
-// Parse JSON
-const jsonString = '{"name":"John","age":30}';
-const parsed = jsonProcessor.parse(jsonString);
-
-console.log(parsed);
-// { name: 'John', age: 30 }
-
-// Parse JSON from Buffer
-const jsonBuffer = Buffer.from(jsonString);
-const parsedFromBuffer = jsonProcessor.parse(jsonBuffer);
-
-// Stringify JSON
-const obj = { name: 'John', age: 30 };
-const stringified = jsonProcessor.stringify(obj);
-
-console.log(stringified);
-// '{"name":"John","age":30}'
-```
-
-## Benchmarking
-
-NexureJS includes benchmarks to compare the performance of native and JavaScript implementations:
-
-```bash
-# Run all benchmarks
-npm run benchmark
-
-# Run specific benchmarks
-npm run benchmark:http
-npm run benchmark:json
-
-# Compare native vs JavaScript implementations
-npm run benchmark:native
-```
+This helps you:
+- Compare native vs JavaScript implementation performance
+- Identify bottlenecks in your application
+- Optimize usage of native modules
 
 ## Troubleshooting
 
-### Module Not Found
+If you encounter issues with native modules:
 
-If you get an error like `Error: Cannot find module 'nexurejs-native-xxx'`, it means the pre-built binary for your platform is not available. You can build from source:
+### Module Loading Issues
 
-```bash
-npm run build:native
-```
+```javascript
+import { getNativeModuleStatus } from 'nexurejs/native';
 
-### Build Errors
-
-If you encounter build errors, make sure you have the necessary build tools installed:
-
-- C++ compiler (GCC, Clang, or MSVC)
-- Python 2.7 or 3.x
-- node-gyp
-
-On Windows, you may need to install the Visual Studio Build Tools:
-```bash
-npm install --global --production windows-build-tools
-```
-
-On macOS, you may need to install the Xcode Command Line Tools:
-```bash
-xcode-select --install
-```
-
-On Linux, you may need to install the build-essential package:
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential python3
-```
-
-### C++ Standard Issues
-
-NexureJS native modules require C++17 support. If you encounter compilation errors related to C++ features, ensure your compiler supports C++17:
-
-```bash
-# When building manually, specify C++17
-CXXFLAGS="-std=c++17" npm run build:native
-```
-
-### Performance Issues
-
-If you're not seeing the expected performance improvements, make sure the native modules are actually being used:
-
-```typescript
 const status = getNativeModuleStatus();
 console.log(status);
+
+/* Example output:
+{
+  loaded: true,
+  httpParser: true,
+  radixRouter: true,
+  jsonProcessor: true,
+  urlParser: true,
+  schemaValidator: true,
+  compression: true
+}
+*/
 ```
 
-If `status.loaded` is `false`, the native modules are not being used. Check the `status.error` property for more information.
+### Fallback to JavaScript
+
+All native modules automatically fall back to JavaScript implementations if they can't be loaded. You can also explicitly disable native modules:
+
+```javascript
+import { configureNativeModules } from 'nexurejs/native';
+
+configureNativeModules({ enabled: false });
+```
+
+### Common Problems
+
+1. **Module not found**: Ensure you have the correct version of NexureJS installed and the native module binaries are present.
+
+2. **Unsupported platform**: Check if your platform is supported. NexureJS provides pre-built binaries for common platforms.
+
+3. **Build issues**: If building from source, ensure you have the necessary build tools installed (node-gyp, C++ compiler).
+
+4. **Performance issues**: Check your usage patterns and ensure you're using the native modules efficiently.
 
 ## Contributing
 

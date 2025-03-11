@@ -15,7 +15,8 @@ const benchmarks = [
   'http-benchmark.ts',
   'json-benchmark.ts',
   'worker-pool-benchmark.ts',
-  'v8-optimizer-benchmark.ts'
+  'v8-optimizer-benchmark.ts',
+  'native-benchmark.ts',
 ];
 
 // Function to run a benchmark file
