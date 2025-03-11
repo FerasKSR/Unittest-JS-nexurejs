@@ -2,6 +2,9 @@
 #include "http/http_parser.h"
 #include "routing/radix_router.h"
 #include "json/json_processor.h"
+#include "url/url_parser.h"
+#include "schema/schema_validator.h"
+#include "compression/compression.h"
 
 /**
  * Initialize the NexureJS native module
@@ -17,6 +20,15 @@ Napi::Object InitModule(Napi::Env env, Napi::Object exports) {
 
   // Initialize JSON Processor
   JsonProcessor::Init(env, exports);
+
+  // Initialize URL Parser
+  UrlParser::Init(env, exports);
+
+  // Initialize Schema Validator
+  SchemaValidator::Init(env, exports);
+
+  // Initialize Compression
+  Compression::Init(env, exports);
 
   // Export version information
   exports.Set(Napi::String::New(env, "version"), Napi::String::New(env, "1.0.0"));

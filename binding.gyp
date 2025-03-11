@@ -8,10 +8,16 @@
         "src/native/main.cc",
         "src/native/http/http_parser.cc",
         "src/native/routing/radix_router.cc",
-        "src/native/json/json_processor.cc"
+        "src/native/json/json_processor.cc",
+        "src/native/url/url_parser.cc",
+        "src/native/schema/schema_validator.cc",
+        "src/native/compression/compression.cc"
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")"
+      ],
+      "libraries": [
+        "-lz"
       ],
       "defines": [ "NAPI_DISABLE_CPP_EXCEPTIONS" ],
       "conditions": [
@@ -20,7 +26,10 @@
             "VCCLCompilerTool": {
               "ExceptionHandling": 1
             }
-          }
+          },
+          "libraries": [
+            "zlib.lib"
+          ]
         }],
         ["OS=='mac'", {
           "xcode_settings": {
