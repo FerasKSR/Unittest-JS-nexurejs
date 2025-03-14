@@ -42,7 +42,7 @@
   "include": [
     "src/**/*",
     "*.ts"
-  ],
+, "examples/simple-server.ts"  ],
   "exclude": [
     "node_modules",
     "dist",
