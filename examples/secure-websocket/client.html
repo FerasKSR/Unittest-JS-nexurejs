@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure WebSocket Chat</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            display: flex;
+            gap: 20px;
+            height: calc(100vh - 100px);
+        }
+        .sidebar {
+            flex: 0 0 250px;
+            background: #fff;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            flex-direction: column;
+        }
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .message-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+        }
+        .input-area {
+            padding: 15px;
+            border-top: 1px solid #eee;
+            display: flex;
+            gap: 10px;
+        }
+        .input-area input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .input-area button {
+            padding: 10px 15px;
+            background: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .room-list {
+            flex: 1;
+            overflow-y: auto;
+        }
+        .room {
+            padding: 10px;
+            margin-bottom: 5px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .room.active {
+            background: #4CAF50;
+            color: white;
+        }
+        .auth-area {
+            padding: 15px;
+            border-top: 1px solid #eee;
+        }
+        .auth-area input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .auth-area button {
+            width: 100%;
+            padding: 10px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .message {
+            padding: 10px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            max-width: 80%;
+        }
+        .message.system {
+            background: #f8f8f8;
+            border-left: 4px solid #2196F3;
+            color: #666;
+            max-width: 100%;
+        }
+        .message.incoming {
+            background: #f0f0f0;
+            align-self: flex-start;
+        }
+        .message.outgoing {
+            background: #e3f2fd;
+            align-self: flex-end;
+            text-align: right;
+        }
+        .message .header {
+            font-size: 0.8em;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .status {
+            padding: 10px;
+            background: #ffeb3b;
+            border-radius: 4px;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+        }
+        .messages-wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+        #connection-status {
+            margin-bottom: 15px;
+            padding: 8px;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .connected {
+            background: #dff0d8;
+            color: #3c763d;
+        }
+        .disconnected {
+            background: #f2dede;
+            color: #a94442;
+        }
+        .authenticating {
+            background: #fcf8e3;
+            color: #8a6d3b;
+        }
+    </style>
+</head>
+<body>
+    <h1>Secure WebSocket Chat</h1>
+    <div id="connection-status" class="disconnected">Disconnected</div>
+
+    <div class="container">
+        <div class="sidebar">
+            <h3>Rooms</h3>
+            <div id="room-list" class="room-list">
+                <!-- Rooms will be added here -->
+            </div>
+            <div class="auth-area">
+                <h3>Authentication</h3>
+                <input type="text" id="token-input" placeholder="Enter auth token" value="user-token-123">
+                <button id="connect-btn">Connect</button>
+                <button id="disconnect-btn" disabled>Disconnect</button>
+            </div>
+        </div>
+
+        <div class="chat-area">
+            <div id="message-container" class="message-container">
+                <!-- Messages will be added here -->
+                <div class="message system">
+                    <div class="content">Welcome to the chat! Please connect and authenticate.</div>
+                </div>
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="message-input" placeholder="Type a message..." disabled>
+                <button id="send-btn" disabled>Send</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const connectBtn = document.getElementById('connect-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const tokenInput = document.getElementById('token-input');
+        const messageInput = document.getElementById('message-input');
+        const sendBtn = document.getElementById('send-btn');
+        const messageContainer = document.getElementById('message-container');
+        const roomList = document.getElementById('room-list');
+        const connectionStatus = document.getElementById('connection-status');
+
+        // Variables
+        let socket = null;
+        let authenticated = false;
+        let currentRoom = null;
+        let username = null;
+        let heartbeatInterval = null;
+
+        // Connect to WebSocket
+        connectBtn.addEventListener('click', () => {
+            const token = tokenInput.value.trim();
+
+            if (!token) {
+                addSystemMessage('Please enter an authentication token');
+                return;
+            }
+
+            // Close existing connection if any
+            if (socket) {
+                socket.close();
+            }
+
+            // Connect to WebSocket server
+            try {
+                socket = new WebSocket(`ws://${window.location.hostname}:3000`);
+
+                updateConnectionStatus('authenticating');
+
+                // Set up event handlers
+                socket.onopen = () => {
+                    // Send authentication message
+                    socket.send(JSON.stringify({
+                        type: 'auth',
+                        data: { token }
+                    }));
+
+                    addSystemMessage('Connection established. Authenticating...');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                };
+
+                socket.onmessage = (event) => {
+                    const message = JSON.parse(event.data);
+                    handleMessage(message);
+                };
+
+                socket.onclose = () => {
+                    updateConnectionStatus('disconnected');
+                    addSystemMessage('Connection closed');
+
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    messageInput.disabled = true;
+                    sendBtn.disabled = true;
+
+                    authenticated = false;
+                    currentRoom = null;
+
+                    // Clear heartbeat
+                    if (heartbeatInterval) {
+                        clearInterval(heartbeatInterval);
+                        heartbeatInterval = null;
+                    }
+                };
+
+                socket.onerror = (error) => {
+                    addSystemMessage(`WebSocket error: ${error}`);
+                    updateConnectionStatus('disconnected');
+                };
+
+                // Set up heartbeat
+                if (heartbeatInterval) {
+                    clearInterval(heartbeatInterval);
+                }
+
+                heartbeatInterval = setInterval(() => {
+                    if (socket && socket.readyState === WebSocket.OPEN) {
+                        // Send heartbeat message
+                        socket.send(JSON.stringify({
+                            type: 'heartbeat',
+                            data: { timestamp: Date.now() }
+                        }));
+                    }
+                }, 25000); // Send heartbeat every 25 seconds
+
+            } catch (error) {
+                addSystemMessage(`Failed to connect: ${error.message}`);
+                updateConnectionStatus('disconnected');
+            }
+        });
+
+        // Disconnect from WebSocket
+        disconnectBtn.addEventListener('click', () => {
+            if (socket) {
+                socket.close();
+            }
+        });
+
+        // Send message
+        sendBtn.addEventListener('click', sendMessage);
+        messageInput.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter') {
+                sendMessage();
+            }
+        });
+
+        function sendMessage() {
+            if (!socket || !authenticated || !currentRoom) return;
+
+            const text = messageInput.value.trim();
+            if (!text) return;
+
+            // Send chat message
+            socket.send(JSON.stringify({
+                type: 'chat',
+                data: {
+                    text,
+                    room: currentRoom
+                }
+            }));
+
+            // Clear input
+            messageInput.value = '';
+        }
+
+        // Handle incoming messages
+        function handleMessage(message) {
+            console.log('Received message:', message);
+
+            switch (message.type) {
+                case 'auth:response':
+                    handleAuthResponse(message);
+                    break;
+
+                case 'system':
+                    addSystemMessage(message.data.message);
+
+                    // Add rooms if included
+                    if (message.data.rooms) {
+                        populateRoomList(message.data.rooms);
+                    }
+                    break;
+
+                case 'chat':
+                    handleChatMessage(message.data);
+                    break;
+
+                case 'history':
+                    handleHistoryMessage(message.data);
+                    break;
+
+                case 'error':
+                    addSystemMessage(`Error: ${message.data.message}`);
+                    break;
+            }
+        }
+
+        // Handle authentication response
+        function handleAuthResponse(message) {
+            if (message.data.success) {
+                authenticated = true;
+                updateConnectionStatus('connected');
+                addSystemMessage('Authentication successful!');
+
+                // Enable chat functionality
+                messageInput.disabled = false;
+                sendBtn.disabled = false;
+            } else {
+                addSystemMessage('Authentication failed. Please check your token.');
+
+                // Auto-disconnect
+                if (socket) {
+                    socket.close();
+                }
+            }
+        }
+
+        // Handle chat messages
+        function handleChatMessage(data) {
+            const message = data;
+
+            // Skip messages for other rooms
+            if (message.room !== currentRoom) return;
+
+            // Determine message type
+            let messageClass = 'incoming';
+
+            if (message.user === 'system') {
+                messageClass = 'system';
+            } else if (message.user === username) {
+                messageClass = 'outgoing';
+            }
+
+            // Create message element
+            const messageElement = document.createElement('div');
+            messageElement.className = `message ${messageClass}`;
+
+            // Add header
+            const header = document.createElement('div');
+            header.className = 'header';
+
+            const time = new Date(message.timestamp).toLocaleTimeString();
+            header.textContent = `${message.user} • ${time}`;
+
+            // Add content
+            const content = document.createElement('div');
+            content.className = 'content';
+            content.textContent = message.text;
+
+            // Assemble and add message
+            messageElement.appendChild(header);
+            messageElement.appendChild(content);
+            messageContainer.appendChild(messageElement);
+
+            // Scroll to bottom
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+
+        // Handle history messages
+        function handleHistoryMessage(data) {
+            // Clear previous messages
+            while (messageContainer.firstChild) {
+                messageContainer.removeChild(messageContainer.firstChild);
+            }
+
+            // Add room header
+            addSystemMessage(`Room: ${data.room}`);
+
+            // Add history messages
+            data.messages.forEach(message => {
+                handleChatMessage(message);
+            });
+        }
+
+        // Populate room list
+        function populateRoomList(rooms) {
+            // Clear existing rooms
+            roomList.innerHTML = '';
+
+            // Add rooms
+            rooms.forEach(room => {
+                const roomElement = document.createElement('div');
+                roomElement.className = 'room';
+                roomElement.textContent = room;
+
+                roomElement.addEventListener('click', () => {
+                    // Skip if not authenticated
+                    if (!authenticated) return;
+
+                    // Join room
+                    joinRoom(room);
+
+                    // Update active room
+                    document.querySelectorAll('.room').forEach(el => {
+                        el.classList.remove('active');
+                    });
+                    roomElement.classList.add('active');
+                });
+
+                roomList.appendChild(roomElement);
+            });
+        }
+
+        // Join a room
+        function joinRoom(roomName) {
+            if (!socket || !authenticated) return;
+
+            // Leave current room if any
+            if (currentRoom) {
+                socket.send(JSON.stringify({
+                    type: 'leave:room',
+                    data: { room: currentRoom }
+                }));
+            }
+
+            // Set current room
+            currentRoom = roomName;
+
+            // Join new room
+            socket.send(JSON.stringify({
+                type: 'join:room',
+                data: { room: roomName }
+            }));
+
+            // Request room history
+            socket.send(JSON.stringify({
+                type: 'get:history',
+                data: { room: roomName }
+            }));
+        }
+
+        // Add system message
+        function addSystemMessage(text) {
+            const messageElement = document.createElement('div');
+            messageElement.className = 'message system';
+
+            const content = document.createElement('div');
+            content.className = 'content';
+            content.textContent = text;
+
+            messageElement.appendChild(content);
+            messageContainer.appendChild(messageElement);
+
+            // Scroll to bottom
+            messageContainer.scrollTop = messageContainer.scrollHeight;
+        }
+
+        // Update connection status
+        function updateConnectionStatus(status) {
+            connectionStatus.className = status;
+
+            switch (status) {
+                case 'connected':
+                    connectionStatus.textContent = 'Connected';
+                    break;
+                case 'disconnected':
+                    connectionStatus.textContent = 'Disconnected';
+                    break;
+                case 'authenticating':
+                    connectionStatus.textContent = 'Authenticating...';
+                    break;
+            }
+        }
+    </script>
+</body>
+</html>
