@@ -171,4 +171,29 @@ export class Container {
       instance[propertyKey] = this.resolve(type);
     }
   }
+
+  /**
+   * Get all registered instances
+   * @returns Set of all singleton instances and creates transient instances
+   */
+  getAllInstances(): Set<any> {
+    const instances = new Set<any>();
+
+    // Get all registered providers
+    for (const def of this.providers.values()) {
+      if (def.scope === Scope.SINGLETON) {
+        // For singletons, use existing instance or create if not exists
+        if (!def.instance) {
+          def.instance = this.createInstance(def.useClass);
+        }
+        instances.add(def.instance);
+      } else if (def.scope === Scope.TRANSIENT) {
+        // For transient, create a new instance
+        instances.add(this.createInstance(def.useClass));
+      }
+      // Skip request scope as they should be created per request
+    }
+
+    return instances;
+  }
 }
