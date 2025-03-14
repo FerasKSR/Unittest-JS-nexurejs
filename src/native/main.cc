@@ -5,6 +5,7 @@
 #include "url/url_parser.h"
 #include "schema/schema_validator.h"
 #include "compression/compression.h"
+#include "websocket/websocket.h"
 
 /**
  * Initialize the NexureJS native module
@@ -29,6 +30,9 @@ Napi::Object InitModule(Napi::Env env, Napi::Object exports) {
 
   // Initialize Compression
   Compression::Init(env, exports);
+
+  // Initialize WebSocket
+  InitWebSocket(env, exports);
 
   // Export version information
   exports.Set(Napi::String::New(env, "version"), Napi::String::New(env, "1.0.0"));
