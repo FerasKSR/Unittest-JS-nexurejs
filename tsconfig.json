@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": ".",
@@ -39,13 +39,13 @@
     "types": ["node", "jest"]
   },
   "include": [
-    "src/**/*",
-    "tests/**/*",
-    "**/*.d.ts"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "lib"
+    "lib",
+    "examples",
+    "tests"
   ]
 }
