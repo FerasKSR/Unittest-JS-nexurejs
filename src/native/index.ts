@@ -1770,17 +1770,17 @@ export class WebSocketServer extends EventEmitter {
  * Reset all performance metrics
  */
 export function resetAllPerformanceMetrics(): void {
-  // Import the resetNativeBindingMetrics function
-  const { resetNativeBindingMetrics } = require('../utils/native-bindings');
-
-  HttpParser.resetPerformanceMetrics();
-  RadixRouter.resetPerformanceMetrics();
-  JsonProcessor.resetPerformanceMetrics();
-  UrlParser.resetPerformanceMetrics();
-  SchemaValidator.resetPerformanceMetrics();
-  Compression.resetPerformanceMetrics();
-  WebSocketServer.resetPerformanceMetrics();
-  resetNativeBindingMetrics();
+  // Import the resetNativeBindingMetrics function dynamically
+  import('../utils/native-bindings.js').then(({ resetNativeBindingMetrics }) => {
+    HttpParser.resetPerformanceMetrics();
+    RadixRouter.resetPerformanceMetrics();
+    JsonProcessor.resetPerformanceMetrics();
+    UrlParser.resetPerformanceMetrics();
+    SchemaValidator.resetPerformanceMetrics();
+    Compression.resetPerformanceMetrics();
+    WebSocketServer.resetPerformanceMetrics();
+    resetNativeBindingMetrics();
+  });
 }
 
 /**

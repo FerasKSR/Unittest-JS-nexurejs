@@ -41,8 +41,10 @@
   },
   "include": [
     "src/**/*",
-    "*.ts"
-, "examples/simple-server.ts"  ],
+    "*.ts",
+    "examples/simple-server.ts",
+    "benchmarks/**/*"
+  ],
   "exclude": [
     "node_modules",
     "dist",
