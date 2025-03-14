@@ -7,9 +7,8 @@
 
 import { EventEmitter } from 'node:events';
 import { Server as HttpServer } from 'node:http';
-import { performance } from 'node:perf_hooks';
-import { Logger } from '../../utils/logger.js';
-import { loadNativeBinding } from '../loader.js';
+import { Logger } from '../../utils/logger';
+import { loadNativeBinding } from '../loader';
 
 // Define WebSocket connection interface
 export interface WebSocketConnection {
