@@ -117,19 +117,40 @@ async function runAllBenchmarks(): Promise<void> {
   const { runHttpBenchmarks } = await import('./http-benchmarks.js');
   const { runRouterBenchmarks } = await import('./router-benchmarks.js');
   const { runJsonBenchmarks } = await import('./json-benchmarks.js');
+  const { runCompressionBenchmarks } = await import('./compression-benchmarks.js');
+  const { runUrlBenchmarks } = await import('./url-benchmarks.js');
+  const { runSchemaBenchmarks } = await import('./schema-benchmarks.js');
+  const { runWebSocketBenchmarks } = await import('./websocket-benchmarks.js');
 
-  // Run each benchmark category
-  console.log('\n--- Basic Operations ---');
-  await runBasicBenchmarks();
+  try {
+    // Run each benchmark category
+    console.log('\n--- Basic Operations ---');
+    await runBasicBenchmarks();
 
-  console.log('\n--- HTTP Parser ---');
-  await runHttpBenchmarks();
+    console.log('\n--- HTTP Parser ---');
+    await runHttpBenchmarks();
 
-  console.log('\n--- Router ---');
-  await runRouterBenchmarks();
+    console.log('\n--- Router ---');
+    await runRouterBenchmarks();
 
-  console.log('\n--- JSON Processing ---');
-  await runJsonBenchmarks();
+    console.log('\n--- JSON Processing ---');
+    await runJsonBenchmarks();
+
+    console.log('\n--- Compression ---');
+    await runCompressionBenchmarks();
+
+    console.log('\n--- URL Parser ---');
+    await runUrlBenchmarks();
+
+    console.log('\n--- Schema Validator ---');
+    await runSchemaBenchmarks();
+
+    console.log('\n--- WebSocket ---');
+    await runWebSocketBenchmarks();
+  } catch (error) {
+    console.error('Error running benchmarks:', error);
+    console.error('Some native modules might not be available. Continuing with available benchmarks.');
+  }
 
   const endTime = performance.now();
   const totalTime = (endTime - startTime) / 1000;
