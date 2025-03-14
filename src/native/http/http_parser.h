@@ -13,8 +13,23 @@ public:
   HttpParser(const Napi::CallbackInfo& info);
 
 private:
+  // Parse methods
+  Napi::Value ParseRequest(const Napi::CallbackInfo& info);
+  Napi::Value ParseHeaders(const Napi::CallbackInfo& info);
+  Napi::Value ParseBody(const Napi::CallbackInfo& info);
+  Napi::Value ParseFormBody(const Napi::CallbackInfo& info);
+
+  // Helper methods
+  Napi::Object ParseHeadersInternal(Napi::Env env, std::string_view headersData);
+  void ParseHeadersOptimized(Napi::Env env, const char* data, size_t length, Napi::Object& headers);
+  Napi::Value ParseJsonBody(Napi::Env env, const char* data, size_t length);
+  Napi::Value ParseFormBody(Napi::Env env, const char* data, size_t length);
+  Napi::Value ParseMultipartBody(Napi::Env env, const char* data, size_t length, const std::string& boundary);
+  std::string UrlDecode(std::string_view input);
+  std::string UrlDecode(const char* input, size_t length);
+  const char* memmem(const char* haystack, size_t haystackLen, const char* needle, size_t needleLen);
+
   // JavaScript accessible methods
-  Napi::Value Parse(const Napi::CallbackInfo& info);
   Napi::Value Reset(const Napi::CallbackInfo& info);
 
   // Internal parsing methods
@@ -30,6 +45,9 @@ private:
   std::vector<char> body_;
   bool headerComplete_;
   size_t contentLength_;
+
+  // Cached JavaScript functions
+  Napi::FunctionReference jsonParseFunc_;
 };
 
 #endif // HTTP_PARSER_H
