@@ -67,6 +67,35 @@ export interface PerformanceMonitorOptions {
 }
 
 /**
+ * Enhanced memory metrics to track potential memory leaks
+ */
+export interface EnhancedMemoryMetrics {
+  /** Current RSS memory usage in bytes */
+  rss: number;
+
+  /** Current heap total in bytes */
+  heapTotal: number;
+
+  /** Current heap used in bytes */
+  heapUsed: number;
+
+  /** Current external memory in bytes */
+  external: number;
+
+  /** Array buffer memory in bytes */
+  arrayBuffers: number;
+
+  /** Memory growth since last measurement in bytes */
+  growth: number;
+
+  /** Growth rate per second in bytes */
+  growthRate: number;
+
+  /** Leak score from 0-100 (higher means more likely leak) */
+  leakScore: number;
+}
+
+/**
  * Performance monitor for benchmarking and profiling
  */
 export class PerformanceMonitor extends EventEmitter {
@@ -76,6 +105,12 @@ export class PerformanceMonitor extends EventEmitter {
   private memoryMonitoringInterval?: NodeJS.Timeout;
   private eventLoopMonitoringInterval?: NodeJS.Timeout;
   private observer?: PerformanceObserver;
+  private lastMemoryUsage: NodeJS.MemoryUsage | null = null;
+  private memoryGrowthHistory: number[] = [];
+  private memoryCheckInterval: number = 0;
+  private leakDetectionEnabled: boolean = false;
+  private leakDetectionThreshold: number = 10 * 1024 * 1024; // 10MB
+  private memoryGrowthTime: number = 0;
 
   /**
    * Create a new performance monitor
@@ -347,6 +382,153 @@ export class PerformanceMonitor extends EventEmitter {
       };
     }
 
+    // Add enhanced memory metrics to the report
+    if (this.options.memoryMonitoring) {
+      report.memory = this.getEnhancedMemoryMetrics();
+    }
+
     return report;
+  }
+
+  /**
+   * Enable memory leak detection
+   * @param interval Check interval in milliseconds
+   * @param threshold Growth threshold to consider a leak (bytes)
+   */
+  enableLeakDetection(interval: number = 30000, threshold: number = 10 * 1024 * 1024): void {
+    this.leakDetectionEnabled = true;
+    this.memoryCheckInterval = interval;
+    this.leakDetectionThreshold = threshold;
+
+    // Start periodic checks
+    this.checkMemoryGrowth();
+
+    // Set up interval for continuous monitoring
+    setInterval(() => {
+      this.checkMemoryGrowth();
+    }, this.memoryCheckInterval);
+
+    this.logger.debug('Memory leak detection enabled', {
+      interval,
+      threshold: `${Math.round(threshold / (1024 * 1024))}MB`
+    });
+  }
+
+  /**
+   * Check for memory growth that could indicate leaks
+   */
+  private checkMemoryGrowth(): void {
+    if (!this.leakDetectionEnabled) return;
+
+    const currentMemory = process.memoryUsage();
+    const now = performance.now();
+
+    if (!this.lastMemoryUsage) {
+      // First check, just store the baseline
+      this.lastMemoryUsage = currentMemory;
+      this.memoryGrowthTime = now;
+      return;
+    }
+
+    // Calculate growth
+    const growth = currentMemory.heapUsed - this.lastMemoryUsage.heapUsed;
+    const timeDelta = now - this.memoryGrowthTime;
+    const growthRate = growth / (timeDelta / 1000); // bytes per second
+
+    // Store in history (keep last 5 measurements)
+    this.memoryGrowthHistory.push(growth);
+    if (this.memoryGrowthHistory.length > 5) {
+      this.memoryGrowthHistory.shift();
+    }
+
+    // Calculate leak score (0-100)
+    // Higher score means more likely memory leak
+    let leakScore = 0;
+
+    // Factor 1: Consistent positive growth
+    const positiveGrowthCount = this.memoryGrowthHistory.filter(g => g > 0).length;
+    leakScore += (positiveGrowthCount / this.memoryGrowthHistory.length) * 40;
+
+    // Factor 2: Growth rate relative to threshold
+    const growthOverThreshold = Math.min(growthRate / (this.leakDetectionThreshold / 60), 1);
+    leakScore += growthOverThreshold * 40;
+
+    // Factor 3: Heap used to heap total ratio
+    const heapUsedRatio = currentMemory.heapUsed / currentMemory.heapTotal;
+    leakScore += heapUsedRatio * 20;
+
+    // Round to nearest integer
+    leakScore = Math.round(leakScore);
+
+    // Record memory metrics
+    this.recordMetric('memory.rss', currentMemory.rss, 'bytes');
+    this.recordMetric('memory.heapTotal', currentMemory.heapTotal, 'bytes');
+    this.recordMetric('memory.heapUsed', currentMemory.heapUsed, 'bytes');
+    this.recordMetric('memory.external', currentMemory.external, 'bytes');
+    this.recordMetric('memory.arrayBuffers', currentMemory.arrayBuffers || 0, 'bytes');
+    this.recordMetric('memory.growth', growth, 'bytes');
+    this.recordMetric('memory.growthRate', growthRate, 'bytes/s');
+    this.recordMetric('memory.leakScore', leakScore, '');
+
+    // Emit warnings for potential leaks
+    if (leakScore > 70) {
+      this.emit('warning', {
+        type: 'memory',
+        message: `Potential memory leak detected (score: ${leakScore}/100)`,
+        metrics: this.getEnhancedMemoryMetrics()
+      });
+
+      this.logger.warn(`Potential memory leak detected (score: ${leakScore}/100)`, {
+        growth: `${Math.round(growth / 1024)}KB`,
+        growthRate: `${Math.round(growthRate / 1024)}KB/s`,
+        heapUsed: `${Math.round(currentMemory.heapUsed / (1024 * 1024))}MB`,
+        heapTotal: `${Math.round(currentMemory.heapTotal / (1024 * 1024))}MB`
+      });
+    }
+
+    // Update for next check
+    this.lastMemoryUsage = currentMemory;
+    this.memoryGrowthTime = now;
+  }
+
+  /**
+   * Get enhanced memory metrics with leak detection info
+   */
+  getEnhancedMemoryMetrics(): EnhancedMemoryMetrics {
+    const memory = process.memoryUsage();
+
+    // Calculate growth since last check
+    let growth = 0;
+    let growthRate = 0;
+    let leakScore = 0;
+
+    if (this.lastMemoryUsage) {
+      growth = memory.heapUsed - this.lastMemoryUsage.heapUsed;
+      const timeDelta = performance.now() - this.memoryGrowthTime;
+      growthRate = growth / (timeDelta / 1000);
+
+      // Calculate leak score (simplified version)
+      const positiveGrowthCount = this.memoryGrowthHistory.filter(g => g > 0).length;
+      leakScore += (positiveGrowthCount / Math.max(this.memoryGrowthHistory.length, 1)) * 40;
+
+      const growthOverThreshold = Math.min(growthRate / (this.leakDetectionThreshold / 60), 1);
+      leakScore += growthOverThreshold * 40;
+
+      const heapUsedRatio = memory.heapUsed / memory.heapTotal;
+      leakScore += heapUsedRatio * 20;
+
+      leakScore = Math.round(leakScore);
+    }
+
+    return {
+      rss: memory.rss,
+      heapTotal: memory.heapTotal,
+      heapUsed: memory.heapUsed,
+      external: memory.external,
+      arrayBuffers: memory.arrayBuffers || 0,
+      growth,
+      growthRate,
+      leakScore
+    };
   }
 }
