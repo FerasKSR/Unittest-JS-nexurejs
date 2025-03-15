@@ -113,14 +113,14 @@ async function runAllBenchmarks(): Promise<void> {
   const startTime = performance.now();
 
   // Dynamically import benchmark modules to avoid circular dependencies
-  const { runBasicBenchmarks } = await import('./basic-benchmarks.js');
-  const { runHttpBenchmarks } = await import('./http-benchmarks.js');
-  const { runRouterBenchmarks } = await import('./router-benchmarks.js');
-  const { runJsonBenchmarks } = await import('./json-benchmarks.js');
-  const { runCompressionBenchmarks } = await import('./compression-benchmarks.js');
-  const { runUrlBenchmarks } = await import('./url-benchmarks.js');
-  const { runSchemaBenchmarks } = await import('./schema-benchmarks.js');
-  const { runWebSocketBenchmarks } = await import('./websocket-benchmarks.js');
+  const { runBasicBenchmarks } = await import('./basic-benchmarks');
+  const { runHttpBenchmarks } = await import('./http-benchmarks');
+  const { runRouterBenchmarks } = await import('./router-benchmarks');
+  const { runJsonBenchmarks } = await import('./json-benchmarks');
+  const { runCompressionBenchmarks } = await import('./compression-benchmarks');
+  const { runUrlBenchmarks } = await import('./url-benchmarks');
+  const { runSchemaBenchmarks } = await import('./schema-benchmarks');
+  const { runWebSocketBenchmarks } = await import('./websocket-benchmarks');
 
   try {
     // Run each benchmark category
