@@ -20,11 +20,8 @@ private:
   Napi::Value ParseFormBody(const Napi::CallbackInfo& info);
 
   // Helper methods
-  Napi::Object ParseHeadersInternal(Napi::Env env, std::string_view headersData);
   void ParseHeadersOptimized(Napi::Env env, const char* data, size_t length, Napi::Object& headers);
   Napi::Value ParseJsonBody(Napi::Env env, const char* data, size_t length);
-  Napi::Value ParseFormBody(Napi::Env env, const char* data, size_t length);
-  Napi::Value ParseMultipartBody(Napi::Env env, const char* data, size_t length, const std::string& boundary);
   std::string UrlDecode(std::string_view input);
   std::string UrlDecode(const char* input, size_t length);
   const char* memmem(const char* haystack, size_t haystackLen, const char* needle, size_t needleLen);
