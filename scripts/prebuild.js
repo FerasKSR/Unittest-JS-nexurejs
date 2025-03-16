@@ -100,8 +100,8 @@ async function testNativeModule(modulePath) {
     // Now use require to load the native module
     const nativeModule = require(modulePath);
 
-    if (typeof nativeModule.isAvailable !== 'function' || !nativeModule.isAvailable()) {
-      log('Native module loaded but isAvailable check failed', colors.yellow);
+    if (typeof nativeModule.isNative !== 'boolean' || !nativeModule.isNative) {
+      log('Native module loaded but isNative check failed', colors.yellow);
       return false;
     }
 
