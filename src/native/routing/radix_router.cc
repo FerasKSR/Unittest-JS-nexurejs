@@ -133,21 +133,24 @@ Napi::Value RadixRouter::Find(const Napi::CallbackInfo& info) {
   Napi::Value result = Lookup(method, path);
 
   // Cache the result if it's a successful match and cache isn't full
-  Napi::Object resultObj = result.As<Napi::Object>();
-  if (resultObj.Has("found") && resultObj.Get("found").ToBoolean() && cacheSize_ < maxCacheSize_) {
-    routeCache_.emplace(cacheKey, Napi::Persistent(result));
-    cacheSize_++;
+  if (result.IsObject() && routeCache_.size() < maxCacheSize_) {
+    Napi::Object resultObj = result.As<Napi::Object>();
+    if (resultObj.Has("found") && resultObj.Get("found").ToBoolean()) {
+      std::string cacheKeyStr = std::string(cacheKey);
+      routeCache_.insert(std::make_pair(cacheKeyStr, Napi::Persistent(result.As<Napi::Object>())));
+      cacheSize_++;
 
-    // Simple cache eviction if we're at 90% capacity
-    if (cacheSize_ >= maxCacheSize_ * 0.9) {
-      // Remove 10% of the cache (oldest entries)
-      size_t toRemove = maxCacheSize_ / 10;
-      if (toRemove > 0) {
-        auto it = routeCache_.begin();
-        for (size_t i = 0; i < toRemove && it != routeCache_.end(); i++) {
-          it = routeCache_.erase(it);
+      // Simple cache eviction if we're at 90% capacity
+      if (cacheSize_ >= maxCacheSize_ * 0.9) {
+        // Remove 10% of the cache (oldest entries)
+        size_t toRemove = maxCacheSize_ / 10;
+        if (toRemove > 0) {
+          auto it = routeCache_.begin();
+          for (size_t i = 0; i < toRemove && it != routeCache_.end(); i++) {
+            it = routeCache_.erase(it);
+          }
+          cacheSize_ -= toRemove;
         }
-        cacheSize_ -= toRemove;
       }
     }
   }
