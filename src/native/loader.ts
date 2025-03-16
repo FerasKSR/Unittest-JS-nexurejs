@@ -88,12 +88,12 @@ export function loadNativeBinding(modulePath?: string): NativeBindingModule | nu
     // If a specific path is provided, try it first
     modulePath,
     // Try loading from various possible locations
-    './build/Release/nexure_native.node',
-    './build/Debug/nexure_native.node',
-    './nexure_native.node',
-    '../build/Release/nexure_native.node',
-    '../build/Debug/nexure_native.node',
-    '../nexure_native.node',
+    './build/Release/nexurejs_native.node',
+    './build/Debug/nexurejs_native.node',
+    './nexurejs_native.node',
+    '../build/Release/nexurejs_native.node',
+    '../build/Debug/nexurejs_native.node',
+    '../nexurejs_native.node',
   ].filter(Boolean) as string[];
 
   // Try each path until one works
