@@ -39,7 +39,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
 // Register the module with Node.js
 napi_value init(napi_env env, napi_value exports) {
-  return nexurejs::Init(env, Napi::Object(env, exports)).ToObject();
+  Napi::Env napi_env(env);
+  Napi::Object napi_exports = Napi::Object(napi_env, exports);
+  return nexurejs::Init(napi_env, napi_exports);
 }
 
 NAPI_MODULE(NODE_GYP_MODULE_NAME, init)
