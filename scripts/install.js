@@ -11,7 +11,7 @@ import path from 'path';
 import https from 'https';
 import { spawn } from 'child_process';
 import { createGunzip } from 'zlib';
-import tar from 'tar-pack';
+import * as tar from 'tar';
 import { fileURLToPath } from 'url';
 
 // Get __dirname equivalent in ESM
@@ -122,7 +122,7 @@ function downloadAndExtractTarball(url, dest) {
       // Extract the tarball
       response
         .pipe(createGunzip())
-        .pipe(tar.extract(destDir))
+        .pipe(tar.extract({ cwd: destDir }))
         .on('finish', resolve)
         .on('error', reject);
     }).on('error', reject);
