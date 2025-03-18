@@ -11,7 +11,7 @@
         "src/native/schema/schema_validator.cc",
         "src/native/compression/compression.cc",
         "src/native/websocket/websocket.cc",
-        "node_modules/simdjson/simdjson/src/simdjson.cpp"
+        "src/native/json/simdjson_wrapper.cpp"
       ],
       "include_dirs": [
         "<!@(node -p \"require('node-addon-api').include\")",
@@ -30,10 +30,15 @@
       ],
       "cflags!": [ "-fno-exceptions" ],
       "cflags_cc!": [ "-fno-exceptions" ],
+      "cflags_cc": [ "-Wno-bitwise-instead-of-logical", "-Wno-ambiguous-reversed-operator" ],
       "xcode_settings": {
         "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
         "CLANG_CXX_LIBRARY": "libc++",
-        "MACOSX_DEPLOYMENT_TARGET": "10.15"
+        "MACOSX_DEPLOYMENT_TARGET": "10.15",
+        "WARNING_CFLAGS": [
+          "-Wno-bitwise-instead-of-logical",
+          "-Wno-ambiguous-reversed-operator"
+        ]
       },
       "msvs_settings": {
         "VCCLCompilerTool": { "ExceptionHandling": 1 }
