@@ -2,7 +2,7 @@
 #define JSON_PROCESSOR_H
 
 #include <napi.h>
-#include <simdjson.h>
+#include "simdjson_wrapper.h"
 #include <memory>
 #include <string>
 
