@@ -11,6 +11,7 @@ import { performance } from 'node:perf_hooks';
 import { URL, URLSearchParams } from 'node:url';
 import { Server as HttpServer } from 'node:http';
 import { EventEmitter } from 'node:events';
+import { createRequire } from 'node:module';
 import { JsHttpParser } from '../http/http-parser.js';
 import { HttpMethod } from '../http/http-method.js';
 import { Logger } from '../utils/logger.js';
@@ -20,6 +21,9 @@ import { RadixRouter as JsRadixRouter } from '../routing/radix-router.js';
 // Get __dirname equivalent in ESM
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Create a require function for ESM
+const require = createRequire(import.meta.url);
 
 /**
  * Configuration options for native modules
@@ -246,40 +250,51 @@ export function loadNativeBinding(): any {
       // Custom path from options
       nativeOptions.modulePath,
       // Local build path
-      join(__dirname, '..', '..', '..', 'build', 'Release', 'nexurejs_native.node'),
+      join(__dirname, '..', '..', 'build', 'Release', 'nexurejs_native.node'),
       // Prebuilt binary paths based on platform
-      join(__dirname, '..', '..', '..', 'prebuilds', `${process.platform}-${process.arch}`, 'nexurejs_native.node'),
-      // Node modules path for platform-specific packages
-      require.resolve(`nexurejs-native-${process.platform}-${process.arch}`)
+      join(__dirname, '..', '..', 'prebuilds', `${process.platform}-${process.arch}`, 'nexurejs_native.node'),
     ].filter(Boolean) as string[];
+
+    // Try to add the platform-specific package if it exists
+    try {
+      const platformSpecificPackage = `nexurejs-native-${process.platform}-${process.arch}`;
+      // This will throw if the package doesn't exist
+      require.resolve(platformSpecificPackage);
+      possiblePaths.push(platformSpecificPackage);
+    } catch (e) {
+      // Package not found, continue with other paths
+    }
 
     let loadError: Error | null = null;
 
     // Try each path until one works
     for (const bindingPath of possiblePaths) {
       try {
-        if (existsSync(bindingPath)) {
-          // Load the native module
-          nativeBinding = require(bindingPath);
-
-          // Update status
-          nativeModuleStatus.loaded = true;
-          nativeModuleStatus.httpParser = !!nativeBinding.HttpParser;
-          nativeModuleStatus.radixRouter = !!nativeBinding.RadixRouter;
-          nativeModuleStatus.jsonProcessor = !!nativeBinding.JsonProcessor;
-          nativeModuleStatus.urlParser = !!nativeBinding.parse;
-          nativeModuleStatus.schemaValidator = !!nativeBinding.validate;
-          nativeModuleStatus.compression = !!nativeBinding.compress;
-          nativeModuleStatus.webSocket = !!nativeBinding.WebSocketServer;
-
-          if (nativeOptions.verbose) {
-            console.log(`Native module loaded successfully from ${bindingPath}`);
-            console.log(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
-          }
-
-          // Successfully loaded
-          return nativeBinding;
+        // For direct file paths, check if they exist first
+        if (bindingPath.endsWith('.node') && !existsSync(bindingPath)) {
+          continue;
         }
+
+        // Load the native module
+        nativeBinding = require(bindingPath);
+
+        // Update status
+        nativeModuleStatus.loaded = true;
+        nativeModuleStatus.httpParser = !!nativeBinding.HttpParser;
+        nativeModuleStatus.radixRouter = !!nativeBinding.RadixRouter;
+        nativeModuleStatus.jsonProcessor = !!nativeBinding.JsonProcessor;
+        nativeModuleStatus.urlParser = !!nativeBinding.UrlParser;
+        nativeModuleStatus.schemaValidator = !!nativeBinding.SchemaValidator;
+        nativeModuleStatus.compression = !!nativeBinding.Compression;
+        nativeModuleStatus.webSocket = !!nativeBinding.NativeWebSocketServer;
+
+        if (nativeOptions.verbose) {
+          console.log(`Native module loaded successfully from ${bindingPath}`);
+          console.log(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
+        }
+
+        // Successfully loaded
+        return nativeBinding;
       } catch (err: any) {
         // Store the error but continue trying other paths
         loadError = err;
@@ -355,7 +370,7 @@ export class HttpParser implements NativeHttpParser {
     let result: HttpParseResult;
 
     if (this.useNative && this.parser) {
-      result = this.parser.parse(buffer);
+      result = this.parser.parseRequest(buffer);
       HttpParser.nativeParseTime += performance.now() - start;
       HttpParser.nativeParseCount++;
     } else if (this.jsParser) {
@@ -391,7 +406,7 @@ export class HttpParser implements NativeHttpParser {
    */
   parseBody(buffer: Buffer, contentLength: number): Buffer {
     if (this.useNative && this.parser) {
-      return this.parser.parseBody(buffer, contentLength);
+      return this.parser.parseBody(buffer, { contentLength });
     } else if (this.jsParser) {
       return this.jsParser.parseBody(buffer, contentLength);
     }
@@ -612,7 +627,11 @@ export class JsonProcessor {
     let result: any;
 
     if (this.useNative && this.processor) {
-      result = this.processor.parse(json);
+      if (typeof json === 'string') {
+        result = this.processor.parse(json);
+      } else {
+        result = this.processor.parseBuffer(json);
+      }
       JsonProcessor.nativeParseTime += performance.now() - start;
       JsonProcessor.nativeParseCount++;
     } else {

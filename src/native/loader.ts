@@ -8,8 +8,12 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
+import { createRequire } from 'node:module';
 import { Logger } from '../utils/logger.js';
 import { LogLevel } from '../utils/logger.js';
+
+// Create a require function for ESM
+const require = createRequire(import.meta.url);
 
 // Define binding types
 export enum BindingType {

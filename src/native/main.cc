@@ -1,5 +1,5 @@
 #include <napi.h>
-#include <simdjson.h>
+#include "json/simdjson_wrapper.h"
 #include "http/http_parser.h"
 #include "json/json_processor.h"
 #include "routing/radix_router.h"
@@ -9,6 +9,14 @@
 #include "websocket/websocket.h"
 
 namespace nexurejs {
+
+/**
+ * Check if the native module is available
+ */
+Napi::Boolean IsAvailable(const Napi::CallbackInfo& info) {
+  Napi::Env env = info.Env();
+  return Napi::Boolean::New(env, true);
+}
 
 /**
  * Initialize the NexureJS native module
@@ -31,6 +39,9 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   // Export version information
   exports.Set("version", Napi::String::New(env, "0.1.9"));
   exports.Set("isNative", Napi::Boolean::New(env, true));
+
+  // Export isAvailable function
+  exports.Set("isAvailable", Napi::Function::New(env, IsAvailable));
 
   return exports;
 }
