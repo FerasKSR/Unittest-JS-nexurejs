@@ -8,11 +8,15 @@
 import { runBenchmark, compareResults } from './index.js';
 import { SchemaValidator } from '../src/native/index.js';
 import Ajv from 'ajv';
+import addFormats from 'ajv-formats';
 
 // Initialize Ajv
 const ajv = new Ajv({
   allErrors: true
 });
+
+// Add formats like email
+addFormats(ajv);
 
 // Initialize SchemaValidator
 const schemaValidator = new SchemaValidator();
