@@ -113,15 +113,15 @@ Napi::Value RadixRouter::Find(const Napi::CallbackInfo& info) {
   }
 
   std::string method = info[0].As<Napi::String>().Utf8Value();
-  std::string path = info[1].As<Napi::String>().Utf8Value();
+  std::string pathStr = info[1].As<Napi::String>().Utf8Value();
 
   // Pre-process the path for faster matching
-  if (path.empty() || path[0] != '/') {
-    path = "/" + path;
+  if (pathStr.empty() || pathStr[0] != '/') {
+    pathStr = "/" + pathStr;
   }
 
   // Create cache key
-  std::string cacheKey = method + ":" + path;
+  std::string cacheKey = method + ":" + pathStr;
 
   // Check cache first
   auto cacheIt = routeCache_.find(cacheKey);
@@ -130,7 +130,7 @@ Napi::Value RadixRouter::Find(const Napi::CallbackInfo& info) {
   }
 
   // Lookup the route
-  Napi::Value result = Lookup(method, path);
+  Napi::Value result = Lookup(method, pathStr);
 
   // Cache the result if it's a successful match and cache isn't full
   if (result.IsObject() && routeCache_.size() < maxCacheSize_) {
@@ -169,16 +169,16 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
   }
 
   std::string method = info[0].As<Napi::String>().Utf8Value();
-  std::string_view path = info[1].As<Napi::String>().Utf8Value();
+  std::string pathStr = info[1].As<Napi::String>().Utf8Value();
 
   // Pre-process the path for faster matching
-  if (path.empty() || path[0] != '/') {
-    path = std::string("/") + std::string(path);
+  if (pathStr.empty() || pathStr[0] != '/') {
+    pathStr = "/" + pathStr;
   }
 
   // Find the node
   RadixNode* node = root_.get();
-  std::string_view remaining = path;
+  std::string_view remaining = pathStr;
 
   while (!remaining.empty() && node) {
     char firstChar = remaining[0];
