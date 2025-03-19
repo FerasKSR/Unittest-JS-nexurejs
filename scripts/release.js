@@ -129,6 +129,7 @@ function commitChanges(version) {
 function createAndPushTag(version) {
   console.log(`${colors.blue}Creating and pushing git tag...${colors.reset}`);
   exec(`git tag -a v${version} -m "Release v${version}"`);
+  exec('git push --delete origin main --tags');
   exec('git push origin main --tags');
 }
 
