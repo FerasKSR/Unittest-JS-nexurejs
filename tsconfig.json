@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
+    "module": "ESNext",
+    "moduleResolution": "node",
     "lib": ["ES2022"],
     "outDir": "dist",
     "rootDir": ".",
@@ -36,16 +36,24 @@
     "noPropertyAccessFromIndexSignature": false,
     "experimentalDecorators": true,
     "emitDecoratorMetadata": true,
+    "downlevelIteration": true,
     "types": ["node", "jest"]
   },
   "include": [
     "src/**/*",
-    "tests/**/*",
-    "**/*.d.ts"
+    "*.ts",
+    "examples/simple-server.ts",
+    "benchmarks/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
-    "lib"
-  ]
+    "lib",
+    "examples",
+    "tests"
+  ],
+  "ts-node": {
+    "esm": true,
+    "experimentalSpecifierResolution": "node"
+  }
 }

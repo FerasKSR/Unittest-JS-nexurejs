@@ -5,17 +5,44 @@ All notable changes to NexureJS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.1.7] - 2025-03-10
+## [0.2.0] - 2025-03-20
 
 ### Added
+
+- Enhanced documentation across the entire codebase
+- Detailed versioning strategy in release documentation
+- Long-term support (LTS) planning information
+- Post-release verification process
+- Comprehensive release preparation checklist
+
+### Changed
+
+- Improved release process documentation with more detailed steps
+- Updated roadmap with clearer development phases
+- Enhanced contribution guidelines with more specific instructions
+- Better organization of technical documentation
+
+### Fixed
+
+- Documentation formatting inconsistencies
+- Missing steps in release verification process
+- Outdated references in API documentation
+- Improved cross-referencing between documentation files
+
+## [0.1.9] - 2025-03-10
+
+### Added
+
 - Support for Node.js 23.x
 
 ### Changed
+
 - Moved configuration files to root directory for better compatibility with build tools
 - Updated TypeScript configuration for improved build process
 - Improved ESLint configuration to reduce warnings and errors
 
 ### Fixed
+
 - Fixed release script to correctly handle CHANGELOG.md in docs folder
 - Fixed native module build process for cross-platform compatibility
 - Resolved linting errors in prebuild.js script
@@ -24,17 +51,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.1.6] - 2025-03-09
 
 ### Added
+
 - Multi-platform CI testing (Ubuntu, Windows, macOS)
 - Automated build tools installation for different platforms
 - Build artifacts collection on test failures
 - C++17 standard enforcement across all platforms
 
 ### Changed
+
 - Enhanced test workflow with parallel testing on multiple Node.js versions
 - Improved error handling and debugging in CI pipeline
 - Better naming and organization of test jobs
 
 ### Fixed
+
 - Missing stdexcept header in HTTP parser
 - Build tools setup for Windows and Ubuntu environments
 - Cross-platform C++ compilation issues

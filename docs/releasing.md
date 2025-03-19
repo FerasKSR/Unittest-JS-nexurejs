@@ -11,6 +11,7 @@ Before starting the release process, ensure you have:
 3. Node.js and npm installed locally
 4. All tests passing on the main branch across all platforms (Ubuntu, Windows, macOS)
 5. A GitHub personal access token with `repo` scope for creating releases
+6. All necessary build tools installed for your platform (see platform-specific requirements)
 
 ## Version Numbering
 
@@ -19,6 +20,17 @@ NexureJS follows [Semantic Versioning](https://semver.org/) (SemVer):
 - **Major version (X.0.0)**: Incompatible API changes
 - **Minor version (0.X.0)**: New functionality in a backward-compatible manner
 - **Patch version (0.0.X)**: Backward-compatible bug fixes
+
+## Release Preparation Checklist
+
+Before initiating the release process, ensure the following:
+
+- [ ] All CI checks are passing on the main branch
+- [ ] All planned features for this release are complete and merged
+- [ ] All critical bugs are fixed
+- [ ] Documentation is up-to-date
+- [ ] Performance benchmarks show no regressions
+- [ ] Native modules build successfully across all supported platforms
 
 ## Release Process
 
@@ -43,6 +55,11 @@ NexureJS follows [Semantic Versioning](https://semver.org/) (SemVer):
 4. Build native modules for all platforms:
    ```bash
    npm run build:native:all
+   ```
+
+5. Run benchmarks to ensure no performance regressions:
+   ```bash
+   npm run benchmark
    ```
 
 ### 2. Run the Release Script
@@ -81,7 +98,7 @@ npm run release:patch --dry-run
 
 If you need to perform the release steps manually:
 
-#### 2.1 Update Version and Changelog
+#### 3.1 Update Version and Changelog
 
 1. Determine the new version number based on the changes since the last release.
 
@@ -102,7 +119,7 @@ If you need to perform the release steps manually:
    git commit -m "chore: prepare release v<new-version>"
    ```
 
-#### 2.2 Tag and Release
+#### 3.2 Tag and Release
 
 1. Create a git tag for the new version:
    ```bash
@@ -125,15 +142,41 @@ If you need to perform the release steps manually:
    - Upload all prebuilt binaries from the `prebuilds` directory with retry logic
    - Publish the package to npm (if you choose to)
 
-### 4. Announce the Release
+### 4. Post-Release Verification
+
+After the release is complete, verify the following:
+
+1. The package is available on npm with the correct version:
+   ```bash
+   npm view nexurejs version
+   ```
+
+2. The GitHub release is created with:
+   - Correct version tag
+   - Release notes from the changelog
+   - All prebuilt binaries attached
+
+3. The package can be installed and used:
+   ```bash
+   mkdir test-release && cd test-release
+   npm init -y
+   npm install nexurejs
+   node -e "console.log(require('nexurejs'))"
+   ```
+
+4. Documentation links are working correctly
+
+### 5. Announce the Release
 
 1. Announce the new release on:
    - GitHub Discussions
-   - Twitter/X
-   - Discord community (if applicable)
+   - Twitter/X (@NexureJS)
+   - Discord community server
    - Dev.to or Medium blog post (for major releases)
 
 2. Highlight key features, improvements, and breaking changes.
+
+3. Provide upgrade instructions for existing users.
 
 ## CI/CD Pipeline
 
@@ -163,15 +206,65 @@ For urgent fixes that need to be released outside the normal release cycle:
    npm run release <current-version>.<patch>
    ```
 
+5. After the hotfix is released, ensure the changes are also merged back to the main branch:
+   ```bash
+   git checkout main
+   git merge hotfix/v<current-version>.<patch>
+   git push origin main
+   ```
+
+## Managing Prebuilt Binaries
+
+NexureJS provides prebuilt binaries for various platforms to avoid building from source during installation. The release process handles this automatically, but here's a manual overview:
+
+1. Prebuilt binaries are created during the build process and stored in the `prebuilds` directory
+2. Each binary follows the naming convention: `nexurejs-v{version}-{node_abi}-{platform}-{arch}.tar.gz`
+3. The release script uploads these binaries to the GitHub release
+4. When users install NexureJS, the installation script attempts to download a matching prebuilt binary
+
+To manually build prebuilt binaries for all platforms:
+
+```bash
+npm run build:native:all
+```
+
+## Versioning Strategy
+
+NexureJS follows these guidelines for version increments:
+
+1. **Patch Version (0.0.X)**:
+   - Bug fixes
+   - Documentation improvements
+   - Minor performance optimizations
+   - Internal refactoring (no API changes)
+
+2. **Minor Version (0.X.0)**:
+   - New features
+   - Non-breaking improvements
+   - New APIs with backward compatibility
+   - Deprecation of existing APIs (with warning)
+
+3. **Major Version (X.0.0)**:
+   - Breaking API changes
+   - Removal of deprecated features
+   - Significant architecture changes
+   - Major rewrites or refactoring
+
+## Long-term Support (LTS)
+
+NexureJS will establish an LTS policy when reaching version 1.0.0, with details to be announced closer to that milestone.
+
 ## Release Checklist
 
 - [ ] All tests passing on all platforms (Ubuntu, Windows, macOS)
 - [ ] Code built successfully
 - [ ] Native modules built for all platforms
+- [ ] Benchmarks show no performance regressions
 - [ ] Version updated in package.json
 - [ ] docs/CHANGELOG.md updated
 - [ ] Git tag created and pushed
 - [ ] GitHub release created with release notes
 - [ ] Prebuilt binaries uploaded to GitHub release
 - [ ] Package published to npm
+- [ ] Post-release verification completed
 - [ ] Release announced to the community

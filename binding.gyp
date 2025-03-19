@@ -2,8 +2,6 @@
   "targets": [
     {
       "target_name": "nexurejs_native",
-      "cflags!": [ "-fno-exceptions" ],
-      "cflags_cc!": [ "-fno-exceptions" ],
       "sources": [
         "src/native/main.cc",
         "src/native/http/http_parser.cc",
@@ -11,34 +9,40 @@
         "src/native/json/json_processor.cc",
         "src/native/url/url_parser.cc",
         "src/native/schema/schema_validator.cc",
-        "src/native/compression/compression.cc"
+        "src/native/compression/compression.cc",
+        "src/native/websocket/websocket.cc",
+        "src/native/json/simdjson_wrapper.cpp"
       ],
       "include_dirs": [
-        "<!@(node -p \"require('node-addon-api').include\")"
+        "<!@(node -p \"require('node-addon-api').include\")",
+        "/usr/local/include",
+        "<!(node -e \"require('node-addon-api').include_dir\")",
+        "<!(node -e \"console.log(require('node-addon-api').libuv_include_dir)\")",
+        "src/native",
+        "node_modules/simdjson/simdjson/src"
       ],
-      "libraries": [
-        "-lz"
+      "dependencies": [
+        "<!(node -p \"require('node-addon-api').gyp\")"
       ],
-      "defines": [ "NAPI_DISABLE_CPP_EXCEPTIONS" ],
-      "conditions": [
-        ["OS=='win'", {
-          "msvs_settings": {
-            "VCCLCompilerTool": {
-              "ExceptionHandling": 1
-            }
-          },
-          "libraries": [
-            "zlib.lib"
-          ]
-        }],
-        ["OS=='mac'", {
-          "xcode_settings": {
-            "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
-            "CLANG_CXX_LIBRARY": "libc++",
-            "MACOSX_DEPLOYMENT_TARGET": "10.15"
-          }
-        }]
-      ]
+      "defines": [
+        "NAPI_VERSION=8",
+        "NAPI_DISABLE_CPP_EXCEPTIONS"
+      ],
+      "cflags!": [ "-fno-exceptions" ],
+      "cflags_cc!": [ "-fno-exceptions" ],
+      "cflags_cc": [ "-Wno-bitwise-instead-of-logical", "-Wno-ambiguous-reversed-operator" ],
+      "xcode_settings": {
+        "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
+        "CLANG_CXX_LIBRARY": "libc++",
+        "MACOSX_DEPLOYMENT_TARGET": "10.15",
+        "WARNING_CFLAGS": [
+          "-Wno-bitwise-instead-of-logical",
+          "-Wno-ambiguous-reversed-operator"
+        ]
+      },
+      "msvs_settings": {
+        "VCCLCompilerTool": { "ExceptionHandling": 1 }
+      }
     }
   ]
 }

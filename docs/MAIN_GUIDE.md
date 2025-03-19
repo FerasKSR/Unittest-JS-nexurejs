@@ -62,7 +62,7 @@ app.listen(3000, () => {
 
 A typical NexureJS project structure looks like this:
 
-```
+```bash
 my-nexure-app/
 ├── src/
 │   ├── controllers/

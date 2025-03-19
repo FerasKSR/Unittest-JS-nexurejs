@@ -1,18 +1,24 @@
 #include "radix_router.h"
 #include <algorithm>
 #include <sstream>
+#include <cstring>
 
 // RadixNode implementation
-RadixNode::RadixNode() : isWildcard(false), hasHandler(false) {}
+RadixNode::RadixNode() : isWildcard(false), hasHandler(false) {
+  // Initialize bitmap to zeros
+  std::memset(staticChildrenBitmap, 0, sizeof(staticChildrenBitmap));
+}
 
 RadixNode::~RadixNode() {}
 
-void RadixNode::setBit(char c) {
+inline void RadixNode::setBit(char c) {
+  // Fast bitmap operation using bit shifting
   unsigned char uc = static_cast<unsigned char>(c);
   staticChildrenBitmap[uc >> 6] |= (1ULL << (uc & 63));
 }
 
-bool RadixNode::hasBit(char c) const {
+inline bool RadixNode::hasBit(char c) const {
+  // Fast bitmap check using bit shifting
   unsigned char uc = static_cast<unsigned char>(c);
   return (staticChildrenBitmap[uc >> 6] & (1ULL << (uc & 63))) != 0;
 }
@@ -27,18 +33,16 @@ Napi::Object RadixRouter::Init(Napi::Env env, Napi::Object exports) {
     InstanceMethod("remove", &RadixRouter::Remove)
   });
 
-  Napi::FunctionReference* constructor = new Napi::FunctionReference();
-  *constructor = Napi::Persistent(func);
-  env.SetInstanceData(constructor);
-
   exports.Set("RadixRouter", func);
   return exports;
 }
 
 Napi::Object RadixRouter::NewInstance(Napi::Env env) {
   Napi::EscapableHandleScope scope(env);
-  Napi::FunctionReference* constructor = env.GetInstanceData<Napi::FunctionReference>();
-  return scope.Escape(constructor->New({})).ToObject();
+  Napi::Function func = Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+    return RadixRouter::NewInstance(info.Env());
+  });
+  return scope.Escape(func.New({})).ToObject();
 }
 
 RadixRouter::RadixRouter(const Napi::CallbackInfo& info)
@@ -49,12 +53,16 @@ RadixRouter::RadixRouter(const Napi::CallbackInfo& info)
   // Create root node
   root_ = std::make_unique<RadixNode>();
 
+  // Pre-allocate cache with a reasonable size to avoid rehashing
+  routeCache_.reserve(1000);
+
   // Parse options if provided
   if (info.Length() > 0 && info[0].IsObject()) {
     Napi::Object options = info[0].As<Napi::Object>();
 
     if (options.Has("maxCacheSize") && options.Get("maxCacheSize").IsNumber()) {
       maxCacheSize_ = options.Get("maxCacheSize").As<Napi::Number>().Uint32Value();
+      routeCache_.reserve(std::min(maxCacheSize_ / 2, size_t(1000)));
     }
   }
 }
@@ -78,22 +86,23 @@ Napi::Value RadixRouter::Add(const Napi::CallbackInfo& info) {
   std::string path = info[1].As<Napi::String>().Utf8Value();
   Napi::Object handler = info[2].As<Napi::Object>();
 
-  // Normalize path
+  // Pre-process the path for faster matching
   if (path.empty() || path[0] != '/') {
     path = "/" + path;
+  }
+
+  // Remove trailing slash for consistency (except for root path)
+  if (path.length() > 1 && path.back() == '/') {
+    path.pop_back();
   }
 
   // Insert the route
   Insert(method, path, handler);
 
-  // Clear the route cache when adding new routes
-  routeCache_.clear();
-  cacheSize_ = 0;
-
-  return info.This();
+  return env.Undefined();
 }
 
-// Find a route handler
+// Find a route
 Napi::Value RadixRouter::Find(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   Napi::HandleScope scope(env);
@@ -104,15 +113,15 @@ Napi::Value RadixRouter::Find(const Napi::CallbackInfo& info) {
   }
 
   std::string method = info[0].As<Napi::String>().Utf8Value();
-  std::string path = info[1].As<Napi::String>().Utf8Value();
+  std::string pathStr = info[1].As<Napi::String>().Utf8Value();
 
-  // Normalize path
-  if (path.empty() || path[0] != '/') {
-    path = "/" + path;
+  // Pre-process the path for faster matching
+  if (pathStr.empty() || pathStr[0] != '/') {
+    pathStr = "/" + pathStr;
   }
 
   // Create cache key
-  std::string cacheKey = method + ":" + path;
+  std::string cacheKey = method + ":" + pathStr;
 
   // Check cache first
   auto cacheIt = routeCache_.find(cacheKey);
@@ -121,7 +130,32 @@ Napi::Value RadixRouter::Find(const Napi::CallbackInfo& info) {
   }
 
   // Lookup the route
-  return Lookup(method, path);
+  Napi::Value result = Lookup(method, pathStr);
+
+  // Cache the result if it's a successful match and cache isn't full
+  if (result.IsObject() && routeCache_.size() < maxCacheSize_) {
+    Napi::Object resultObj = result.As<Napi::Object>();
+    if (resultObj.Has("found") && resultObj.Get("found").ToBoolean()) {
+      std::string cacheKeyStr = std::string(cacheKey);
+      routeCache_.insert(std::make_pair(cacheKeyStr, Napi::Persistent(result.As<Napi::Object>())));
+      cacheSize_++;
+
+      // Simple cache eviction if we're at 90% capacity
+      if (cacheSize_ >= maxCacheSize_ * 0.9) {
+        // Remove 10% of the cache (oldest entries)
+        size_t toRemove = maxCacheSize_ / 10;
+        if (toRemove > 0) {
+          auto it = routeCache_.begin();
+          for (size_t i = 0; i < toRemove && it != routeCache_.end(); i++) {
+            it = routeCache_.erase(it);
+          }
+          cacheSize_ -= toRemove;
+        }
+      }
+    }
+  }
+
+  return result;
 }
 
 // Remove a route
@@ -135,16 +169,16 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
   }
 
   std::string method = info[0].As<Napi::String>().Utf8Value();
-  std::string path = info[1].As<Napi::String>().Utf8Value();
+  std::string pathStr = info[1].As<Napi::String>().Utf8Value();
 
-  // Normalize path
-  if (path.empty() || path[0] != '/') {
-    path = "/" + path;
+  // Pre-process the path for faster matching
+  if (pathStr.empty() || pathStr[0] != '/') {
+    pathStr = "/" + pathStr;
   }
 
   // Find the node
   RadixNode* node = root_.get();
-  std::string remaining = path;
+  std::string_view remaining = pathStr;
 
   while (!remaining.empty() && node) {
     char firstChar = remaining[0];
@@ -163,7 +197,7 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
 
       // Move to parameter child
       node = node->paramChild.get();
-      remaining = paramEnd < remaining.length() ? remaining.substr(paramEnd) : "";
+      remaining = paramEnd < remaining.length() ? remaining.substr(paramEnd) : std::string_view();
     } else if (firstChar == '*') {
       // Wildcard node
       if (!node->wildcardChild) {
@@ -172,7 +206,7 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
 
       // Move to wildcard child
       node = node->wildcardChild.get();
-      remaining = "";
+      remaining = std::string_view();
     } else {
       // Static node - find the longest common prefix
       if (!node->hasBit(firstChar)) {
@@ -205,18 +239,21 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
   }
 
   // Check if we found the node and it has a handler for this method
-  if (node && node->hasHandler && node->handlers.find(method) != node->handlers.end()) {
-    // Remove the handler
-    node->handlers.erase(method);
+  if (node && node->hasHandler) {
+    auto handlerIt = node->handlers.find(method);
+    if (handlerIt != node->handlers.end()) {
+      // Remove the handler
+      node->handlers.erase(handlerIt);
 
-    // Update hasHandler flag
-    node->hasHandler = !node->handlers.empty();
+      // Update hasHandler flag
+      node->hasHandler = !node->handlers.empty();
 
-    // Clear the route cache
-    routeCache_.clear();
-    cacheSize_ = 0;
+      // Clear the route cache
+      routeCache_.clear();
+      cacheSize_ = 0;
 
-    return Napi::Boolean::New(env, true);
+      return Napi::Boolean::New(env, true);
+    }
   }
 
   return Napi::Boolean::New(env, false);
@@ -225,7 +262,7 @@ Napi::Value RadixRouter::Remove(const Napi::CallbackInfo& info) {
 // Insert a route into the radix tree
 void RadixRouter::Insert(const std::string& method, const std::string& path, const Napi::Object& handler) {
   RadixNode* node = root_.get();
-  std::string remaining = path;
+  std::string_view remaining(path);
 
   while (!remaining.empty()) {
     char firstChar = remaining[0];
@@ -243,11 +280,11 @@ void RadixRouter::Insert(const std::string& method, const std::string& path, con
       }
 
       // Set parameter name
-      node->paramChild->paramName = remaining.substr(1, paramEnd - 1);
+      node->paramChild->paramName = std::string(remaining.substr(1, paramEnd - 1));
 
       // Move to parameter child
       node = node->paramChild.get();
-      remaining = paramEnd < remaining.length() ? remaining.substr(paramEnd) : "";
+      remaining = paramEnd < remaining.length() ? remaining.substr(paramEnd) : std::string_view();
     } else if (firstChar == '*') {
       // Wildcard node
       if (!node->wildcardChild) {
@@ -257,22 +294,22 @@ void RadixRouter::Insert(const std::string& method, const std::string& path, con
 
       // Extract wildcard name if present
       if (remaining.length() > 1) {
-        node->wildcardChild->paramName = remaining.substr(1);
+        node->wildcardChild->paramName = std::string(remaining.substr(1));
       }
 
       // Move to wildcard child
       node = node->wildcardChild.get();
-      remaining = "";
+      remaining = std::string_view();
     } else {
       // Static node
       if (!node->hasBit(firstChar)) {
         // No child with this starting character, create a new one
         node->setBit(firstChar);
         auto newChild = std::make_unique<RadixNode>();
-        newChild->path = remaining;
+        newChild->path = std::string(remaining);
         node->children[firstChar] = std::move(newChild);
         node = node->children[firstChar].get();
-        remaining = "";
+        remaining = std::string_view();
       } else {
         // Child exists, find it
         auto it = node->children.find(firstChar);
@@ -328,17 +365,15 @@ void RadixRouter::Insert(const std::string& method, const std::string& path, con
 Napi::Value RadixRouter::Lookup(const std::string& method, const std::string& path) {
   Napi::Env env = env_;
 
-  // Create cache key
-  std::string cacheKey = method + ":" + path;
-
-  // Create result object
+  // Pre-allocate result object with expected properties
   Napi::Object result = Napi::Object::New(env);
   Napi::Object params = Napi::Object::New(env);
   result.Set("params", params);
+  result.Set("found", Napi::Boolean::New(env, false));
 
   // Start at the root
   RadixNode* node = root_.get();
-  std::string remaining = path;
+  std::string_view remaining(path);
 
   // Track matched handlers for wildcard fallback
   struct MatchedHandler {
@@ -346,7 +381,9 @@ Napi::Value RadixRouter::Lookup(const std::string& method, const std::string& pa
     size_t paramsCount;
   };
 
+  // Pre-allocate space to avoid reallocations
   std::vector<MatchedHandler> matchedHandlers;
+  matchedHandlers.reserve(8); // Most routes won't have more than 8 parameters
 
   while (!remaining.empty() && node) {
     char firstChar = remaining[0];
@@ -358,12 +395,23 @@ Napi::Value RadixRouter::Lookup(const std::string& method, const std::string& pa
         RadixNode* child = it->second.get();
 
         // Check if the path matches
-        if (remaining.length() >= child->path.length() &&
-            remaining.substr(0, child->path.length()) == child->path) {
-          // Move to child node
-          node = child;
-          remaining = remaining.substr(child->path.length());
-          continue;
+        size_t childPathLen = child->path.length();
+        if (remaining.length() >= childPathLen) {
+          // Use direct character comparison instead of substring
+          bool match = true;
+          for (size_t i = 0; i < childPathLen; i++) {
+            if (remaining[i] != child->path[i]) {
+              match = false;
+              break;
+            }
+          }
+
+          if (match) {
+            // Move to child node
+            node = child;
+            remaining = remaining.substr(childPathLen);
+            continue;
+          }
         }
       }
     }
@@ -376,14 +424,14 @@ Napi::Value RadixRouter::Lookup(const std::string& method, const std::string& pa
         paramEnd = remaining.length();
       }
 
-      std::string paramValue = remaining.substr(0, paramEnd);
+      std::string_view paramValue = remaining.substr(0, paramEnd);
 
       // Store parameter
-      params.Set(node->paramChild->paramName, Napi::String::New(env, paramValue));
+      params.Set(node->paramChild->paramName, Napi::String::New(env, std::string(paramValue)));
 
       // Move to parameter child
       node = node->paramChild.get();
-      remaining = paramEnd < remaining.length() ? remaining.substr(paramEnd) : "";
+      remaining = paramEnd < remaining.length() ? remaining.substr(paramEnd) : std::string_view();
 
       // If this node has a handler, track it as a potential match
       if (node->hasHandler) {
@@ -397,12 +445,12 @@ Napi::Value RadixRouter::Lookup(const std::string& method, const std::string& pa
     if (node->wildcardChild) {
       // Store wildcard parameter if it has a name
       if (!node->wildcardChild->paramName.empty()) {
-        params.Set(node->wildcardChild->paramName, Napi::String::New(env, remaining));
+        params.Set(node->wildcardChild->paramName, Napi::String::New(env, std::string(remaining)));
       }
 
       // Move to wildcard child
       node = node->wildcardChild.get();
-      remaining = "";
+      remaining = std::string_view();
 
       // If this node has a handler, track it as a potential match
       if (node->hasHandler) {
@@ -423,41 +471,31 @@ Napi::Value RadixRouter::Lookup(const std::string& method, const std::string& pa
       // Found an exact match
       result.Set("handler", handlerIt->second.Value());
       result.Set("found", Napi::Boolean::New(env, true));
-
-      // Cache the result if cache isn't full
-      if (cacheSize_ < maxCacheSize_) {
-        routeCache_[cacheKey] = Napi::Persistent(result);
-        cacheSize_++;
-      }
-
       return result;
     }
   }
 
   // Check for matched handlers (from most to least specific)
-  std::sort(matchedHandlers.begin(), matchedHandlers.end(),
-            [](const MatchedHandler& a, const MatchedHandler& b) {
-              return a.paramsCount > b.paramsCount;
-            });
+  if (!matchedHandlers.empty()) {
+    // Sort by parameter count (most specific first)
+    if (matchedHandlers.size() > 1) {
+      std::sort(matchedHandlers.begin(), matchedHandlers.end(),
+                [](const MatchedHandler& a, const MatchedHandler& b) {
+                  return a.paramsCount > b.paramsCount;
+                });
+    }
 
-  for (const auto& match : matchedHandlers) {
-    auto handlerIt = match.node->handlers.find(method);
-    if (handlerIt != match.node->handlers.end()) {
-      // Found a match
-      result.Set("handler", handlerIt->second.Value());
-      result.Set("found", Napi::Boolean::New(env, true));
-
-      // Cache the result if cache isn't full
-      if (cacheSize_ < maxCacheSize_) {
-        routeCache_[cacheKey] = Napi::Persistent(result);
-        cacheSize_++;
+    for (const auto& match : matchedHandlers) {
+      auto handlerIt = match.node->handlers.find(method);
+      if (handlerIt != match.node->handlers.end()) {
+        // Found a match
+        result.Set("handler", handlerIt->second.Value());
+        result.Set("found", Napi::Boolean::New(env, true));
+        return result;
       }
-
-      return result;
     }
   }
 
-  // No handler found
-  result.Set("found", Napi::Boolean::New(env, false));
+  // No handler found - result already has found=false
   return result;
 }

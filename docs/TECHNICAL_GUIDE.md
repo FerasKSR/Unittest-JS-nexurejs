@@ -87,7 +87,7 @@ const app = new Nexure({
 ```
 
 > **Note:** To enable garbage collection control, you must run Node.js with the `--expose-gc` flag:
-> ```
+> ```bash
 > node --expose-gc server.js
 > ```
 

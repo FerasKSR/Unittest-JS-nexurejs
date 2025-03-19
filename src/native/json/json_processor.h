@@ -2,29 +2,37 @@
 #define JSON_PROCESSOR_H
 
 #include <napi.h>
+#include "simdjson_wrapper.h"
+#include <memory>
 #include <string>
-#include <vector>
+
+namespace simdjson {
+  namespace dom {
+    class parser;
+    class element;
+  }
+}
 
 class JsonProcessor : public Napi::ObjectWrap<JsonProcessor> {
 public:
   static Napi::Object Init(Napi::Env env, Napi::Object exports);
   static Napi::Object NewInstance(Napi::Env env);
   JsonProcessor(const Napi::CallbackInfo& info);
+  ~JsonProcessor() = default;
 
 private:
   // JavaScript accessible methods
   Napi::Value Parse(const Napi::CallbackInfo& info);
+  Napi::Value ParseBuffer(const Napi::CallbackInfo& info);
   Napi::Value Stringify(const Napi::CallbackInfo& info);
-  Napi::Value ParseStream(const Napi::CallbackInfo& info);
-  Napi::Value StringifyStream(const Napi::CallbackInfo& info);
 
-  // Internal methods
-  Napi::Value ParseBuffer(const char* data, size_t length);
-  Napi::Value ParseString(const std::string& json);
-  std::string StringifyValue(const Napi::Value& value);
+  // Helper methods
+  Napi::Value ConvertSimdJsonToNapi(Napi::Env env, const simdjson::dom::element& element);
+  void StringifyValue(const Napi::Value& value, std::string& result);
 
-  // Buffer for parsing
-  std::vector<char> parseBuffer_;
+  // Member variables
+  std::unique_ptr<simdjson::dom::parser> parser_;
+  std::string stringifyBuffer_; // Reusable buffer for stringify operations
 };
 
 #endif // JSON_PROCESSOR_H
