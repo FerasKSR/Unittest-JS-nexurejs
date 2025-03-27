@@ -4,8 +4,8 @@
 
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, createHmac } from 'node:crypto';
-import { MiddlewareHandler } from '../middleware/middleware.js';
-import { HttpException } from '../http/http-exception.js';
+import { MiddlewareHandler } from '../middleware/middleware';
+import { HttpException } from '../http/http-exception';
 
 /**
  * CSRF options
