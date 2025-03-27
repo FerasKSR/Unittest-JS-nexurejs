@@ -2,11 +2,10 @@
  * Cluster manager for multi-core support
  */
 
-import cluster from 'node:cluster';
-import type { Worker } from 'node:cluster';
+import cluster, { Worker } from 'node:cluster';
 import { cpus } from 'node:os';
 import { EventEmitter } from 'node:events';
-import { Logger } from '../utils/logger.js';
+import { Logger } from '../utils/logger';
 
 /**
  * Cluster manager options

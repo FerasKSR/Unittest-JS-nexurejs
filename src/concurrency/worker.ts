@@ -7,24 +7,72 @@
 import { parentPort, workerData } from 'node:worker_threads';
 import { performance } from 'node:perf_hooks';
 
+// Define types for messages and tasks
+interface WorkerData {
+  id: number;
+}
+
+interface TaskMessage {
+  type: 'task';
+  taskId: string;
+  data: TaskData;
+}
+
+interface TerminateMessage {
+  type: 'terminate';
+}
+
+type WorkerMessage = TaskMessage | TerminateMessage;
+
+interface TaskData {
+  type: 'fibonacci' | 'sleep' | 'mixed';
+  data: number | number[] | any;
+}
+
+interface ResultMetrics {
+  executionTime: number;
+  cpuUsage: number;
+  memoryUsage: number;
+  workerId: number;
+  wasStolen: boolean;
+}
+
+interface ResultMessage {
+  type: 'result';
+  taskId: string;
+  result: any;
+  metrics: ResultMetrics;
+}
+
+interface ErrorMessage {
+  type: 'error';
+  taskId: string | null;
+  error: string;
+}
+
+interface ReadyMessage {
+  type: 'ready';
+  workerId: number;
+}
+
 // Initialize worker
-const workerId = workerData?.id || 0;
+const workerId = (workerData as WorkerData)?.id || 0;
 
 // Send ready message to parent
-parentPort.postMessage({
+parentPort!.postMessage({
   type: 'ready',
   workerId
-});
+} as ReadyMessage);
 
 // Handle messages from parent
-parentPort.on('message', async (message) => {
+parentPort!.on('message', async (message: WorkerMessage) => {
   if (!message || typeof message !== 'object') {
     return sendError('Invalid message format');
   }
 
-  const { type, taskId, data } = message;
+  if (message.type === 'task') {
+    const { taskId, data } = message;
 
-  if (type === 'task') {
     try {
       // Start measuring performance
       const startTime = performance.now();
@@ -35,16 +83,17 @@ parentPort.on('message', async (message) => {
       let result;
       switch (data.type) {
         case 'fibonacci':
-          result = fibonacci(data.data);
+          result = fibonacci(data.data as number);
           break;
         case 'sleep':
-          result = await sleep(data.data);
+          result = await sleep(data.data as number);
           break;
         case 'mixed':
-          result = await mixedWorkload(data.data[0], data.data[1]);
+          const mixedData = data.data as number[];
+          result = await mixedWorkload(mixedData[0], mixedData[1]);
           break;
         default:
-          throw new Error(`Unknown task type: ${data.type}`);
+          throw new Error(`Unknown task type: ${(data as any).type}`);
       }
 
       // Calculate metrics
@@ -53,7 +102,7 @@ parentPort.on('message', async (message) => {
       const memUsage = process.memoryUsage();
 
       // Send result back to parent
-      parentPort.postMessage({
+      parentPort!.postMessage({
         type: 'result',
         taskId,
         result,
@@ -64,40 +113,40 @@ parentPort.on('message', async (message) => {
           workerId,
           wasStolen: false
         }
-      });
+      } as ResultMessage);
     } catch (error) {
-      sendError(/** @type {any} */ (error).message, taskId);
+      sendError((error as Error).message, taskId);
     }
-  } else if (type === 'terminate') {
+  } else if (message.type === 'terminate') {
     // Clean up and exit
     process.exit(0);
   }
 });
 
 // Helper function to send error messages
-function sendError(errorMessage, taskId = null) {
-  parentPort.postMessage({
+function sendError(errorMessage: string, taskId: string | null = null): void {
+  parentPort!.postMessage({
     type: 'error',
     taskId,
     error: errorMessage
-  });
+  } as ErrorMessage);
 }
 
 // Task implementations
 
 // Fibonacci calculation (CPU-intensive)
-function fibonacci(n) {
+function fibonacci(n: number): number {
   if (n <= 1) return n;
   return fibonacci(n - 1) + fibonacci(n - 2);
 }
 
 // Sleep function (IO-bound)
-function sleep(ms) {
+function sleep(ms: number): Promise<number> {
   return new Promise(resolve => setTimeout(() => resolve(ms), ms));
 }
 
 // Mixed workload
-async function mixedWorkload(cpuIntensity, ioTime) {
+async function mixedWorkload(cpuIntensity: number, ioTime: number): Promise<number> {
   // CPU work
   const fibResult = fibonacci(cpuIntensity);
 

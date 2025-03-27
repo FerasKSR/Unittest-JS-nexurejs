@@ -5,12 +5,12 @@
 import { Worker } from 'node:worker_threads';
 import { cpus } from 'node:os';
 import { EventEmitter } from 'node:events';
-import { Logger } from '../utils/logger.js';
+import { Logger } from '../utils/logger';
 
 /**
  * Worker task
  */
-export interface WorkerTask<T = any, R = any> {
+export interface WorkerTask<T = any, _R = any> {
   /**
    * Task ID
    */
