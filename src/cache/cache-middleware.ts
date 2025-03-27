@@ -3,8 +3,9 @@
  */
 
 import { IncomingMessage, ServerResponse } from 'node:http';
-import { MiddlewareHandler } from '../middleware/middleware.js';
-import { CacheManager, CacheOptions } from './cache-manager.js';
+import { MiddlewareHandler } from '../middleware/middleware';
+import { CacheManager, CacheOptions } from './cache-manager';
+import _crypto from 'crypto';
 
 /**
  * HTTP cache options
@@ -29,6 +30,11 @@ export interface HttpCacheOptions extends CacheOptions {
    * Whether to add cache control headers
    */
   addHeaders?: boolean;
+
+  /**
+   * Crypto algorithm to use for cache key hashing
+   */
+  algorithm?: string;
 }
 
 /**
@@ -60,8 +66,8 @@ export function createCacheMiddleware(
   const condition = options.condition || defaultCondition;
   const ttl = options.ttl || 60000; // Default to 1 minute
   const namespace = options.namespace || 'http';
-  const cacheControl = options.cacheControl || `max-age=${Math.floor(ttl / 1000)}`;
-  const addHeaders = options.addHeaders !== false;
+  const _cacheControl = options.cacheControl || `max-age=${Math.floor(ttl / 1000)}`;
+  const _addHeaders = options.addHeaders !== false;
 
   return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
     // Skip caching if condition is not met
@@ -102,13 +108,13 @@ export function createCacheMiddleware(
 
     // Store the original end method
     const originalEnd = res.end;
-    let body: Buffer[] = [];
+    const body: Buffer[] = [];
 
     // Override the end method to capture the response
-    res.end = function(chunk?: any, encoding?: BufferEncoding | (() => void), callback?: () => void): ServerResponse {
+    res.end = function(chunk?: any, encoding?: BufferEncoding | (() => void), _callback?: () => void): ServerResponse {
       // Handle overloaded method signature
       if (typeof encoding === 'function') {
-        callback = encoding;
+        _callback = encoding;
         encoding = undefined;
       }
 
@@ -130,8 +136,8 @@ export function createCacheMiddleware(
       }
 
       // Apply the original end method
-      // @ts-ignore - We need to handle the overloaded method signatures
-      return originalEnd.apply(this, arguments);
+      // @ts-expect-error - We need to handle the overloaded method signatures
+      return originalEnd.apply(this, [chunk, encoding, _callback]);
     };
 
     // Continue with the request
@@ -162,12 +168,12 @@ export function createCacheControlMiddleware(options: {
       // In a real-world scenario, you would generate a proper ETag
       // based on the response content
       const originalEnd = res.end;
-      let body: Buffer[] = [];
+      const body: Buffer[] = [];
 
-      res.end = function(chunk?: any, encoding?: BufferEncoding | (() => void), callback?: () => void): ServerResponse {
+      res.end = function(chunk?: any, encoding?: BufferEncoding | (() => void), _callback?: () => void): ServerResponse {
         // Handle overloaded method signature
         if (typeof encoding === 'function') {
-          callback = encoding;
+          _callback = encoding;
           encoding = undefined;
         }
 
@@ -189,13 +195,13 @@ export function createCacheControlMiddleware(options: {
           res.statusCode = 304;
 
           // Apply the original end method with no content
-          // @ts-ignore - We need to handle the overloaded method signatures
+          // @ts-expect-error - We need to handle the overloaded method signatures
           return originalEnd.apply(this, []);
         }
 
         // Apply the original end method
-        // @ts-ignore - We need to handle the overloaded method signatures
-        return originalEnd.apply(this, arguments);
+        // @ts-expect-error - We need to handle the overloaded method signatures
+        return originalEnd.apply(this, [chunk, encoding, _callback]);
       };
     }
 
