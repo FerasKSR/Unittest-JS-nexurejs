@@ -6,17 +6,22 @@
 
 import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL, URLSearchParams } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { URL, URLSearchParams } from 'node:url';
 import { Server as HttpServer } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-import { JsHttpParser } from '../http/http-parser.js';
-import { HttpMethod } from '../http/http-method.js';
-import { Logger } from '../utils/logger.js';
-import type { HttpParseResult, NativeHttpParser } from '../types/native.js';
-import { RadixRouter as JsRadixRouter } from '../routing/radix-router.js';
+import { JsHttpParser } from '../http/http-parser';
+import { HttpMethod } from '../http/http-method';
+import { Logger } from '../utils/logger';
+import type {
+  HttpParseResult,
+  NativeHttpParser,
+  NativeObjectPool,
+  ObjectPoolOptions,
+  PoolInfo
+} from '../types/native';
+import { RadixRouter as JsRadixRouter } from '../routing/router';
 
 // Get __dirname equivalent in ESM
 const __filename = fileURLToPath(import.meta.url);
@@ -37,6 +42,8 @@ export interface NativeModuleOptions {
   modulePath?: string;
   /** Maximum size for route cache (default: 1000) */
   maxCacheSize?: number;
+  /** Object pool options */
+  objectPoolOptions?: ObjectPoolOptions;
 }
 
 // Define WebSocket connection interface
@@ -152,6 +159,8 @@ export interface NativeModuleStatus {
   compression: boolean;
   /** Whether the WebSocket module is available */
   webSocket: boolean;
+  /** Whether the object pool is available */
+  objectPool: boolean;
   /** Error message if loading failed */
   error?: string;
 }
@@ -159,7 +168,7 @@ export interface NativeModuleStatus {
 // Track native binding and loading status
 let nativeBinding: any = null;
 let nativeBindingAttempted = false;
-let nativeBindingError: string | null = null;
+const nativeBindingError: string | null = null;
 
 // Default native module status
 const nativeModuleStatus: NativeModuleStatus = {
@@ -170,14 +179,21 @@ const nativeModuleStatus: NativeModuleStatus = {
   urlParser: false,
   schemaValidator: false,
   compression: false,
-  webSocket: false
+  webSocket: false,
+  objectPool: false
 };
 
 // Default configuration
 let nativeOptions: NativeModuleOptions = {
   enabled: true,
   verbose: false,
-  maxCacheSize: 1000
+  maxCacheSize: 1000,
+  objectPoolOptions: {
+    maxObjectPoolSize: 1000,
+    maxBufferPoolSize: 1000,
+    maxHeadersPoolSize: 1000,
+    enabled: true
+  }
 };
 
 /**
@@ -200,6 +216,7 @@ export function configureNativeModules(options: NativeModuleOptions): NativeModu
     nativeModuleStatus.schemaValidator = false;
     nativeModuleStatus.compression = false;
     nativeModuleStatus.webSocket = false;
+    nativeModuleStatus.objectPool = false;
   }
 
   return nativeOptions;
@@ -221,6 +238,7 @@ export function getNativeModuleStatus(): NativeModuleStatus {
     schemaValidator: nativeBinding?.SchemaValidator !== undefined,
     compression: nativeBinding?.Compression !== undefined,
     webSocket: nativeBinding?.NativeWebSocketServer !== undefined,
+    objectPool: nativeBinding?.ObjectPool !== undefined,
     error: nativeBindingError || undefined
   };
 }
@@ -261,7 +279,7 @@ export function loadNativeBinding(): any {
       // This will throw if the package doesn't exist
       require.resolve(platformSpecificPackage);
       possiblePaths.push(platformSpecificPackage);
-    } catch (e) {
+    } catch (_e) {
       // Package not found, continue with other paths
     }
 
@@ -287,6 +305,7 @@ export function loadNativeBinding(): any {
         nativeModuleStatus.schemaValidator = !!nativeBinding.SchemaValidator;
         nativeModuleStatus.compression = !!nativeBinding.Compression;
         nativeModuleStatus.webSocket = !!nativeBinding.NativeWebSocketServer;
+        nativeModuleStatus.objectPool = !!nativeBinding.ObjectPool;
 
         if (nativeOptions.verbose) {
           console.log(`Native module loaded successfully from ${bindingPath}`);
@@ -790,7 +809,7 @@ export class UrlParser {
         UrlParser.jsParseTime += (end - start);
         UrlParser.jsParseCount++;
         return result;
-      } catch (err) {
+      } catch (_err) {
         const end = performance.now();
         UrlParser.jsParseTime += (end - start);
         UrlParser.jsParseCount++;
@@ -857,6 +876,7 @@ export class UrlParser {
 export class SchemaValidator {
   private validator: any;
   private useNative: boolean;
+  private compiledSchemas: Map<string, any> = new Map();
 
   constructor() {
     if (nativeBinding && nativeBinding.validate) {
@@ -867,6 +887,12 @@ export class SchemaValidator {
     }
   }
 
+  /**
+   * Validate data against a schema
+   * @param schema The JSON schema to validate against
+   * @param data The data to validate
+   * @returns Validation result with errors if any
+   */
   validate(schema: object, data: any): { valid: boolean; errors: { path: string; message: string }[] } {
     if (this.useNative) {
       const start = performance.now();
@@ -884,6 +910,97 @@ export class SchemaValidator {
       SchemaValidator.jsValidateTime += (end - start);
       SchemaValidator.jsValidateCount++;
       return { valid: errors.length === 0, errors };
+    }
+  }
+
+  /**
+   * Validate partial updates against an existing object
+   * @param schema The JSON schema for the entire object
+   * @param data The existing data object
+   * @param updates The partial updates to apply and validate
+   * @returns Validation result
+   */
+  validatePartial(schema: object, data: object, updates: object): { valid: boolean; errors: { path: string; message: string }[] } {
+    if (this.useNative && this.validator.validatePartial) {
+      const start = performance.now();
+      const result = this.validator.validatePartial(schema, data, updates);
+      const end = performance.now();
+      SchemaValidator.nativeValidateTime += (end - start);
+      SchemaValidator.nativeValidateCount++;
+      return result;
+    } else {
+      // Fallback: merge updates into data and validate
+      const start = performance.now();
+      const mergedData = { ...data, ...updates };
+      const errors: { path: string; message: string }[] = [];
+      this.validateValue(schema, mergedData, '$', errors);
+      const end = performance.now();
+      SchemaValidator.jsValidateTime += (end - start);
+      SchemaValidator.jsValidateCount++;
+      return { valid: errors.length === 0, errors };
+    }
+  }
+
+  /**
+   * Compile a schema for faster validation
+   * @param schema The schema to compile
+   * @returns A reference to the compiled schema
+   */
+  compileSchema(schema: object): { id: string; hash: string; version: number } {
+    if (this.useNative && this.validator.compileSchema) {
+      const start = performance.now();
+      const compiled = this.validator.compileSchema(schema);
+      const end = performance.now();
+      SchemaValidator.nativeCompileTime += (end - start);
+      SchemaValidator.nativeCompileCount++;
+
+      // Store in local cache
+      const key = compiled.id ? `${compiled.id}:${compiled.hash}` : compiled.hash;
+      this.compiledSchemas.set(key, compiled);
+
+      return compiled;
+    } else {
+      // No compilation in JS fallback, return empty reference
+      return { id: '', hash: '', version: 0 };
+    }
+  }
+
+  /**
+   * Clear the schema cache
+   */
+  clearCache(): void {
+    if (this.useNative && this.validator.clearCache) {
+      this.validator.clearCache();
+    }
+    this.compiledSchemas.clear();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): {
+    cacheSize: number;
+    cacheHits: number;
+    cacheMisses: number;
+    cacheEvictions: number;
+    hitRatio: number;
+    totalValidations: number;
+    generationTime: number;
+    validationTime: number;
+  } {
+    if (this.useNative && this.validator.getCacheStats) {
+      return this.validator.getCacheStats();
+    } else {
+      return {
+        cacheSize: 0,
+        cacheHits: 0,
+        cacheMisses: 0,
+        cacheEvictions: 0,
+        hitRatio: 0,
+        totalValidations: SchemaValidator.jsValidateCount,
+        generationTime: 0,
+        validationTime: SchemaValidator.jsValidateTime
+      };
     }
   }
 
@@ -954,10 +1071,27 @@ export class SchemaValidator {
           }
         }
       }
+
+      // Check additionalProperties
+      if (schema.additionalProperties === false) {
+        const propertyNames = Object.keys(value);
+        const schemaProperties = schema.properties ? Object.keys(schema.properties) : [];
+        for (const prop of propertyNames) {
+          if (!schemaProperties.includes(prop)) {
+            errors.push({ path: `${path}.${prop}`, message: 'Additional property not allowed' });
+          }
+        }
+      }
     }
 
     // Array validations
     if (schema.type === 'array' && Array.isArray(value)) {
+      if (schema.minItems !== undefined && value.length < schema.minItems) {
+        errors.push({ path, message: 'Array too short' });
+      }
+      if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+        errors.push({ path, message: 'Array too long' });
+      }
       if (schema.items) {
         for (let i = 0; i < value.length; i++) {
           this.validateValue(schema.items, value[i], `${path}[${i}]`, errors);
@@ -973,13 +1107,24 @@ export class SchemaValidator {
   private static jsValidateCount = 0;
   private static nativeValidateTime = 0;
   private static nativeValidateCount = 0;
+  private static nativeCompileTime = 0;
+  private static nativeCompileCount = 0;
 
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number } {
+  static getPerformanceMetrics(): {
+    jsTime: number;
+    jsCount: number;
+    nativeTime: number;
+    nativeCount: number;
+    nativeCompileTime: number;
+    nativeCompileCount: number;
+  } {
     return {
       jsTime: SchemaValidator.jsValidateTime,
       jsCount: SchemaValidator.jsValidateCount,
       nativeTime: SchemaValidator.nativeValidateTime,
-      nativeCount: SchemaValidator.nativeValidateCount
+      nativeCount: SchemaValidator.nativeValidateCount,
+      nativeCompileTime: SchemaValidator.nativeCompileTime,
+      nativeCompileCount: SchemaValidator.nativeCompileCount
     };
   }
 
@@ -988,6 +1133,8 @@ export class SchemaValidator {
     SchemaValidator.jsValidateCount = 0;
     SchemaValidator.nativeValidateTime = 0;
     SchemaValidator.nativeValidateCount = 0;
+    SchemaValidator.nativeCompileTime = 0;
+    SchemaValidator.nativeCompileCount = 0;
   }
 }
 
@@ -1832,3 +1979,178 @@ export function getAllPerformanceMetrics(): {
 
 // Export native module status
 export const hasNativeSupport = !!loadNativeBinding();
+
+/**
+ * Object Pool class that provides efficient reuse of objects and buffers
+ */
+export class ObjectPool implements NativeObjectPool {
+  private pool: any;
+  private useNative: boolean;
+  private logger = new Logger();
+
+  // Performance metrics
+  private static objectCreationCount = 0;
+  private static objectReuseCount = 0;
+  private static bufferCreationCount = 0;
+  private static bufferReuseCount = 0;
+
+  constructor(options?: ObjectPoolOptions) {
+    const nativeModule = loadNativeBinding();
+    this.useNative = !!(nativeModule?.ObjectPool && nativeOptions.enabled);
+
+    if (this.useNative) {
+      try {
+        // Merge options from constructor with global native options
+        const mergedOptions = {
+          ...nativeOptions.objectPoolOptions,
+          ...options
+        };
+
+        this.pool = new nativeModule.ObjectPool(mergedOptions);
+
+        if (nativeOptions.verbose) {
+          this.logger.debug('Native ObjectPool initialized');
+        }
+      } catch (err: any) {
+        if (nativeOptions.verbose) {
+          this.logger.warn(`Failed to create native ObjectPool: ${err.message}`);
+        }
+        this.useNative = false;
+      }
+    }
+
+    if (!this.useNative && nativeOptions.verbose) {
+      this.logger.warn('Native ObjectPool not available, falling back to direct object creation');
+    }
+  }
+
+  /**
+   * Create an object from the pool or create a new one if the pool is empty
+   */
+  createObject(): object {
+    if (this.useNative && this.pool) {
+      const obj = this.pool.createObject();
+      if (obj) {
+        ObjectPool.objectReuseCount++;
+        return obj;
+      }
+    }
+
+    // Fallback to creating a new object
+    ObjectPool.objectCreationCount++;
+    return {};
+  }
+
+  /**
+   * Release an object back to the pool
+   * @param obj The object to release
+   */
+  releaseObject(obj: object): void {
+    if (this.useNative && this.pool) {
+      this.pool.releaseObject(obj);
+    }
+  }
+
+  /**
+   * Get a headers object from the pool
+   */
+  getHeadersObject(): object {
+    if (this.useNative && this.pool) {
+      return this.pool.getHeadersObject();
+    }
+
+    // Fallback to creating a new headers object
+    return {};
+  }
+
+  /**
+   * Release a headers object back to the pool
+   * @param headers The headers object to release
+   */
+  releaseHeadersObject(headers: object): void {
+    if (this.useNative && this.pool) {
+      this.pool.releaseHeadersObject(headers);
+    }
+  }
+
+  /**
+   * Get a buffer from the pool
+   * @param size The minimum size of the buffer
+   */
+  getBuffer(size: number): Buffer {
+    if (this.useNative && this.pool) {
+      const buffer = this.pool.getBuffer(size);
+      if (buffer) {
+        ObjectPool.bufferReuseCount++;
+        return buffer;
+      }
+    }
+
+    // Fallback to creating a new buffer
+    ObjectPool.bufferCreationCount++;
+    return Buffer.alloc(size);
+  }
+
+  /**
+   * Release a buffer back to the pool
+   * @param buffer The buffer to release
+   */
+  releaseBuffer(buffer: Buffer): void {
+    if (this.useNative && this.pool) {
+      this.pool.releaseBuffer(buffer);
+    }
+  }
+
+  /**
+   * Reset the object pool
+   */
+  reset(): void {
+    if (this.useNative && this.pool) {
+      this.pool.reset();
+    }
+  }
+
+  /**
+   * Get information about the pool
+   */
+  getPoolInfo(): PoolInfo {
+    if (this.useNative && this.pool) {
+      return this.pool.getPoolInfo();
+    }
+
+    // Return empty info if not available
+    return {
+      enabled: false,
+      objects: { total: 0, inUse: 0, available: 0, maxSize: 0 },
+      buffers: { total: 0, inUse: 0, available: 0, maxSize: 0 },
+      headers: { total: 0, inUse: 0, available: 0, maxSize: 0 }
+    };
+  }
+
+  /**
+   * Get performance metrics for object pooling
+   */
+  static getPerformanceMetrics(): {
+    objectCreations: number;
+    objectReuses: number;
+    bufferCreations: number;
+    bufferReuses: number;
+  } {
+    return {
+      objectCreations: ObjectPool.objectCreationCount,
+      objectReuses: ObjectPool.objectReuseCount,
+      bufferCreations: ObjectPool.bufferCreationCount,
+      bufferReuses: ObjectPool.bufferReuseCount
+    };
+  }
+
+  /**
+   * Reset performance metrics
+   */
+  static resetPerformanceMetrics(): void {
+    ObjectPool.objectCreationCount = 0;
+    ObjectPool.objectReuseCount = 0;
+    ObjectPool.bufferCreationCount = 0;
+    ObjectPool.bufferReuseCount = 0;
+  }
+}

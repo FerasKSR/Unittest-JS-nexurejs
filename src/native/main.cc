@@ -1,6 +1,7 @@
 #include <napi.h>
 #include "json/simdjson_wrapper.h"
 #include "http/http_parser.h"
+#include "http/object_pool.h"
 #include "json/json_processor.h"
 #include "routing/radix_router.h"
 #include "url/url_parser.h"
@@ -10,12 +11,22 @@
 
 namespace nexurejs {
 
+// Store references to constructors that need cleanup
+std::vector<Napi::FunctionReference*> globalReferences;
+
 /**
  * Check if the native module is available
  */
 Napi::Boolean IsAvailable(const Napi::CallbackInfo& info) {
   Napi::Env env = info.Env();
   return Napi::Boolean::New(env, true);
+}
+
+/**
+ * Add a reference to the global list for cleanup
+ */
+void AddCleanupReference(Napi::FunctionReference* ref) {
+  globalReferences.push_back(ref);
 }
 
 /**
@@ -29,6 +40,7 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
 
   // Initialize all components
   HttpParser::Init(env, exports);
+  ObjectPool::Init(env, exports);
   RadixRouter::Init(env, exports);
   JsonProcessor::Init(env, exports);
   UrlParser::Init(env, exports);
@@ -46,12 +58,27 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   return exports;
 }
 
+/**
+ * Cleanup resources when the module is unloaded
+ */
+void Cleanup(void* arg) {
+  // Free global references
+  for (auto ref : globalReferences) {
+    delete ref;
+  }
+  globalReferences.clear();
+}
+
 } // namespace nexurejs
 
 // Register the module with Node.js
 napi_value init(napi_env env, napi_value exports) {
   Napi::Env napi_env(env);
   Napi::Object napi_exports = Napi::Object(napi_env, exports);
+
+  // Register cleanup handler
+  napi_add_env_cleanup_hook(env, nexurejs::Cleanup, nullptr);
+
   return nexurejs::Init(napi_env, napi_exports);
 }
 
