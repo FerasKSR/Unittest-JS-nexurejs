@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <chrono>
 #include <atomic>
+#include "websocket.h"
 
 // WebSocket frame opcodes
 #define WS_CONTINUATION 0x0
@@ -928,6 +929,9 @@ Napi::Object WebSocketServer::Init(Napi::Env env, Napi::Object exports) {
     Napi::FunctionReference* constructor = new Napi::FunctionReference();
     *constructor = Napi::Persistent(func);
     env.SetInstanceData(constructor);
+
+    // Add to cleanup list
+    nexurejs::AddCleanupReference(constructor);
 
     exports.Set("WebSocketServer", func);
     return exports;
