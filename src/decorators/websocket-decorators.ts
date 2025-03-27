@@ -92,7 +92,7 @@ export function getWebSocketHandlers(controller: any): WebSocketHandlerMetadata[
  * Get WebSocket authentication handler from a controller
  * @param controller The controller to get the auth handler from
  */
-export function getWebSocketAuthHandler(controller: any): Function | undefined {
+export function getWebSocketAuthHandler(controller: any): ((context: WebSocketAuthContext) => Promise<any> | any) | undefined {
   return Reflect.getMetadata(WS_AUTH_HANDLER_KEY, controller);
 }
 

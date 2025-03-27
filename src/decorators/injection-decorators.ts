@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Scope } from '../di/container.js';
+import { Scope } from '../di/container';
 
 /**
  * Metadata key for injection information

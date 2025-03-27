@@ -1,5 +1,5 @@
-import { HttpMethod } from '../http/http-method.js';
-import { MiddlewareHandler } from '../middleware/middleware.js';
+import { HttpMethod } from '../http/http-method';
+import { MiddlewareHandler } from '../middleware/middleware';
 
 /**
  * Metadata key for route information
