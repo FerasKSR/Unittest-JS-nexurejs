@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "outDir": "/Users/yasser/open-source/Nexure/nexurejs/dist/scripts",
+    "strict": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "/Users/yasser/open-source/Nexure/nexurejs/scripts/run-framework.ts",
+    "/Users/yasser/open-source/Nexure/nexurejs/scripts/run-jwt-test.ts"
+  ]
+}

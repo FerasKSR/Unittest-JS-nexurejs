@@ -5,15 +5,14 @@
  * including JWT authentication, CSRF protection, and optimized routing.
  */
 
-import { createServer } from '../src/http/server.js';
-import { Router } from '../src/routing/router.js';
-import { RadixRouter } from '../src/routing/radix-router.js';
-import { createJwtAuthMiddleware, signJwt } from '../src/security/jwt.js';
-import { createCsrfMiddleware } from '../src/security/csrf.js';
-import { ClusterManager } from '../src/concurrency/cluster-manager.js';
-import { RequestPool, ResponsePool } from '../src/http/request-pool.js';
+import { createServer } from '../src/http/server';
+import { RadixRouter, Router } from '../src/routing/router';
+import { createJwtAuthMiddleware, signJwt } from '../src/security/jwt';
+import { createCsrfMiddleware } from '../src/security/csrf';
+import { ClusterManager } from '../src/concurrency/cluster-manager';
+import { RequestPool, ResponsePool } from '../src/http/request-pool';
 import { IncomingMessage, ServerResponse } from 'node:http';
-import { Logger } from '../src/logging/logger.js';
+import { Logger } from '../src/logging/logger';
 
 // Check if we're in the primary process
 import cluster from 'node:cluster';
