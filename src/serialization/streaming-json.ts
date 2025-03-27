@@ -6,7 +6,7 @@
  * in chunks using streams, significantly reducing memory usage for large payloads.
  */
 
-import { Transform, Readable, Writable } from 'node:stream';
+import { Transform, Readable } from 'node:stream';
 import { clearTimeout, setTimeout } from 'node:timers';
 
 // JSON Token Types
@@ -22,7 +22,7 @@ enum JsonTokenType {
 }
 
 // JSON Token
-interface JsonToken {
+interface _JsonToken {
   type: JsonTokenType;
   value?: any;
   key?: string;
@@ -561,7 +561,7 @@ export class JsonParser extends Transform {
    * Parse a numeric value
    */
   private parseNumber(): void {
-    const start = this.position;
+    const _start = this.position;
 
     // Match number pattern
     const numberPattern = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
