@@ -70,6 +70,28 @@ export interface ValidationResult {
 }
 
 /**
+ * Validation options
+ */
+export interface ValidationOptions {
+  /**
+   * Whether to strip unknown properties
+   * @default false
+   */
+  stripUnknown?: boolean;
+
+  /**
+   * Whether to allow unknown properties
+   * @default true
+   */
+  allowUnknown?: boolean;
+
+  /**
+   * Path prefix for error messages
+   */
+  pathPrefix?: string;
+}
+
+/**
  * Validation schema
  */
 export interface ValidationSchema {
@@ -276,74 +298,115 @@ export class Validator {
   }
 
   /**
-   * Validate data against a schema
-   * @param data The data to validate
-   * @param schema The validation schema
+   * Validate data against schema
+   * @param data Data to validate
+   * @param schema Validation schema
+   * @param options Validation options
    */
-  async validate(data: any, schema: ValidationSchema): Promise<ValidationResult> {
-    const errors: ValidationError[] = [];
-    const sanitizedData = { ...data };
+  async validate(data: any, schema: ValidationSchema, options: ValidationOptions = {}): Promise<ValidationResult> {
+    const result: ValidationResult = {
+      valid: true,
+      errors: [],
+      data: { ...data }
+    };
 
-    // Process each field in the schema
-    for (const [field, rules] of Object.entries(schema)) {
-      const value = data[field];
-      let sanitizedValue = value;
+    const stripUnknown = options.stripUnknown || false;
+    const allowUnknown = options.allowUnknown !== false;
+    const pathPrefix = options.pathPrefix || '';
 
-      // Apply rules in order
+    // Check for unknown fields
+    if (!allowUnknown) {
+      for (const field in data) {
+        if (!(field in schema)) {
+          result.valid = false;
+          result.errors.push({
+            path: pathPrefix ? `${pathPrefix}.${field}` : field,
+            message: `Unknown field: ${field}`,
+            rule: 'unknown'
+          });
+        }
+      }
+    }
+
+    // Remove unknown fields if stripUnknown is true
+    if (stripUnknown) {
+      for (const field in result.data) {
+        if (!(field in schema)) {
+          delete result.data[field];
+        }
+      }
+    }
+
+    // Validate each field
+    for (const field in schema) {
+      const rules = schema[field];
+      const value = data?.[field];
+      const fieldPath = pathPrefix ? `${pathPrefix}.${field}` : field;
+
+      // Apply each rule
       for (const rule of rules) {
-        // Check if it's a sanitizer
-        if (rule.type.startsWith('sanitize:')) {
-          const sanitizerType = rule.type.substring(9);
-          const sanitizer = this.sanitizers.get(sanitizerType);
-
-          if (sanitizer) {
-            sanitizedValue = sanitizer(sanitizedValue, rule.params);
-          }
-
-          continue;
-        }
-
-        // Skip validation if value is undefined or null and rule is not 'required'
-        if ((sanitizedValue === undefined || sanitizedValue === null) && rule.type !== 'required') {
-          continue;
-        }
-
-        // Get validator
         const validator = this.validators.get(rule.type);
 
         if (!validator) {
           throw new Error(`Unknown validator: ${rule.type}`);
         }
 
-        // Validate
-        const isValid = await validator(sanitizedValue, rule.params, data);
+        try {
+          const isValid = await validator(value, rule.params, data);
 
-        if (!isValid) {
-          // Get message
-          let message = rule.message || this.messages.get(rule.type) || `Validation failed for ${rule.type}`;
-          message = this.formatMessage(message, rule.params);
+          if (!isValid) {
+            result.valid = false;
 
-          // Add error
-          errors.push({
-            path: field,
-            message,
+            // Get error message
+            let message = rule.message;
+            if (!message) {
+              message = this.messages.get(rule.type) || `Validation failed for ${rule.type}`;
+              message = this.formatMessage(message, rule.params);
+            }
+
+            result.errors.push({
+              path: fieldPath,
+              message,
+              rule: rule.type,
+              params: rule.params
+            });
+
+            // Skip remaining rules for this field if validation failed
+            break;
+          }
+        } catch (error) {
+          result.valid = false;
+          result.errors.push({
+            path: fieldPath,
+            message: `Validation error: ${(error as Error).message}`,
             rule: rule.type,
             params: rule.params
           });
 
-          // Stop processing rules for this field
+          // Skip remaining rules for this field if validation failed
           break;
         }
       }
 
-      // Update sanitized data
-      sanitizedData[field] = sanitizedValue;
+      // Apply sanitization if field is valid
+      if (result.valid && data?.[field] !== undefined) {
+        // Apply sanitizers after validation
+        let sanitizedValue = data[field];
+
+        for (const rule of rules) {
+          // Check if there's a sanitizer for this rule
+          const sanitizerName = `${rule.type}Sanitizer`;
+          const sanitizer = this.sanitizers.get(sanitizerName);
+
+          if (sanitizer) {
+            sanitizedValue = sanitizer(sanitizedValue, rule.params);
+          }
+        }
+
+        result.data[field] = sanitizedValue;
+      }
     }
 
-    return {
-      valid: errors.length === 0,
-      errors,
-      data: sanitizedData
-    };
+    return result;
   }
 }
