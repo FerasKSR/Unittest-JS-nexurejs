@@ -42,15 +42,15 @@
   "include": [
     "src/**/*",
     "*.ts",
-    "examples/simple-server.ts",
-    "benchmarks/**/*"
+    "examples/simple-server.ts"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "lib",
     "examples",
-    "tests"
+    "tests",
+    "benchmarks"
   ],
   "ts-node": {
     "esm": true,
