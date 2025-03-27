@@ -4,7 +4,7 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Logger } from './logger.js';
+import { Logger } from './logger';
 
 /**
  * Environment variable options
@@ -242,7 +242,7 @@ export class Env {
 
     try {
       return JSON.parse(value) as T;
-    } catch (error) {
+    } catch (_error) {
       this.logger.warn(`Environment variable ${key} is not valid JSON: ${value}`);
       return defaultValue;
     }
@@ -258,7 +258,7 @@ export class Env {
 
     try {
       return JSON.parse(value) as T;
-    } catch (error) {
+    } catch (_error) {
       throw new Error(`Required environment variable ${key} is not valid JSON: ${value}`);
     }
   }

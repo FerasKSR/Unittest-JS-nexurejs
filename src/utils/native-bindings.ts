@@ -8,7 +8,7 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { Logger } from './logger.js';
+import { Logger } from './logger';
 
 const logger = new Logger();
 
@@ -71,6 +71,9 @@ export function tryLoadNativeBinding(type: BindingType, moduleName: string): boo
 
   try {
     // Try to load the module
+    // Note: Using require() is necessary here for dynamic loading of native modules
+    // that might not be installed. This cannot be replaced with import() because
+    // we need synchronous loading and error handling.
     const nativeBinding = require(moduleName);
     const endTime = performance.now();
     const loadTime = endTime - startTime;
@@ -83,13 +86,13 @@ export function tryLoadNativeBinding(type: BindingType, moduleName: string): boo
     loadSuccesses++;
     logger.debug(`Native binding loaded successfully in ${loadTime.toFixed(2)}ms: ${moduleName}`);
     return true;
-  } catch (error: any) {
+  } catch (_error) {
     const endTime = performance.now();
     totalLoadTime += endTime - startTime;
 
     // Cache the failure
     moduleCache[moduleName] = null;
-    logger.debug(`Failed to load native binding: ${moduleName}`, error.message);
+    logger.debug(`Failed to load native binding: ${moduleName}`);
     return false;
   }
 }
@@ -121,7 +124,7 @@ export function fastJsonParse(json: string): any {
   if (hasNativeBinding(BindingType.JSON_PARSER)) {
     try {
       return nativeBindings[BindingType.JSON_PARSER].parse(json);
-    } catch (error) {
+    } catch (_error) {
       // Fallback to native JSON.parse
       return JSON.parse(json);
     }
@@ -139,7 +142,7 @@ export function fastJsonStringify(obj: any): string {
   if (hasNativeBinding(BindingType.JSON_PARSER)) {
     try {
       return nativeBindings[BindingType.JSON_PARSER].stringify(obj);
-    } catch (error) {
+    } catch (_error) {
       // Fallback to native JSON.stringify
       return JSON.stringify(obj);
     }
@@ -172,6 +175,9 @@ export function initNativeBindings(): void {
   for (const path of nativePaths) {
     try {
       if (existsSync(join(process.cwd(), path))) {
+        // Note: Using require() is necessary here for dynamic loading of C++ addons
+        // from various potential locations. These paths are checked at runtime and
+        // cannot be known at compile time for standard ES module imports.
         const nativeModule = require(path);
 
         // Register available components
@@ -196,7 +202,7 @@ export function initNativeBindings(): void {
           break;
         }
       }
-    } catch (error) {
+    } catch (_error) {
       // Continue to next path
     }
   }
