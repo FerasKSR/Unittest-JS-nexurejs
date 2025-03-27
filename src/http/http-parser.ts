@@ -4,12 +4,12 @@
  */
 
 import { Buffer } from 'node:buffer';
-import type { NativeHttpParser, HttpParseResult as NativeHttpParseResult } from '../types/native.js';
+import type { HttpParseResult as NativeHttpParseResult } from '../types/native';
 
 /**
  * HTTP parse result
  */
-export interface HttpParseResult extends NativeHttpParseResult {}
+export type HttpParseResult = NativeHttpParseResult
 
 /**
  * Base HTTP parser interface
