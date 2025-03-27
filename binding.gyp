@@ -5,6 +5,7 @@
       "sources": [
         "src/native/main.cc",
         "src/native/http/http_parser.cc",
+        "src/native/http/object_pool.cc",
         "src/native/routing/radix_router.cc",
         "src/native/json/json_processor.cc",
         "src/native/url/url_parser.cc",
@@ -30,14 +31,23 @@
       ],
       "cflags!": [ "-fno-exceptions" ],
       "cflags_cc!": [ "-fno-exceptions" ],
-      "cflags_cc": [ "-Wno-bitwise-instead-of-logical", "-Wno-ambiguous-reversed-operator" ],
+      "cflags_cc": [
+        "-Wno-bitwise-instead-of-logical",
+        "-Wno-ambiguous-reversed-operator",
+        "-Werror",
+        "-Wno-error=unused-but-set-variable",
+        "-Wno-error=unused-variable"
+      ],
       "xcode_settings": {
         "GCC_ENABLE_CPP_EXCEPTIONS": "YES",
         "CLANG_CXX_LIBRARY": "libc++",
         "MACOSX_DEPLOYMENT_TARGET": "10.15",
         "WARNING_CFLAGS": [
           "-Wno-bitwise-instead-of-logical",
-          "-Wno-ambiguous-reversed-operator"
+          "-Wno-ambiguous-reversed-operator",
+          "-Werror",
+          "-Wno-error=unused-but-set-variable",
+          "-Wno-error=unused-variable"
         ]
       },
       "msvs_settings": {
