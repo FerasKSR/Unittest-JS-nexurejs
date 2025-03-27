@@ -8,7 +8,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { performance, PerformanceObserver } from 'node:perf_hooks';
-import { v8Optimizer } from './v8-optimizer.js';
+import { v8Optimizer } from './v8-optimizer';
 
 /**
  * Benchmark options
@@ -373,7 +373,7 @@ export class BenchmarkSuite {
     const result2 = results.find(r => r.name === benchmark2Name);
 
     if (!result1 || !result2) {
-      return `Cannot compare: one or both benchmarks not found`;
+      return 'Cannot compare: one or both benchmarks not found';
     }
 
     const timeRatio = result2.averageTime / result1.averageTime;
