@@ -1,10 +1,10 @@
 import { createServer, Server, IncomingMessage, ServerResponse } from 'node:http';
-import { Router } from '../routing/router.js';
-import { MiddlewareHandler } from '../middleware/middleware.js';
-import { Container } from '../di/container.js';
-import { Logger } from '../utils/logger.js';
-import { configureNativeModules, getNativeModuleStatus, WebSocketServer, WebSocketServerOptions } from '../native/index.js';
-import { getWebSocketHandlers, isWebSocketController, getWebSocketAuthHandler } from '../decorators/websocket-decorators.js';
+import { Router } from '../routing/router';
+import { MiddlewareHandler } from '../middleware/middleware';
+import { Container } from '../di/container';
+import { Logger } from '../utils/logger';
+import { configureNativeModules, getNativeModuleStatus, WebSocketServer, WebSocketServerOptions } from '../native/index';
+import { getWebSocketHandlers, isWebSocketController, getWebSocketAuthHandler } from '../decorators/websocket-decorators';
 
 export interface NexureOptions {
   /**
@@ -299,7 +299,7 @@ export class Nexure {
         this.logger.debug(`Memory threshold exceeded: ${heapUsedMB}MB > ${maxMemoryMB}MB. Running garbage collection.`);
       }
       global.gc?.();
-    } else if (this.options.performance?.gcInterval! > 0) {
+    } else if (this.options.performance?.gcInterval && this.options.performance.gcInterval > 0) {
       // If interval is set, run GC regardless of memory usage
       global.gc?.();
     }
@@ -361,7 +361,7 @@ export class Nexure {
         this.wsServer.setAuthenticationHandler(async (token, connection) => {
           try {
             // Call the controller's auth handler
-            return await handler.call(controller, { token, connection });
+            return await handler.call(controller, { token, connection, success: false });
           } catch (error) {
             this.logger.error('Error in WebSocket authentication handler:', error);
             return null;

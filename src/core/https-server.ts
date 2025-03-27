@@ -4,11 +4,11 @@
 
 import { createServer, Server } from 'node:https';
 import { IncomingMessage, ServerResponse } from 'node:http';
-import { readFileSync } from 'node:fs';
-import { Logger } from '../utils/logger.js';
-import { MiddlewareHandler } from '../middleware/middleware.js';
-import { Router } from '../routing/router.js';
 import { SecureVersion } from 'node:tls';
+import { readFileSync } from 'node:fs';
+import { Logger } from '../utils/logger';
+import { MiddlewareHandler } from '../middleware/middleware';
+import { Router } from '../routing/router';
 
 /**
  * HTTPS server options
