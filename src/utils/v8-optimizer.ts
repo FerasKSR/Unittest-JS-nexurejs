@@ -66,7 +66,7 @@ export class V8Optimizer {
    * @param fn Function to optimize
    * @returns Optimized function
    */
-  optimizeFunction<T extends Function>(fn: T): T {
+  optimizeFunction<T extends (...args: any[]) => any>(fn: T): T {
     // In a real implementation, this would use V8 hints
     // For now, just return the original function
     return fn;
@@ -89,7 +89,7 @@ export class V8Optimizer {
    * @param elementType Type of elements ('number', 'string', 'object')
    * @returns Fast array
    */
-  createFastArray(capacity: number, elementType: 'number' | 'string' | 'object' = 'number'): any[] {
+  createFastArray(capacity: number, _elementType: 'number' | 'string' | 'object' = 'number'): any[] {
     // In a real implementation, this would create arrays optimized for specific types
     // For now, just return a new array with the specified capacity
     return new Array(capacity);
@@ -111,7 +111,7 @@ export class V8Optimizer {
    * @param fn Function to create a monomorphic call site for
    * @returns Function with monomorphic call site
    */
-  createMonomorphicCallSite<T extends Function>(fn: T): T {
+  createMonomorphicCallSite<T extends (...args: any[]) => any>(fn: T): T {
     // In a real implementation, this would create a monomorphic call site
     // For now, just return the original function
     return fn;
