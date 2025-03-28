@@ -113,10 +113,7 @@ export type ValidatorFunction = (
 /**
  * Sanitizer function
  */
-export type SanitizerFunction = (
-  value: any,
-  params?: Record<string, any>
-) => any;
+export type SanitizerFunction = (value: any, params?: Record<string, any>) => any;
 
 /**
  * Custom validator function
@@ -136,36 +133,36 @@ export class Validator {
    */
   constructor() {
     // Register built-in validators
-    this.registerValidator('required', (value) => {
+    this.registerValidator('required', value => {
       return value !== undefined && value !== null && value !== '';
     });
 
-    this.registerValidator('string', (value) => {
+    this.registerValidator('string', value => {
       return typeof value === 'string';
     });
 
-    this.registerValidator('number', (value) => {
+    this.registerValidator('number', value => {
       return typeof value === 'number' && !isNaN(value);
     });
 
-    this.registerValidator('boolean', (value) => {
+    this.registerValidator('boolean', value => {
       return typeof value === 'boolean';
     });
 
-    this.registerValidator('array', (value) => {
+    this.registerValidator('array', value => {
       return Array.isArray(value);
     });
 
-    this.registerValidator('object', (value) => {
+    this.registerValidator('object', value => {
       return typeof value === 'object' && value !== null && !Array.isArray(value);
     });
 
-    this.registerValidator('email', (value) => {
+    this.registerValidator('email', value => {
       if (typeof value !== 'string') return false;
       return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
     });
 
-    this.registerValidator('url', (value) => {
+    this.registerValidator('url', value => {
       if (typeof value !== 'string') return false;
       try {
         new URL(value);
@@ -206,22 +203,22 @@ export class Validator {
     });
 
     // Register built-in sanitizers
-    this.registerSanitizer('trim', (value) => {
+    this.registerSanitizer('trim', value => {
       if (typeof value !== 'string') return value;
       return value.trim();
     });
 
-    this.registerSanitizer('lowercase', (value) => {
+    this.registerSanitizer('lowercase', value => {
       if (typeof value !== 'string') return value;
       return value.toLowerCase();
     });
 
-    this.registerSanitizer('uppercase', (value) => {
+    this.registerSanitizer('uppercase', value => {
       if (typeof value !== 'string') return value;
       return value.toUpperCase();
     });
 
-    this.registerSanitizer('toNumber', (value) => {
+    this.registerSanitizer('toNumber', value => {
       if (typeof value === 'number') return value;
       if (typeof value === 'string') {
         const num = Number(value);
@@ -230,14 +227,14 @@ export class Validator {
       return value;
     });
 
-    this.registerSanitizer('toBoolean', (value) => {
+    this.registerSanitizer('toBoolean', value => {
       if (typeof value === 'boolean') return value;
       if (value === 'true') return true;
       if (value === 'false') return false;
       return value;
     });
 
-    this.registerSanitizer('toString', (value) => {
+    this.registerSanitizer('toString', value => {
       if (value === null || value === undefined) return '';
       return String(value);
     });
@@ -303,7 +300,11 @@ export class Validator {
    * @param schema Validation schema
    * @param options Validation options
    */
-  async validate(data: any, schema: ValidationSchema, options: ValidationOptions = {}): Promise<ValidationResult> {
+  async validate(
+    data: any,
+    schema: ValidationSchema,
+    options: ValidationOptions = {}
+  ): Promise<ValidationResult> {
     const result: ValidationResult = {
       valid: true,
       errors: [],
@@ -316,97 +317,136 @@ export class Validator {
 
     // Check for unknown fields
     if (!allowUnknown) {
-      for (const field in data) {
-        if (!(field in schema)) {
-          result.valid = false;
-          result.errors.push({
-            path: pathPrefix ? `${pathPrefix}.${field}` : field,
-            message: `Unknown field: ${field}`,
-            rule: 'unknown'
-          });
-        }
-      }
+      this.validateUnknownFields(data, schema, result, pathPrefix);
     }
 
     // Remove unknown fields if stripUnknown is true
     if (stripUnknown) {
-      for (const field in result.data) {
-        if (!(field in schema)) {
-          delete result.data[field];
-        }
-      }
+      this.stripUnknownFields(result.data, schema);
     }
 
     // Validate each field
+    await this.validateFields(data, schema, result, pathPrefix);
+
+    return result;
+  }
+
+  private validateUnknownFields(
+    data: any,
+    schema: ValidationSchema,
+    result: ValidationResult,
+    pathPrefix: string
+  ): void {
+    for (const field in data) {
+      if (!(field in schema)) {
+        result.valid = false;
+        result.errors.push({
+          path: pathPrefix ? `${pathPrefix}.${field}` : field,
+          message: `Unknown field: ${field}`,
+          rule: 'unknown'
+        });
+      }
+    }
+  }
+
+  private stripUnknownFields(data: any, schema: ValidationSchema): void {
+    for (const field in data) {
+      if (!(field in schema)) {
+        delete data[field];
+      }
+    }
+  }
+
+  private async validateFields(
+    data: any,
+    schema: ValidationSchema,
+    result: ValidationResult,
+    pathPrefix: string
+  ): Promise<void> {
     for (const field in schema) {
       const rules = schema[field];
       const value = data?.[field];
       const fieldPath = pathPrefix ? `${pathPrefix}.${field}` : field;
 
-      // Apply each rule
-      for (const rule of rules) {
-        const validator = this.validators.get(rule.type);
+      if (!(await this.validateFieldRules(value, rules!, data, fieldPath, result))) {
+        continue; // Skip sanitization if validation failed
+      }
 
-        if (!validator) {
-          throw new Error(`Unknown validator: ${rule.type}`);
-        }
+      // Apply sanitization if field is valid and exists
+      if (data?.[field] !== undefined) {
+        result.data[field] = this.sanitizeField(data[field], rules!);
+      }
+    }
+  }
 
-        try {
-          const isValid = await validator(value, rule.params, data);
+  private async validateFieldRules(
+    value: any,
+    rules: ValidationRule[],
+    data: any,
+    fieldPath: string,
+    result: ValidationResult
+  ): Promise<boolean> {
+    // Apply each rule
+    for (const rule of rules) {
+      const validator = this.validators.get(rule.type);
 
-          if (!isValid) {
-            result.valid = false;
+      if (!validator) {
+        throw new Error(`Unknown validator: ${rule.type}`);
+      }
 
-            // Get error message
-            let message = rule.message;
-            if (!message) {
-              message = this.messages.get(rule.type) || `Validation failed for ${rule.type}`;
-              message = this.formatMessage(message, rule.params);
-            }
+      try {
+        const isValid = await validator(value, rule.params, data);
 
-            result.errors.push({
-              path: fieldPath,
-              message,
-              rule: rule.type,
-              params: rule.params
-            });
-
-            // Skip remaining rules for this field if validation failed
-            break;
-          }
-        } catch (error) {
+        if (!isValid) {
           result.valid = false;
+
+          // Get error message
+          let message = rule.message;
+          if (!message) {
+            message = this.messages.get(rule.type) || `Validation failed for ${rule.type}`;
+            message = this.formatMessage(message, rule.params);
+          }
+
           result.errors.push({
             path: fieldPath,
-            message: `Validation error: ${(error as Error).message}`,
+            message,
             rule: rule.type,
             params: rule.params
           });
 
           // Skip remaining rules for this field if validation failed
-          break;
+          return false;
         }
-      }
+      } catch (error) {
+        result.valid = false;
+        result.errors.push({
+          path: fieldPath,
+          message: `Validation error: ${(error as Error).message}`,
+          rule: rule.type,
+          params: rule.params
+        });
 
-      // Apply sanitization if field is valid
-      if (result.valid && data?.[field] !== undefined) {
-        // Apply sanitizers after validation
-        let sanitizedValue = data[field];
-
-        for (const rule of rules) {
-          // Check if there's a sanitizer for this rule
-          const sanitizerName = `${rule.type}Sanitizer`;
-          const sanitizer = this.sanitizers.get(sanitizerName);
-
-          if (sanitizer) {
-            sanitizedValue = sanitizer(sanitizedValue, rule.params);
-          }
-        }
-
-        result.data[field] = sanitizedValue;
+        // Skip remaining rules for this field if validation failed
+        return false;
       }
     }
 
-    return result;
+    return true;
+  }
+
+  private sanitizeField(value: any, rules: ValidationRule[]): any {
+    let sanitizedValue = value;
+
+    for (const rule of rules) {
+      // Check if there's a sanitizer for this rule
+      const sanitizerName = `${rule.type}Sanitizer`;
+      const sanitizer = this.sanitizers.get(sanitizerName);
+
+      if (sanitizer) {
+        sanitizedValue = sanitizer(sanitizedValue, rule.params);
+      }
+    }
+
+    return sanitizedValue;
   }
 }

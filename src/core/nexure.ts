@@ -115,6 +115,7 @@ export class Nexure {
   private options: NexureOptions;
   private wsServer?: WebSocketServer;
   private gcTimer: NodeJS.Timeout | null = null;
+  private customErrorHandler?: (error: any, req: IncomingMessage, res: ServerResponse) => void;
 
   constructor(options: NexureOptions = {}) {
     this.options = {
@@ -305,6 +306,12 @@ export class Nexure {
   private handleError(error: any, req: IncomingMessage, res: ServerResponse): void {
     this.logger.error(`Error processing ${req.method} ${req.url}: ${error.message}`);
 
+    // If custom error handler is defined, use it
+    if (this.customErrorHandler) {
+      return this.customErrorHandler(error, req, res);
+    }
+
+    // Default error handling
     const statusCode = error.statusCode || 500;
     const message = error.message || 'Internal Server Error';
 
@@ -321,6 +328,23 @@ export class Nexure {
         this.options.prettyJson ? 2 : 0
       )
     );
+  }
+
+  /**
+   * Set a custom error handler for the server
+   * @param handler The error handler function
+   */
+  setErrorHandler(handler: (error: any, req: IncomingMessage, res: ServerResponse) => void): this {
+    this.customErrorHandler = handler;
+    return this;
+  }
+
+  /**
+   * Alias for setErrorHandler for API consistency
+   * @param handler The error handler function
+   */
+  onError(handler: (error: any, req: IncomingMessage, res: ServerResponse) => void): this {
+    return this.setErrorHandler(handler);
   }
 
   /**

@@ -309,11 +309,10 @@ export function validateHeaders(
 
   return async (req: IncomingMessage, _res: ServerResponse, next: () => Promise<void>) => {
     // Get headers
-    const headers = req.headers || {};
+    const headers = req.headers;
 
     // Validate headers
     const result = await validator.validate(headers, schema, {
-      // Never strip unknown headers
       stripUnknown: false,
       allowUnknown,
       pathPrefix: options.pathPrefix
@@ -427,120 +426,48 @@ export function validateRequest(
       data: {}
     };
 
-    // Validate body
+    // Validate each component
     if (schema.body && !['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
-      const body = (req as any).body || {};
-      const result = await validator.validate(body, schema.body, {
+      await validateRequestBody(req, schema.body, validationResult, validator, {
         stripUnknown,
         allowUnknown,
-        pathPrefix: options.pathPrefix ? `${options.pathPrefix}.body` : 'body'
+        sanitize,
+        pathPrefix: options.pathPrefix
       });
-
-      if (!result.valid) {
-        validationResult.valid = false;
-        validationResult.errors.body = result.errors;
-      }
-
-      validationResult.data.body = result.data;
-
-      // Update body with sanitized data if enabled
-      if (sanitize && result.valid) {
-        (req as any).body = result.data;
-      }
     }
 
-    // Validate query
     if (schema.query) {
-      const query = (req as any).query || {};
-      const result = await validator.validate(query, schema.query, {
+      await validateRequestQuery(req, schema.query, validationResult, validator, {
         stripUnknown,
         allowUnknown,
-        pathPrefix: options.pathPrefix ? `${options.pathPrefix}.query` : 'query'
+        sanitize,
+        pathPrefix: options.pathPrefix
       });
-
-      if (!result.valid) {
-        validationResult.valid = false;
-        validationResult.errors.query = result.errors;
-      }
-
-      validationResult.data.query = result.data;
-
-      // Update query with sanitized data if enabled
-      if (sanitize && result.valid) {
-        (req as any).query = result.data;
-      }
     }
 
-    // Validate params
     if (schema.params) {
-      const params = (req as any).params || {};
-      const result = await validator.validate(params, schema.params, {
+      await validateRequestParams(req, schema.params, validationResult, validator, {
         stripUnknown,
         allowUnknown,
-        pathPrefix: options.pathPrefix ? `${options.pathPrefix}.params` : 'params'
+        sanitize,
+        pathPrefix: options.pathPrefix
       });
-
-      if (!result.valid) {
-        validationResult.valid = false;
-        validationResult.errors.params = result.errors;
-      }
-
-      validationResult.data.params = result.data;
-
-      // Update params with sanitized data if enabled
-      if (sanitize && result.valid) {
-        (req as any).params = result.data;
-      }
     }
 
-    // Validate headers
     if (schema.headers) {
-      const headers = req.headers || {};
-      const result = await validator.validate(headers, schema.headers, {
-        stripUnknown: false, // Never strip unknown headers
-        allowUnknown: true,  // Always allow unknown headers
-        pathPrefix: options.pathPrefix ? `${options.pathPrefix}.headers` : 'headers'
+      await validateRequestHeaders(req, schema.headers, validationResult, validator, {
+        sanitize,
+        pathPrefix: options.pathPrefix
       });
-
-      if (!result.valid) {
-        validationResult.valid = false;
-        validationResult.errors.headers = result.errors;
-      }
-
-      validationResult.data.headers = result.data;
-
-      // Sanitize headers is handled specially - only update safe headers
-      if (sanitize && result.valid) {
-        const safeHeaders = { ...result.data };
-        // Don't replace the original headers object, just update safe headers
-        for (const [key, value] of Object.entries(safeHeaders)) {
-          if (!key.match(/^(host|connection|content-length|cookie|authorization)$/i)) {
-            req.headers[key] = value as string;
-          }
-        }
-      }
     }
 
-    // Validate cookies
     if (schema.cookies) {
-      const cookies = (req as any).cookies || {};
-      const result = await validator.validate(cookies, schema.cookies, {
+      await validateRequestCookies(req, schema.cookies, validationResult, validator, {
         stripUnknown,
         allowUnknown,
-        pathPrefix: options.pathPrefix ? `${options.pathPrefix}.cookies` : 'cookies'
+        sanitize,
+        pathPrefix: options.pathPrefix
       });
-
-      if (!result.valid) {
-        validationResult.valid = false;
-        validationResult.errors.cookies = result.errors;
-      }
-
-      validationResult.data.cookies = result.data;
-
-      // Update cookies with sanitized data if enabled
-      if (sanitize && result.valid) {
-        (req as any).cookies = result.data;
-      }
     }
 
     // Store combined validation result
@@ -555,6 +482,195 @@ export function validateRequest(
 
     await next();
   };
+}
+
+/**
+ * Helper method to validate request body
+ */
+async function validateRequestBody(
+  req: IncomingMessage,
+  schema: ValidationSchema,
+  validationResult: RequestValidationResult,
+  validator: Validator,
+  options: {
+    stripUnknown: boolean;
+    allowUnknown: boolean;
+    sanitize: boolean;
+    pathPrefix?: string;
+  }
+): Promise<void> {
+  const { stripUnknown, allowUnknown, sanitize, pathPrefix } = options;
+  const body = (req as any).body || {};
+
+  const result = await validator.validate(body, schema, {
+    stripUnknown,
+    allowUnknown,
+    pathPrefix: pathPrefix ? `${pathPrefix}.body` : 'body'
+  });
+
+  if (!result.valid) {
+    validationResult.valid = false;
+    validationResult.errors.body = result.errors;
+  }
+
+  validationResult.data.body = result.data;
+
+  // Update body with sanitized data if enabled
+  if (sanitize && result.valid) {
+    (req as any).body = result.data;
+  }
+}
+
+/**
+ * Helper method to validate request query
+ */
+async function validateRequestQuery(
+  req: IncomingMessage,
+  schema: ValidationSchema,
+  validationResult: RequestValidationResult,
+  validator: Validator,
+  options: {
+    stripUnknown: boolean;
+    allowUnknown: boolean;
+    sanitize: boolean;
+    pathPrefix?: string;
+  }
+): Promise<void> {
+  const { stripUnknown, allowUnknown, sanitize, pathPrefix } = options;
+  const query = (req as any).query || {};
+
+  const result = await validator.validate(query, schema, {
+    stripUnknown,
+    allowUnknown,
+    pathPrefix: pathPrefix ? `${pathPrefix}.query` : 'query'
+  });
+
+  if (!result.valid) {
+    validationResult.valid = false;
+    validationResult.errors.query = result.errors;
+  }
+
+  validationResult.data.query = result.data;
+
+  // Update query with sanitized data if enabled
+  if (sanitize && result.valid) {
+    (req as any).query = result.data;
+  }
+}
+
+/**
+ * Helper method to validate request params
+ */
+async function validateRequestParams(
+  req: IncomingMessage,
+  schema: ValidationSchema,
+  validationResult: RequestValidationResult,
+  validator: Validator,
+  options: {
+    stripUnknown: boolean;
+    allowUnknown: boolean;
+    sanitize: boolean;
+    pathPrefix?: string;
+  }
+): Promise<void> {
+  const { stripUnknown, allowUnknown, sanitize, pathPrefix } = options;
+  const params = (req as any).params || {};
+
+  const result = await validator.validate(params, schema, {
+    stripUnknown,
+    allowUnknown,
+    pathPrefix: pathPrefix ? `${pathPrefix}.params` : 'params'
+  });
+
+  if (!result.valid) {
+    validationResult.valid = false;
+    validationResult.errors.params = result.errors;
+  }
+
+  validationResult.data.params = result.data;
+
+  // Update params with sanitized data if enabled
+  if (sanitize && result.valid) {
+    (req as any).params = result.data;
+  }
+}
+
+/**
+ * Helper method to validate request headers
+ */
+async function validateRequestHeaders(
+  req: IncomingMessage,
+  schema: ValidationSchema,
+  validationResult: RequestValidationResult,
+  validator: Validator,
+  options: {
+    sanitize: boolean;
+    pathPrefix?: string;
+  }
+): Promise<void> {
+  const { sanitize, pathPrefix } = options;
+  const headers = req.headers;
+
+  const result = await validator.validate(headers, schema, {
+    stripUnknown: false, // Never strip unknown headers
+    allowUnknown: true, // Always allow unknown headers
+    pathPrefix: pathPrefix ? `${pathPrefix}.headers` : 'headers'
+  });
+
+  if (!result.valid) {
+    validationResult.valid = false;
+    validationResult.errors.headers = result.errors;
+  }
+
+  validationResult.data.headers = result.data;
+
+  // Sanitize headers is handled specially - only update safe headers
+  if (sanitize && result.valid) {
+    const safeHeaders = { ...result.data };
+    // Don't replace the original headers object, just update safe headers
+    for (const [key, value] of Object.entries(safeHeaders)) {
+      if (!key.match(/^(host|connection|content-length|cookie|authorization)$/i)) {
+        req.headers[key] = value as string;
+      }
+    }
+  }
+}
+
+/**
+ * Helper method to validate request cookies
+ */
+async function validateRequestCookies(
+  req: IncomingMessage,
+  schema: ValidationSchema,
+  validationResult: RequestValidationResult,
+  validator: Validator,
+  options: {
+    stripUnknown: boolean;
+    allowUnknown: boolean;
+    sanitize: boolean;
+    pathPrefix?: string;
+  }
+): Promise<void> {
+  const { stripUnknown, allowUnknown, sanitize, pathPrefix } = options;
+  const cookies = (req as any).cookies || {};
+
+  const result = await validator.validate(cookies, schema, {
+    stripUnknown,
+    allowUnknown,
+    pathPrefix: pathPrefix ? `${pathPrefix}.cookies` : 'cookies'
+  });
+
+  if (!result.valid) {
+    validationResult.valid = false;
+    validationResult.errors.cookies = result.errors;
+  }
+
+  validationResult.data.cookies = result.data;
+
+  // Update cookies with sanitized data if enabled
+  if (sanitize && result.valid) {
+    (req as any).cookies = result.data;
+  }
 }
 
 /**
