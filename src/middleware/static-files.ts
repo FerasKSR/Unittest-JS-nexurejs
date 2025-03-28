@@ -11,10 +11,10 @@
  */
 
 import { IncomingMessage, ServerResponse } from 'node:http';
-import { createReadStream, promises as fs, Stats } from 'node:fs';
-import { extname, join, normalize, resolve, sep } from 'node:path';
+import { createReadStream, Stats, promises as fs } from 'node:fs';
+import { extname, join, normalize, resolve, isAbsolute } from 'node:path';
 import { Readable } from 'node:stream';
-import { parse as parseUrl } from 'node:url';
+import { parse as _parseUrl } from 'node:url';
 import { MiddlewareHandler } from './middleware';
 import { Logger } from '../utils/logger';
 
@@ -192,7 +192,7 @@ export class StaticFileMiddleware {
       root: resolve(options.root),
       prefix: options.prefix || '/',
       fallthrough: options.fallthrough !== false,
-      index: options.index !== false ? (options.index || 'index.html') : false,
+      index: options.index !== false ? options.index || 'index.html' : false,
       cacheControl: options.cacheControl || 'public, max-age=86400',
       etag: options.etag !== false,
       lastModified: options.lastModified !== false,
@@ -224,80 +224,104 @@ export class StaticFileMiddleware {
    * Get middleware handler
    */
   public getHandler(): MiddlewareHandler {
-    return this.handle.bind(this);
+    return this.serveStatic.bind(this);
   }
 
   /**
-   * Handle incoming requests
+   * Try to serve an index file from the directory
    */
-  private async handle(req: IncomingMessage, res: ServerResponse, next: () => Promise<void>): Promise<void> {
+  private async tryServeIndexFile(
+    req: IncomingMessage,
+    res: ServerResponse,
+    fullPath: string,
+    _next: () => Promise<void>
+  ): Promise<void | undefined> {
+    if (!this.options.index) return undefined;
+
+    // Try to serve the index file
+    const indexPath = join(fullPath, this.options.index);
+    try {
+      const indexStats = await fs.stat(indexPath);
+      if (indexStats.isFile()) {
+        return this.serveFile(req, res, indexPath, indexStats);
+      }
+    } catch (_err) {
+      // No index file
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Handle directory request
+   */
+  private async handleDirectory(
+    req: IncomingMessage,
+    res: ServerResponse,
+    fullPath: string,
+    path: string,
+    next: () => Promise<void>
+  ): Promise<void> {
+    // Try to serve an index file
+    const indexResult = await this.tryServeIndexFile(req, res, fullPath, next);
+    if (indexResult !== undefined) {
+      return indexResult;
+    }
+
+    if (this.options.directoryListing) {
+      // Serve directory listing
+      return this.serveDirectoryListing(req, res, fullPath, path);
+    }
+
+    if (this.options.fallthrough) {
+      return next();
+    }
+
+    res.statusCode = 404;
+    res.end('Not Found');
+  }
+
+  /**
+   * Serve static content
+   */
+  public async serveStatic(
+    req: IncomingMessage,
+    res: ServerResponse,
+    next: () => Promise<void>
+  ): Promise<void> {
     // Only handle GET and HEAD requests
     if (req.method !== 'GET' && req.method !== 'HEAD') {
-      return next();
-    }
-
-    // Parse the URL
-    const url = parseUrl(req.url || '/');
-    let path = url.pathname || '/';
-
-    // Check if the path starts with the prefix
-    if (!path.startsWith(this.options.prefix)) {
-      return next();
-    }
-
-    // Remove the prefix from the path
-    path = path.substring(this.options.prefix.length);
-
-    // Decode and normalize the path
-    try {
-      path = decodeURIComponent(path);
-    } catch (_err) {
-      res.statusCode = 400;
-      res.end('Bad Request');
+      if (this.options.fallthrough) {
+        return next();
+      }
+      res.statusCode = 405;
+      res.setHeader('Allow', 'GET, HEAD');
+      res.end('Method Not Allowed');
       return;
     }
 
-    // Normalize the path and join with the root directory
-    path = normalize(path);
-    if (path.includes(`..${sep}`)) {
+    // Get the path from the request URL
+    const url = new URL(req.url || '', `http://${req.headers.host || 'localhost'}`);
+    const path = decodeURIComponent(url.pathname);
+
+    // Check for path traversal attempts
+    if (path.includes('..') || !isAbsolute(normalize(`/${path}`))) {
+      if (this.options.fallthrough) {
+        return next();
+      }
       res.statusCode = 403;
       res.end('Forbidden');
       return;
     }
 
-    const fullPath = join(this.options.root, path);
-
     try {
-      // Get the file stats
+      // Join with the root directory
+      const fullPath = join(this.options.root, path);
+
       const stats = await fs.stat(fullPath);
 
-      // Handle directory
       if (stats.isDirectory()) {
-        if (this.options.index) {
-          // Try to serve the index file
-          const indexPath = join(fullPath, this.options.index);
-          try {
-            const indexStats = await fs.stat(indexPath);
-            if (indexStats.isFile()) {
-              return this.serveFile(req, res, indexPath, indexStats);
-            }
-          } catch (_err) {
-            // No index file
-          }
-        }
-
-        if (this.options.directoryListing) {
-          // Serve directory listing
-          return this.serveDirectoryListing(req, res, fullPath, path);
-        }
-
-        if (this.options.fallthrough) {
-          return next();
-        }
-
-        res.statusCode = 404;
-        res.end('Not Found');
-        return;
+        return this.handleDirectory(req, res, fullPath, path, next);
       }
 
       // Handle file
@@ -325,7 +349,12 @@ export class StaticFileMiddleware {
   /**
    * Serve a file
    */
-  private async serveFile(req: IncomingMessage, res: ServerResponse, filePath: string, stats: Stats): Promise<void> {
+  private async serveFile(
+    req: IncomingMessage,
+    res: ServerResponse,
+    filePath: string,
+    stats: Stats
+  ): Promise<void> {
     // Get file extension and content type
     const ext = extname(filePath).toLowerCase();
     const contentType = this.options.mimeTypes[ext] || this.options.defaultMimeType;
@@ -376,9 +405,11 @@ export class StaticFileMiddleware {
       const cacheKey = filePath;
       const cachedFile = this.fileCache.get(cacheKey);
 
-      if (cachedFile &&
-          cachedFile.stats.mtime.getTime() === stats.mtime.getTime() &&
-          cachedFile.stats.size === stats.size) {
+      if (
+        cachedFile &&
+        cachedFile.stats.mtime.getTime() === stats.mtime.getTime() &&
+        cachedFile.stats.size === stats.size
+      ) {
         // Update last accessed time
         cachedFile.lastAccessed = Date.now();
 
@@ -424,7 +455,7 @@ export class StaticFileMiddleware {
 
         if (ranges.length === 1) {
           // Single range request
-          const [start, end] = ranges[0];
+          const [start, end] = ranges[0]!;
           const length = end - start + 1;
 
           res.statusCode = 206; // Partial Content
@@ -496,7 +527,7 @@ export class StaticFileMiddleware {
         resolve();
       });
 
-      stream.on('error', (err) => {
+      stream.on('error', err => {
         // Release the buffer back to the pool
         this.releaseBufferToPool(buffer);
 
@@ -524,7 +555,7 @@ export class StaticFileMiddleware {
     }
 
     const ranges: [number, number][] = [];
-    const rangeValues = matches[1].split(',').map(r => r.trim());
+    const rangeValues = matches[1]!.split(',').map(r => r.trim());
 
     for (const range of rangeValues) {
       const rangeParts = range.split('-');
@@ -537,16 +568,16 @@ export class StaticFileMiddleware {
 
       if (rangeParts[0] === '') {
         // suffix range: -N
-        start = Math.max(0, fileSize - parseInt(rangeParts[1], 10));
+        start = Math.max(0, fileSize - parseInt(rangeParts[1]!, 10));
         end = fileSize - 1;
       } else if (rangeParts[1] === '') {
         // prefix range: N-
-        start = parseInt(rangeParts[0], 10);
+        start = parseInt(rangeParts[0]!, 10);
         end = fileSize - 1;
       } else {
         // range: N-M
-        start = parseInt(rangeParts[0], 10);
-        end = parseInt(rangeParts[1], 10);
+        start = parseInt(rangeParts[0]!, 10);
+        end = parseInt(rangeParts[1]!, 10);
       }
 
       // Validate range
@@ -563,11 +594,16 @@ export class StaticFileMiddleware {
   /**
    * Serve a directory listing
    */
-  private async serveDirectoryListing(req: IncomingMessage, res: ServerResponse, dirPath: string, urlPath: string): Promise<void> {
+  private async serveDirectoryListing(
+    req: IncomingMessage,
+    res: ServerResponse,
+    dirPath: string,
+    urlPath: string
+  ): Promise<void> {
     try {
       const files = await fs.readdir(dirPath);
       const fileList = await Promise.all(
-        files.map(async (file) => {
+        files.map(async file => {
           const filePath = join(dirPath, file);
           const stats = await fs.stat(filePath);
           return {
@@ -615,18 +651,26 @@ export class StaticFileMiddleware {
               <th class="size">Size</th>
               <th class="date">Modified</th>
             </tr>
-            ${urlPath !== '/' ? `
+            ${
+              urlPath !== '/'
+                ? `
             <tr>
               <td><a href="../">Parent Directory</a></td>
               <td class="size">-</td>
               <td class="date">-</td>
-            </tr>` : ''}
-            ${fileList.map(file => `
+            </tr>`
+                : ''
+            }
+            ${fileList
+              .map(
+                file => `
             <tr>
               <td><a href="${encodeURIComponent(file.name)}${file.isDirectory ? '/' : ''}" class="${file.isDirectory ? 'directory' : ''}">${file.name}${file.isDirectory ? '/' : ''}</a></td>
               <td class="size">${file.isDirectory ? '-' : this.formatFileSize(file.size)}</td>
               <td class="date">${file.mtime.toLocaleString()}</td>
-            </tr>`).join('')}
+            </tr>`
+              )
+              .join('')}
           </table>
         </body>
       </html>
@@ -665,7 +709,13 @@ export class StaticFileMiddleware {
   /**
    * Cache a file in memory
    */
-  private cacheFile(key: string, buffer: Buffer, stats: Stats, etag: string, contentType: string): void {
+  private cacheFile(
+    key: string,
+    buffer: Buffer,
+    stats: Stats,
+    etag: string,
+    contentType: string
+  ): void {
     // Check if we need to make room in the cache
     if (this.totalCacheSize + buffer.length > this.options.maxCacheSize) {
       this.evictLeastRecentlyUsed(buffer.length);
@@ -711,7 +761,7 @@ export class StaticFileMiddleware {
   private getBufferFromPool(minSize: number = this.options.bufferSize): Buffer {
     // Find the smallest buffer that can fit the requested size
     for (let i = 0; i < this.bufferPool.length; i++) {
-      const entry = this.bufferPool[i];
+      const entry = this.bufferPool[i]!;
       if (!entry.inUse && entry.size >= minSize) {
         entry.inUse = true;
         return entry.buffer;
@@ -794,7 +844,7 @@ export class StaticFileMiddleware {
 
     // Remove the buffers from the pool (in reverse order to maintain correct indexes)
     for (let i = indexesToRemove.length - 1; i >= 0; i--) {
-      this.bufferPool.splice(indexesToRemove[i], 1);
+      this.bufferPool.splice(indexesToRemove[i]!, 1);
     }
   }
 

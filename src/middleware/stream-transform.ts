@@ -10,8 +10,18 @@ import { IncomingMessage } from 'node:http';
 import { Readable, Transform, PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip, ZlibOptions } from 'node:zlib';
-import { createCipheriv, createDecipheriv, randomBytes, CipherGCMTypes, CipherCCMTypes } from 'node:crypto';
-import { createOptimizedTransform, createTextTransformer, createJsonTransformer } from '../utils/stream-optimizer';
+import {
+  createCipheriv,
+  createDecipheriv,
+  randomBytes,
+  CipherGCMTypes,
+  CipherCCMTypes
+} from 'node:crypto';
+import {
+  createOptimizedTransform,
+  createTextTransformer,
+  createJsonTransformer
+} from '../utils/stream-optimizer';
 import { globalTimeoutManager, TimeoutHandler } from '../utils/adaptive-timeout';
 import { hasBody } from '../utils/http-utils';
 
@@ -82,10 +92,10 @@ const DEFAULT_STREAM_OPTIONS: Required<StreamProcessingOptions> = {
 export function createStreamTransformMiddleware(
   createTransformStream: (req: IncomingMessage) => Transform,
   options?: StreamProcessingOptions
-) {
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   const opts = { ...DEFAULT_STREAM_OPTIONS, ...options };
 
-  return async (req: IncomingMessage, _res: any, next: () => Promise<void>) => {
+  return async (req: IncomingMessage, _res: any, next: () => Promise<void>): Promise<void> => {
     // Only process requests with bodies
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
       return next();
@@ -93,7 +103,7 @@ export function createStreamTransformMiddleware(
 
     // Skip if content-type doesn't match (if specified)
     const contentType = req.headers['content-type'] || '';
-    if (opts.contentTypes && opts.contentTypes.length > 0) {
+    if (opts.contentTypes.length > 0) {
       const shouldProcess = opts.contentTypes.some(type => contentType.includes(type));
       if (!shouldProcess) {
         return next();
@@ -145,7 +155,7 @@ export function createStreamTransformMiddleware(
     // Configure auto-flush if needed
     if (opts.flushPerChunk && typeof transformStream._transform === 'function') {
       const originalTransform = transformStream._transform;
-      transformStream._transform = function(chunk, encoding, callback) {
+      transformStream._transform = function (chunk, encoding, callback): void {
         originalTransform.call(this, chunk, encoding, (err, data) => {
           if (err) {
             callback(err);
@@ -163,14 +173,14 @@ export function createStreamTransformMiddleware(
 
     // Create a passthrough stream to collect the transformed data
     const transformedBody = new Readable({
-      read() {
+      read(): void {
         // Intentionally empty - this is a passthrough readable implementation
         // that relies on being pushed data rather than pulling it
       }
     });
 
     // Replace the request pipe method to intercept reads
-    req.pipe = (destination) => {
+    req.pipe = (destination): any => {
       const pipeline = transformStream.pipe(destination);
 
       // Also pipe to passthrough if exposed
@@ -242,14 +252,13 @@ export interface CompressionOptions extends StreamProcessingOptions {
  * @param options Compression options
  * @returns Middleware function
  */
-export function createCompressionMiddleware(options?: CompressionOptions) {
+export function createCompressionMiddleware(
+  options?: CompressionOptions
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   const level = options?.level ?? 6;
   const zlibOptions = options?.zlibOptions ?? {};
 
-  return createStreamTransformMiddleware(
-    () => createGzip({ ...zlibOptions, level }),
-    options
-  );
+  return createStreamTransformMiddleware(() => createGzip({ ...zlibOptions, level }), options);
 }
 
 /**
@@ -257,13 +266,12 @@ export function createCompressionMiddleware(options?: CompressionOptions) {
  * @param options Decompression options
  * @returns Middleware function
  */
-export function createDecompressionMiddleware(options?: StreamProcessingOptions) {
-  const zlibOptions = (options as CompressionOptions)?.zlibOptions ?? {};
+export function createDecompressionMiddleware(
+  options?: StreamProcessingOptions
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
+  const zlibOptions = (options as CompressionOptions).zlibOptions ?? {};
 
-  return createStreamTransformMiddleware(
-    () => createGunzip(zlibOptions),
-    options
-  );
+  return createStreamTransformMiddleware(() => createGunzip(zlibOptions), options);
 }
 
 /**
@@ -294,22 +302,19 @@ export function createEncryptionMiddleware(
   key: Buffer = randomBytes(32),
   iv: Buffer = randomBytes(16),
   options?: EncryptionOptions
-) {
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   const algorithm = options?.algorithm ?? 'aes-256-gcm';
   const authTagLength = options?.authTagLength ?? 16;
 
-  return createStreamTransformMiddleware(
-    () => {
-      if (algorithm.endsWith('-gcm')) {
-        return createCipheriv(algorithm as CipherGCMTypes, key, iv, { authTagLength });
-      } else if (algorithm.endsWith('-ccm')) {
-        return createCipheriv(algorithm as CipherCCMTypes, key, iv, { authTagLength });
-      } else {
-        return createCipheriv(algorithm, key, iv);
-      }
-    },
-    options
-  );
+  return createStreamTransformMiddleware(() => {
+    if (algorithm.endsWith('-gcm')) {
+      return createCipheriv(algorithm as CipherGCMTypes, key, iv, { authTagLength });
+    } else if (algorithm.endsWith('-ccm')) {
+      return createCipheriv(algorithm as CipherCCMTypes, key, iv, { authTagLength });
+    } else {
+      return createCipheriv(algorithm, key, iv);
+    }
+  }, options);
 }
 
 /**
@@ -323,22 +328,19 @@ export function createDecryptionMiddleware(
   key: Buffer,
   iv: Buffer,
   options?: EncryptionOptions
-) {
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   const algorithm = options?.algorithm ?? 'aes-256-gcm';
   const authTagLength = options?.authTagLength ?? 16;
 
-  return createStreamTransformMiddleware(
-    () => {
-      if (algorithm.endsWith('-gcm')) {
-        return createDecipheriv(algorithm as CipherGCMTypes, key, iv, { authTagLength });
-      } else if (algorithm.endsWith('-ccm')) {
-        return createDecipheriv(algorithm as CipherCCMTypes, key, iv, { authTagLength });
-      } else {
-        return createDecipheriv(algorithm, key, iv);
-      }
-    },
-    options
-  );
+  return createStreamTransformMiddleware(() => {
+    if (algorithm.endsWith('-gcm')) {
+      return createDecipheriv(algorithm as CipherGCMTypes, key, iv, { authTagLength });
+    } else if (algorithm.endsWith('-ccm')) {
+      return createDecipheriv(algorithm as CipherCCMTypes, key, iv, { authTagLength });
+    } else {
+      return createDecipheriv(algorithm, key, iv);
+    }
+  }, options);
 }
 
 /**
@@ -373,7 +375,7 @@ export interface JsonTransformOptions extends StreamProcessingOptions {
 export function createJsonTransformMiddleware(
   transformFn: (data: any) => any,
   options?: JsonTransformOptions
-) {
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   const opts = {
     validate: true,
     jsonStream: false,
@@ -381,97 +383,108 @@ export function createJsonTransformMiddleware(
     ...options
   };
 
-  return createStreamTransformMiddleware(
-    (req) => {
-      let buffer = '';
-      const contentType = req.headers['content-type'] || '';
-      const _isJsonContent = contentType.includes('application/json');
+  return createStreamTransformMiddleware(req => {
+    let buffer = '';
+    const contentType = req.headers['content-type'] || '';
+    const _isJsonContent = contentType.includes('application/json');
 
-      // Use higher performance options for larger JSON
-      const contentLength = parseInt(req.headers['content-length'] || '0', 10);
-      const isLargeJson = contentLength > (opts.maxBufferSize || DEFAULT_STREAM_OPTIONS.maxBufferSize);
+    // Use higher performance options for larger JSON
+    const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+    const isLargeJson =
+      contentLength > (opts.maxBufferSize || DEFAULT_STREAM_OPTIONS.maxBufferSize);
 
-      return new Transform({
-        objectMode: true,
-        highWaterMark: opts.chunkSize || DEFAULT_STREAM_OPTIONS.chunkSize,
-        transform(chunk, _encoding, callback) {
-          try {
-            const chunkStr = chunk.toString();
+    return new Transform({
+      objectMode: true,
+      highWaterMark: opts.chunkSize || DEFAULT_STREAM_OPTIONS.chunkSize,
+      transform(chunk, _encoding, callback): void {
+        const self = this;
 
-            if (opts.jsonStream) {
-              // Handle streaming JSON (one object per line or custom separator)
-              const lines = (buffer + chunkStr).split(opts.objectSeparator);
-              buffer = lines.pop() || ''; // Last item might be incomplete
+        try {
+          const chunkStr = chunk.toString();
 
-              for (const line of lines) {
-                if (!line.trim()) continue;
+          if (opts.jsonStream) {
+            // Handle streaming JSON (one object per line or custom separator)
+            const lines = (buffer + chunkStr).split(opts.objectSeparator);
+            buffer = lines.pop() || ''; // Last item might be incomplete
 
-                try {
-                  const data = JSON.parse(line);
-                  const transformed = transformFn(data);
-                  this.push(JSON.stringify(transformed) + opts.objectSeparator);
-                } catch (err) {
-                  if (opts.validate) {
-                    callback(err instanceof Error ? err : new Error(String(err)));
-                    return;
-                  }
-                  // If not validating, just pass through
-                  this.push(line + opts.objectSeparator);
-                }
-              }
-              callback();
-            } else {
-              // Handle complete JSON object
-              buffer += chunkStr;
+            // Process each line
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              processJsonLine(line, self, callback, transformFn, opts);
+            }
+          } else {
+            // Handle complete JSON object
+            buffer += chunkStr;
 
-              // For large content, just accumulate until the end
-              if (isLargeJson) {
-                callback();
+            // For large content, just accumulate until the end
+            if (isLargeJson) {
+              return;
+            }
+
+            // Try to parse immediately for smaller content
+            try {
+              const data = JSON.parse(buffer);
+              const transformed = transformFn(data);
+              buffer = '';
+              self.push(JSON.stringify(transformed));
+            } catch (_e) {
+              // Probably incomplete JSON, continue buffering
+            }
+          }
+
+          callback();
+        } catch (err) {
+          callback(err instanceof Error ? err : new Error(String(err)));
+        }
+      },
+      flush(callback): void {
+        try {
+          // Process any remaining buffer
+          if (buffer.trim()) {
+            try {
+              const data = JSON.parse(buffer);
+              const transformed = transformFn(data);
+              this.push(JSON.stringify(transformed));
+            } catch (e) {
+              if (opts.validate) {
+                callback(e instanceof Error ? e : new Error(String(e)));
                 return;
               }
-
-              // Try to parse immediately for smaller content
-              try {
-                const data = JSON.parse(buffer);
-                const transformed = transformFn(data);
-                buffer = '';
-                this.push(JSON.stringify(transformed));
-                callback();
-              } catch (_e) {
-                // Probably incomplete JSON, continue buffering
-                callback();
-              }
+              // If not validating, just pass through
+              this.push(buffer);
             }
-          } catch (err) {
-            callback(err instanceof Error ? err : new Error(String(err)));
           }
-        },
-        flush(callback) {
-          try {
-            // Process any remaining buffer
-            if (buffer.trim()) {
-              try {
-                const data = JSON.parse(buffer);
-                const transformed = transformFn(data);
-                this.push(JSON.stringify(transformed));
-              } catch (e) {
-                if (opts.validate) {
-                  callback(e instanceof Error ? e : new Error(String(e)));
-                  return;
-                }
-                // If not validating, just pass through
-                this.push(buffer);
-              }
-            }
-            callback();
-          } catch (err) {
-            callback(err instanceof Error ? err : new Error(String(err)));
-          }
+          callback();
+        } catch (err) {
+          callback(err instanceof Error ? err : new Error(String(err)));
         }
-      });
-    },
-    opts
-  );
+      }
+    });
+  }, opts);
+}
+
+/**
+ * Process a single JSON line
+ */
+function processJsonLine(
+  line: string,
+  stream: any,
+  callback: (error?: Error) => void,
+  transformFn: (data: any) => any,
+  opts: any
+): void {
+  try {
+    const data = JSON.parse(line);
+    const transformed = transformFn(data);
+    stream.push(JSON.stringify(transformed) + opts.objectSeparator);
+  } catch (err) {
+    if (opts.validate) {
+      callback(err instanceof Error ? err : new Error(String(err)));
+      return;
+    }
+    // If not validating, just pass through
+    stream.push(line + opts.objectSeparator);
+  }
 }
 
 /**
@@ -506,7 +519,7 @@ export interface CsvTransformOptions extends StreamProcessingOptions {
 export function createCsvTransformMiddleware(
   transformFn: (row: Record<string, string> | string[]) => Record<string, string> | string[],
   options?: CsvTransformOptions
-) {
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   const opts = {
     delimiter: ',',
     hasHeader: true,
@@ -514,134 +527,131 @@ export function createCsvTransformMiddleware(
     ...options
   };
 
-  return createStreamTransformMiddleware(
-    () => {
-      let buffer = '';
-      let headers: string[] = [];
-      let isFirstRow = true;
+  return createStreamTransformMiddleware(() => {
+    let buffer = '';
+    let headers: string[] = [];
+    let isFirstRow = true;
 
-      return new Transform({
-        objectMode: true,
-        transform(chunk, _encoding, callback) {
-          try {
-            buffer += chunk.toString();
+    return new Transform({
+      objectMode: true,
+      transform(chunk, _encoding, callback): void {
+        try {
+          buffer += chunk.toString();
 
-            // Process complete lines
-            const lines = buffer.split(opts.lineSeparator);
-            buffer = lines.pop() || ''; // Last line might be incomplete
+          // Process complete lines
+          const lines = buffer.split(opts.lineSeparator);
+          buffer = lines.pop() || ''; // Last line might be incomplete
 
-            for (const line of lines) {
-              if (!line.trim()) continue;
+          for (const line of lines) {
+            if (!line.trim()) continue;
 
-              // Parse the CSV row
-              const row = line.split(opts.delimiter);
+            // Parse the CSV row
+            const row = line.split(opts.delimiter);
 
-              if (isFirstRow && opts.hasHeader) {
-                // Save headers and don't transform the header row
-                headers = row;
-                this.push(line + opts.lineSeparator);
-                isFirstRow = false;
-                continue;
-              }
-
-              let transformedRow;
-
-              if (opts.hasHeader) {
-                // Convert to object with header keys
-                const rowObj: Record<string, string> = {};
-                headers.forEach((header, i) => {
-                  if (i < row.length) {
-                    rowObj[header] = row[i];
-                  }
-                });
-
-                // Transform the row
-                transformedRow = transformFn(rowObj);
-
-                // Convert back to array
-                if (Array.isArray(transformedRow)) {
-                  // Already an array, use as is
-                } else {
-                  // Convert object back to array based on headers
-                  const rowArray = headers.map(header =>
-                    transformedRow[header] !== undefined ? transformedRow[header] : ''
-                  );
-                  transformedRow = rowArray;
-                }
-              } else {
-                // No headers, just transform the array
-                transformedRow = transformFn(row);
-
-                if (!Array.isArray(transformedRow)) {
-                  // Convert object to array
-                  transformedRow = Object.values(transformedRow);
-                }
-              }
-
-              // Convert back to CSV line
-              const transformedLine = (transformedRow as string[]).join(opts.delimiter);
-              this.push(transformedLine + opts.lineSeparator);
+            if (isFirstRow && opts.hasHeader) {
+              // Save headers and don't transform the header row
+              headers = row;
+              this.push(line + opts.lineSeparator);
+              isFirstRow = false;
+              continue;
             }
 
-            callback();
-          } catch (err) {
-            callback(err instanceof Error ? err : new Error(String(err)));
-          }
-        },
-        flush(callback) {
-          try {
-            // Process any remaining buffer
-            if (buffer.trim()) {
-              const row = buffer.split(opts.delimiter);
+            let transformedRow;
 
-              let transformedRow;
-
-              if (opts.hasHeader) {
-                // Convert to object with header keys
-                const rowObj: Record<string, string> = {};
-                headers.forEach((header, i) => {
-                  if (i < row.length) {
-                    rowObj[header] = row[i];
-                  }
-                });
-
-                // Transform the row
-                transformedRow = transformFn(rowObj);
-
-                // Convert back to array
-                if (Array.isArray(transformedRow)) {
-                  // Already an array, use as is
-                } else {
-                  // Convert object back to array based on headers
-                  const rowArray = headers.map(header =>
-                    transformedRow[header] !== undefined ? transformedRow[header] : ''
-                  );
-                  transformedRow = rowArray;
+            if (opts.hasHeader) {
+              // Convert to object with header keys
+              const rowObj: Record<string, string> = {};
+              headers.forEach((header, i) => {
+                if (i < row.length && header) {
+                  rowObj[header] = row[i] || '';
                 }
+              });
+
+              // Transform the row
+              transformedRow = transformFn(rowObj);
+
+              // Convert back to array
+              if (Array.isArray(transformedRow)) {
+                // Already an array, use as is
               } else {
-                // No headers, just transform the array
-                transformedRow = transformFn(row);
-
-                if (!Array.isArray(transformedRow)) {
-                  // Convert object to array
-                  transformedRow = Object.values(transformedRow);
-                }
+                // Convert object back to array based on headers
+                const rowArray = headers.map(header =>
+                  transformedRow[header] !== undefined ? transformedRow[header] : ''
+                );
+                transformedRow = rowArray;
               }
+            } else {
+              // No headers, just transform the array
+              transformedRow = transformFn(row);
 
-              // Convert back to CSV line
-              const transformedLine = (transformedRow as string[]).join(opts.delimiter);
-              this.push(transformedLine);
+              if (!Array.isArray(transformedRow)) {
+                // Convert object to array
+                transformedRow = Object.values(transformedRow);
+              }
             }
 
-            callback();
-          } catch (err) {
-            callback(err instanceof Error ? err : new Error(String(err)));
+            // Convert back to CSV line
+            const transformedLine = (transformedRow as string[]).join(opts.delimiter);
+            this.push(transformedLine + opts.lineSeparator);
           }
+
+          callback();
+        } catch (err) {
+          callback(err instanceof Error ? err : new Error(String(err)));
         }
-      });
-    },
-    opts
-  );
+      },
+      flush(callback): void {
+        try {
+          // Process any remaining buffer
+          if (buffer.trim()) {
+            const row = buffer.split(opts.delimiter);
+
+            let transformedRow;
+
+            if (opts.hasHeader) {
+              // Convert to object with header keys
+              const rowObj: Record<string, string> = {};
+              headers.forEach((header, i) => {
+                if (i < row.length && header) {
+                  rowObj[header] = row[i] || '';
+                }
+              });
+
+              // Transform the row
+              transformedRow = transformFn(rowObj);
+
+              // Convert back to array
+              if (Array.isArray(transformedRow)) {
+                // Already an array, use as is
+              } else {
+                // Convert object back to array based on headers
+                const rowArray = headers.map(header =>
+                  transformedRow[header] !== undefined ? transformedRow[header] : ''
+                );
+                transformedRow = rowArray;
+              }
+            } else {
+              // No headers, just transform the array
+              transformedRow = transformFn(row);
+
+              if (!Array.isArray(transformedRow)) {
+                // Convert object to array
+                transformedRow = Object.values(transformedRow);
+              }
+            }
+
+            // Convert back to CSV line
+            const transformedLine = (transformedRow as string[]).join(opts.delimiter);
+            this.push(transformedLine);
+          }
+
+          callback();
+        } catch (err) {
+          callback(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    });
+  }, opts);
 }
 
 /**
@@ -673,26 +683,27 @@ export class StreamProcessor {
    * Create middleware that applies all transformers in sequence
    * @returns Middleware function
    */
-  createMiddleware() {
-    return createStreamTransformMiddleware(
-      (req) => {
-        // If no transformers, return a simple passthrough
-        if (this.transformers.length === 0) {
-          return new PassThrough();
-        }
+  createMiddleware(): (
+    req: IncomingMessage,
+    _res: any,
+    next: () => Promise<void>
+  ) => Promise<void> {
+    return createStreamTransformMiddleware(req => {
+      // If no transformers, return a simple passthrough
+      if (this.transformers.length === 0) {
+        return new PassThrough();
+      }
 
-        // Apply each transformer in sequence
-        let finalTransform: Transform = this.transformers[0](req);
+      // Apply each transformer in sequence
+      let finalTransform: Transform = this.transformers[0]!(req);
 
-        for (let i = 1; i < this.transformers.length; i++) {
-          const nextTransform = this.transformers[i](req);
-          finalTransform = finalTransform.pipe(nextTransform) as Transform;
-        }
+      for (let i = 1; i < this.transformers.length; i++) {
+        const nextTransform = this.transformers[i]!(req);
+        finalTransform = finalTransform.pipe(nextTransform) as Transform;
+      }
 
-        return finalTransform;
-      },
-      this.options
-    );
+      return finalTransform;
+    }, this.options);
   }
 }
 
@@ -705,46 +716,43 @@ export class StreamProcessor {
 export function createTextProcessingMiddleware(
   processFunction: (text: string) => string,
   options?: StreamProcessingOptions
-) {
-  return createStreamTransformMiddleware(
-    () => {
-      let buffer = '';
-      const chunkSize = options?.chunkSize || DEFAULT_STREAM_OPTIONS.chunkSize;
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
+  return createStreamTransformMiddleware(() => {
+    let buffer = '';
+    const chunkSize = options?.chunkSize || DEFAULT_STREAM_OPTIONS.chunkSize;
 
-      return new Transform({
-        transform(chunk, _encoding, callback) {
-          try {
-            buffer += chunk.toString();
+    return new Transform({
+      transform(chunk, _encoding, callback): void {
+        try {
+          buffer += chunk.toString();
 
-            // Process in chunks to avoid excessive memory usage
-            while (buffer.length > chunkSize) {
-              const processChunk = buffer.slice(0, chunkSize);
-              buffer = buffer.slice(chunkSize);
+          // Process in chunks to avoid excessive memory usage
+          while (buffer.length > chunkSize) {
+            const processChunk = buffer.slice(0, chunkSize);
+            buffer = buffer.slice(chunkSize);
 
-              const processed = processFunction(processChunk);
-              this.push(processed);
-            }
-
-            callback();
-          } catch (err) {
-            callback(err instanceof Error ? err : new Error(String(err)));
+            const processed = processFunction(processChunk);
+            this.push(processed);
           }
-        },
-        flush(callback) {
-          try {
-            if (buffer.length > 0) {
-              const processed = processFunction(buffer);
-              this.push(processed);
-            }
-            callback();
-          } catch (err) {
-            callback(err instanceof Error ? err : new Error(String(err)));
-          }
+
+          callback();
+        } catch (err) {
+          callback(err instanceof Error ? err : new Error(String(err)));
         }
-      });
-    },
-    options
-  );
+      },
+      flush(callback): void {
+        try {
+          if (buffer.length > 0) {
+            const processed = processFunction(buffer);
+            this.push(processed);
+          }
+          callback();
+        } catch (err) {
+          callback(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    });
+  }, options);
 }
 
 // Default timeout for stream processing (5 seconds)
@@ -760,7 +768,9 @@ const _DEFAULT_TIMEOUT = 5000;
  * @param {boolean} options.useOptimized - Whether to use optimized transform streams with buffer pooling
  * @returns {Function} Middleware function
  */
-export function streamTransform(options: any = {}) {
+export function streamTransform(
+  options: any = {}
+): (req: IncomingMessage, res: any, next: (err?: any) => Promise<void>) => Promise<void> {
   // Default options
   const {
     transformers = [],
@@ -770,7 +780,11 @@ export function streamTransform(options: any = {}) {
     timeout: staticTimeout = 30000
   } = options;
 
-  return async function streamTransformMiddleware(req: IncomingMessage, res: any, next: (err?: any) => Promise<void>) {
+  return async function streamTransformMiddleware(
+    req: IncomingMessage,
+    res: any,
+    next: (err?: any) => Promise<void>
+  ): Promise<void> {
     // Skip if no body or no transformers
     if (!hasBody(req) || transformers.length === 0) {
       return await next();
@@ -792,7 +806,7 @@ export function streamTransform(options: any = {}) {
       if (useAdaptiveTimeout) {
         // Create adaptive timeout handler based on content size and type
         const contentLength = Number(req.headers['content-length'] || 0);
-        const contentType = req.headers['content-type'] as string || 'application/octet-stream';
+        const contentType = (req.headers['content-type'] as string) || 'application/octet-stream';
 
         timeoutHandler = globalTimeoutManager.createTimeoutHandler({
           size: contentLength,
@@ -846,7 +860,7 @@ export function streamTransform(options: any = {}) {
         let lastProgressUpdate = 0;
 
         // Track progress and extend timeout as needed
-        transformedBody.on('data', (chunk) => {
+        transformedBody.on('data', chunk => {
           processedBytes += chunk.length;
 
           // Extend timeout every 1MB of data processed
@@ -859,7 +873,8 @@ export function streamTransform(options: any = {}) {
         // Record processing time on completion
         transformedBody.on('end', () => {
           const contentLength = Number(req.headers['content-length'] || 0);
-          const _contentType = req.headers['content-type'] as string || 'application/octet-stream';
+          const _contentType =
+            (req.headers['content-type'] as string) || 'application/octet-stream';
 
           if (contentLength > 0) {
             // Record processing stats to improve future timeout calculations
@@ -892,7 +907,7 @@ export function streamTransform(options: any = {}) {
       });
 
       // Wait for pipeline to be established (not for completion)
-      pipelinePromise.catch((err) => {
+      pipelinePromise.catch(err => {
         // Handle pipeline errors
         next(err);
       });
@@ -911,7 +926,7 @@ export function streamTransform(options: any = {}) {
  * @param {Function} options.processText - Function to process text data
  * @returns {Transform} A transform stream for processing text
  */
-export function createTextProcessor(options: any = {}) {
+export function createTextProcessor(options: any = {}): Transform {
   return createTextTransformer(options);
 }
 
@@ -923,6 +938,6 @@ export function createTextProcessor(options: any = {}) {
  * @param {boolean} options.streamArrayItems - Process array items incrementally
  * @returns {Transform} A transform stream for processing JSON
  */
-export function createJsonProcessor(options: any = {}) {
+export function createJsonProcessor(options: any = {}): Transform {
   return createJsonTransformer(options);
 }

@@ -37,13 +37,12 @@ declare module 'node:http' {
 /**
  * Middleware that detects content type and sets up appropriate stream transformers
  */
-export function contentTypeDetector(options: ContentTypeOptions = { autoTransform: true, exposeStreams: true }) {
-  const {
-    autoTransform = true,
-    exposeStreams = true
-  } = options;
+export function contentTypeDetector(
+  options: ContentTypeOptions = { autoTransform: true, exposeStreams: true }
+): (req: IncomingMessage, res: ServerResponse, next: (err?: Error) => void) => void {
+  const { autoTransform = true, exposeStreams = true } = options;
 
-  return (req: IncomingMessage, res: ServerResponse, next: (err?: Error) => void) => {
+  return (req: IncomingMessage, res: ServerResponse, next: (err?: Error) => void): void => {
     try {
       // Get content type
       const contentType = getContentType(req);
@@ -82,7 +81,11 @@ export function contentTypeDetector(options: ContentTypeOptions = { autoTransfor
 /**
  * Set up JSON transformers for the request
  */
-function setupJsonTransformers(req: IncomingMessage, rawStream: PassThrough, autoTransform: boolean) {
+function setupJsonTransformers(
+  req: IncomingMessage,
+  rawStream: PassThrough,
+  autoTransform: boolean
+): void {
   // Store original pipe method
   const originalPipe = req.pipe;
 
@@ -104,14 +107,18 @@ function setupJsonTransformers(req: IncomingMessage, rawStream: PassThrough, aut
   // Set up automatic transform piping if enabled
   if (autoTransform) {
     // Override pipe to intercept the first pipe call
-    req.pipe = function(destination) {
+    req.pipe = function <T extends NodeJS.WritableStream>(
+      destination: T,
+      _options?: { end?: boolean }
+    ): T {
       // Pipe through our transformers
       req.pipe = originalPipe; // Restore original pipe
 
       // Set up pipeline: req -> rawStream -> jsonTransformer -> destination
       originalPipe.call(req, rawStream);
       rawStream.pipe(jsonTransformer);
-      return jsonTransformer.pipe(destination);
+      jsonTransformer.pipe(destination);
+      return destination;
     };
   }
 }
@@ -119,7 +126,11 @@ function setupJsonTransformers(req: IncomingMessage, rawStream: PassThrough, aut
 /**
  * Set up text transformers for the request
  */
-function setupTextTransformers(req: IncomingMessage, rawStream: PassThrough, autoTransform: boolean) {
+function setupTextTransformers(
+  req: IncomingMessage,
+  rawStream: PassThrough,
+  autoTransform: boolean
+): void {
   // Store original pipe method
   const originalPipe = req.pipe;
 
@@ -138,14 +149,18 @@ function setupTextTransformers(req: IncomingMessage, rawStream: PassThrough, aut
   // Set up automatic transform piping if enabled
   if (autoTransform) {
     // Override pipe to intercept the first pipe call
-    req.pipe = function(destination) {
+    req.pipe = function <T extends NodeJS.WritableStream>(
+      destination: T,
+      _options?: { end?: boolean }
+    ): T {
       // Pipe through our transformers
       req.pipe = originalPipe; // Restore original pipe
 
       // Set up pipeline: req -> rawStream -> textTransformer -> destination
       originalPipe.call(req, rawStream);
       rawStream.pipe(textTransformer);
-      return textTransformer.pipe(destination);
+      textTransformer.pipe(destination);
+      return destination;
     };
   }
 }
@@ -153,7 +168,11 @@ function setupTextTransformers(req: IncomingMessage, rawStream: PassThrough, aut
 /**
  * Set up form transformers for the request
  */
-function setupFormTransformers(req: IncomingMessage, rawStream: PassThrough, autoTransform: boolean) {
+function setupFormTransformers(
+  req: IncomingMessage,
+  rawStream: PassThrough,
+  autoTransform: boolean
+): void {
   // Store original pipe method
   const originalPipe = req.pipe;
 
@@ -182,14 +201,18 @@ function setupFormTransformers(req: IncomingMessage, rawStream: PassThrough, aut
   // Set up automatic transform piping if enabled
   if (autoTransform) {
     // Override pipe to intercept the first pipe call
-    req.pipe = function(destination) {
+    req.pipe = function <T extends NodeJS.WritableStream>(
+      destination: T,
+      _options?: { end?: boolean }
+    ): T {
       // Pipe through our transformers
       req.pipe = originalPipe; // Restore original pipe
 
       // Set up pipeline: req -> rawStream -> textTransformer -> destination
       originalPipe.call(req, rawStream);
       rawStream.pipe(textTransformer);
-      return textTransformer.pipe(destination);
+      textTransformer.pipe(destination);
+      return destination;
     };
   }
 }
@@ -197,7 +220,11 @@ function setupFormTransformers(req: IncomingMessage, rawStream: PassThrough, aut
 /**
  * Set up multipart transformers for the request
  */
-function setupMultipartTransformers(req: IncomingMessage, rawStream: PassThrough, autoTransform: boolean) {
+function setupMultipartTransformers(
+  req: IncomingMessage,
+  rawStream: PassThrough,
+  autoTransform: boolean
+): void {
   // For multipart, we don't auto-transform as it's more complex
   // Instead, we just expose the raw stream for specialized parsers to use
 
@@ -210,13 +237,17 @@ function setupMultipartTransformers(req: IncomingMessage, rawStream: PassThrough
   // Set up automatic piping if enabled
   if (autoTransform) {
     // Override pipe to intercept the first pipe call
-    req.pipe = function(destination) {
+    req.pipe = function <T extends NodeJS.WritableStream>(
+      destination: T,
+      _options?: { end?: boolean }
+    ): T {
       // Pipe through our transformers
       req.pipe = originalPipe; // Restore original pipe
 
       // For multipart, just set up: req -> rawStream -> destination
       originalPipe.call(req, rawStream);
-      return rawStream.pipe(destination);
+      rawStream.pipe(destination);
+      return destination;
     };
   }
 }
@@ -224,7 +255,11 @@ function setupMultipartTransformers(req: IncomingMessage, rawStream: PassThrough
 /**
  * Set up raw body transformers for the request
  */
-function setupRawTransformers(req: IncomingMessage, rawStream: PassThrough, autoTransform: boolean) {
+function setupRawTransformers(
+  req: IncomingMessage,
+  rawStream: PassThrough,
+  autoTransform: boolean
+): void {
   // Store original pipe method
   const originalPipe = req.pipe;
 
@@ -234,13 +269,17 @@ function setupRawTransformers(req: IncomingMessage, rawStream: PassThrough, auto
   // Set up automatic piping if enabled
   if (autoTransform) {
     // Override pipe to intercept the first pipe call
-    req.pipe = function(destination) {
+    req.pipe = function <T extends NodeJS.WritableStream>(
+      destination: T,
+      _options?: { end?: boolean }
+    ): T {
       // Pipe through our transformers
       req.pipe = originalPipe; // Restore original pipe
 
       // Just set up: req -> rawStream -> destination
       originalPipe.call(req, rawStream);
-      return rawStream.pipe(destination);
+      rawStream.pipe(destination);
+      return destination;
     };
   }
 }
