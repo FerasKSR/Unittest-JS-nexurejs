@@ -23,12 +23,35 @@ import type {
 } from '../types/native';
 import { RadixRouter as JsRadixRouter } from '../routing/router';
 
-// Get dirName equivalent in ESM
-const filename = fileURLToPath(import.meta.url);
-const dirName = dirname(filename);
+// Get dirName equivalent in ESM/CJS compatible way
+let dirName: string;
+let customRequire: NodeRequire;
 
-// Create a require function for ESM
-const require = createRequire(import.meta.url);
+// Handle both ESM and CommonJS environments
+if (typeof __dirname !== 'undefined') {
+  // CommonJS
+  dirName = __dirname;
+  customRequire = require;
+} else {
+  // ESM - handle import.meta.url with typeof check for CJS compatibility
+  try {
+    // @ts-ignore - Conditionally use import.meta.url
+    const metaUrl = typeof import.meta !== 'undefined' ? import.meta.url : '';
+    if (metaUrl) {
+      const filename = fileURLToPath(metaUrl);
+      dirName = dirname(filename);
+      customRequire = createRequire(metaUrl);
+    } else {
+      // Fallback if import.meta is not available (during CJS build)
+      dirName = process.cwd();
+      customRequire = require;
+    }
+  } catch (_err) {
+    // Final fallback
+    dirName = process.cwd();
+    customRequire = require;
+  }
+}
 
 /**
  * Configuration options for native modules
@@ -284,7 +307,7 @@ export function loadNativeBinding(): any {
     try {
       const platformSpecificPackage = `nexurejs-native-${process.platform}-${process.arch}`;
       // This will throw if the package doesn't exist
-      require.resolve(platformSpecificPackage);
+      customRequire.resolve(platformSpecificPackage);
       possiblePaths.push(platformSpecificPackage);
     } catch (_e) {
       // Package not found, continue with other paths
@@ -301,7 +324,7 @@ export function loadNativeBinding(): any {
         }
 
         // Load the native module
-        nativeBinding = require(bindingPath);
+        nativeBinding = customRequire(bindingPath);
 
         // Update status
         nativeModuleStatus.loaded = true;
@@ -1311,6 +1334,7 @@ export class Compression {
       // Fallback to zlib (slower)
       const start = performance.now();
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const zlib = require('node:zlib');
         const buffer = typeof data === 'string' ? Buffer.from(data) : data;
         const result = zlib.gzipSync(buffer, { level });
@@ -1339,6 +1363,7 @@ export class Compression {
       // Fallback to zlib (slower)
       const start = performance.now();
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const zlib = require('node:zlib');
         const result = zlib.gunzipSync(data);
         const end = performance.now();
@@ -2131,6 +2156,7 @@ export function getAllPerformanceMetrics(): {
   nativeBindings: ReturnType<typeof import('../utils/native-bindings.js').getNativeBindingMetrics>;
 } {
   // Import the getNativeBindingMetrics function
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getNativeBindingMetrics } = require('../utils/native-bindings');
 
   return {
