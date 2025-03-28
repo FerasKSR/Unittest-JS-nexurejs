@@ -31,16 +31,8 @@ export {
   InjectProperty,
   type InjectionMetadata
 } from './decorators/injection-decorators';
-export {
-  Container,
-  Scope,
-  type ProviderOptions
-} from './di/container';
-export {
-  Logger,
-  LogLevel,
-  type LoggerOptions
-} from './utils/logger';
+export { Container, Scope, type ProviderOptions } from './di/container';
+export { Logger, LogLevel, type LoggerOptions } from './utils/logger';
 export {
   BindingType,
   tryLoadNativeBinding,
@@ -48,17 +40,16 @@ export {
   getNativeBinding,
   fastJsonParse,
   fastJsonStringify,
-  initNativeBindings
+  initNativeBindings,
+  getUseNativeByDefault,
+  setUseNativeByDefault
 } from './utils/native-bindings';
 export {
   PerformanceMonitor,
   type PerformanceMetric,
   type PerformanceMonitorOptions
 } from './utils/performance-monitor';
-export {
-  Env,
-  type EnvOptions
-} from './utils/env';
+export { Env, type EnvOptions } from './utils/env';
 export {
   CacheManager,
   MemoryCacheStore,
@@ -114,7 +105,29 @@ export {
   type TokenBucketStore
 } from './security/rate-limiter';
 
-// Version
-export const VERSION = '0.1.0';
-
+// Export routing module
+export * from './routing/index';
 export * from './http/index';
+
+// Export setup utility
+export { initializeFramework, type SetupOptions } from './setup';
+
+// Version
+export const VERSION = '0.2.0';
+
+/**
+ * Create a new Nexure server
+ *
+ * @param options Server options
+ * @returns A configured Nexure server instance
+ */
+export function createServer(options = {}): import('./core/nexure').Nexure {
+  // Import directly from the module to avoid circular dependency
+  // (This works in both ESM and CJS)
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { Nexure } = require('./core/nexure');
+  return new Nexure(options);
+}
+
+// Auto-initialize the framework with native modules enabled by default
+import './setup';
