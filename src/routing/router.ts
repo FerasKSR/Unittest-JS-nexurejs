@@ -35,16 +35,16 @@ export interface RouteMatch {
 }
 
 // Node types in radix tree
-const _STATIC = 0;
-const _PARAM = 1;
-const _WILDCARD = 2;
+const STATIC = 0;
+const PARAM = 1;
+const WILDCARD = 2;
 
 /**
  * Memory-efficient node class with optimization for static nodes
  */
 class RadixNode {
   // Node properties
-  type: number = _STATIC;
+  type: number = STATIC;
   segment: string = '';
   paramName: string = '';
   children: RadixNode[] = [];
@@ -74,14 +74,15 @@ class RadixNode {
 
   // Release a node back to the pool
   static releaseNode(node: RadixNode): void {
-    if (this.nodePool.length < 1000) { // Limit pool size
+    if (this.nodePool.length < 1000) {
+      // Limit pool size
       this.nodePool.push(node);
     }
   }
 
   // Reset node to initial state
   reset(): void {
-    this.type = _STATIC;
+    this.type = STATIC;
     this.segment = '';
     this.paramName = '';
     this.children = [];
@@ -100,7 +101,8 @@ class RadixNode {
 
   // Release param object back to pool
   static releaseParamObject(params: Record<string, string>): void {
-    if (this.paramObjectPool.length < 1000) { // Limit pool size
+    if (this.paramObjectPool.length < 1000) {
+      // Limit pool size
       Object.keys(params).forEach(key => delete params[key]);
       this.paramObjectPool.push(params);
     }
@@ -114,8 +116,11 @@ class RadixNode {
     this.insertInternal(segments, route, 0);
 
     // Build fast paths for common routes (direct children)
-    if (segments.length === 1 && this.type === _STATIC) {
-      this.fastPaths.set(`${route.method}:${segments[0]}`, this.children.find(c => c.segment === segments[0]) || this);
+    if (segments.length === 1 && this.type === STATIC) {
+      this.fastPaths.set(
+        `${route.method}:${segments[0]}`,
+        this.children.find(c => c.segment === segments[0]) || this
+      );
     }
 
     // Rebuild bitmap index for static children
@@ -130,21 +135,23 @@ class RadixNode {
       return;
     }
 
-    const segment = segments[index];
+    const segment = segments[index] || '';
 
     // Check if this is a parameter segment (:name)
     if (segment.startsWith(':')) {
       // Parameter node
       const paramName = segment.slice(1);
-      let paramNode = this.children.find(child => child.type === _PARAM);
+      let paramNode = this.children.find(child => child.type === PARAM);
 
       if (!paramNode) {
         paramNode = RadixNode.getNode();
-        paramNode.type = _PARAM;
+        paramNode.type = PARAM;
         paramNode.paramName = paramName;
         this.children.push(paramNode);
       } else if (paramNode.paramName !== paramName) {
-        throw new Error(`Cannot use two different param names for the same path segment: ${paramNode.paramName} and ${paramName}`);
+        throw new Error(
+          `Cannot use two different param names for the same path segment: ${paramNode.paramName} and ${paramName}`
+        );
       }
 
       paramNode.insertInternal(segments, route, index + 1);
@@ -154,11 +161,11 @@ class RadixNode {
     // Check if this is a wildcard segment (*)
     if (segment === '*') {
       // Wildcard node
-      let wildcardNode = this.children.find(child => child.type === _WILDCARD);
+      let wildcardNode = this.children.find(child => child.type === WILDCARD);
 
       if (!wildcardNode) {
         wildcardNode = RadixNode.getNode();
-        wildcardNode.type = _WILDCARD;
+        wildcardNode.type = WILDCARD;
         this.children.push(wildcardNode);
       }
 
@@ -167,14 +174,14 @@ class RadixNode {
     }
 
     // Static node
-    let staticNode = this.children.find(child =>
-      child.type === _STATIC && child.segment === segment
+    let staticNode = this.children.find(
+      child => child.type === STATIC && child.segment === segment
     );
 
     if (!staticNode) {
       staticNode = RadixNode.getNode();
-      staticNode.type = _STATIC;
-      staticNode.segment = segment!;
+      staticNode.type = STATIC;
+      staticNode.segment = segment;
       this.children.push(staticNode);
     }
 
@@ -183,18 +190,24 @@ class RadixNode {
 
   // Rebuild the bitmap index for static children
   private rebuildStaticIndex(): void {
-    const staticChildren = this.children.filter(child => child.type === _STATIC);
+    const staticChildren = this.children.filter(child => child.type === STATIC);
 
-    if (staticChildren.length > 5) { // Only use bitmap for sufficient number of children
+    if (staticChildren.length > 5) {
+      // Only use bitmap for sufficient number of children
       // Create a 256-bit (32 byte) bitmap for ASCII chars
-      this.staticChildrenIndex = new Uint32Array(8); // 8 * 32 = 256 bits
+      const bitmap = new Uint32Array(8); // 8 * 32 = 256 bits
+      this.staticChildrenIndex = bitmap;
 
       // Set bits for the first character of each static child
       for (const child of staticChildren) {
         const charCode = child.segment.charCodeAt(0);
         const index = Math.floor(charCode / 32);
         const bit = charCode % 32;
-        this.staticChildrenIndex[index] |= (1 << bit);
+
+        // Check that the index is valid
+        if (index >= 0 && index < 8) {
+          bitmap[index]! |= 1 << bit;
+        }
       }
     } else {
       this.staticChildrenIndex = null;
@@ -233,74 +246,70 @@ class RadixNode {
     return null;
   }
 
-  // Internal search method
+  // Simplified search implementation to reduce complexity
   private searchInternal(
     segments: string[],
     method: HttpMethod,
     params: Record<string, string>,
     index: number
   ): Route | null {
-    // If we reached the end of the path, look for a route at this node
+    // If we've reached the end of the path, check if there's a matching route
     if (index === segments.length) {
-      // Check for exact method match
-      const route = this.routes.get(method);
+      // Check for an exact method match
+      const route = this.routes.get(method) || this.routes.get(HttpMethod.ALL);
+      return route || null;
+    }
+
+    const segment = segments[index] || '';
+
+    // Search static nodes first (most specific match)
+    const staticNode = this.findStaticNode(segment);
+    if (staticNode) {
+      const route = staticNode.searchInternal(segments, method, params, index + 1);
       if (route) return route;
-
-      // Check for ALL method match as fallback
-      return this.routes.get(HttpMethod._ALL) || null;
     }
 
-    const segment = segments[index];
-
-    // Check static children with bitmap optimization
-    if (this.staticChildrenIndex) {
-      const charCode = segment.charCodeAt(0);
-      const bitmapIndex = Math.floor(charCode / 32);
-      const bit = charCode % 32;
-
-      // If the bit is not set, no static child exists with this first character
-      if (!(this.staticChildrenIndex[bitmapIndex] & (1 << bit))) {
-        // Skip checking static children
-      } else {
-        // Try to match static nodes (most specific)
-        for (const child of this.children) {
-          if (child.type === _STATIC && child.segment === segment) {
-            const route = child.searchInternal(segments, method, params, index + 1);
-            if (route) return route;
-            break; // No need to check other static children
-          }
-        }
-      }
-    } else {
-      // Try to match static nodes (most specific) - fallback for nodes without bitmap
-      for (const child of this.children) {
-        if (child.type === _STATIC && child.segment === segment) {
-          const route = child.searchInternal(segments, method, params, index + 1);
-          if (route) return route;
-          break; // No need to check other static children
-        }
-      }
+    // Try param nodes second (less specific match)
+    const paramNode = this.children.find(child => child.type === PARAM);
+    if (paramNode) {
+      params[paramNode.paramName] = segment;
+      const route = paramNode.searchInternal(segments, method, params, index + 1);
+      if (route) return route;
+      delete params[paramNode.paramName]; // Clean up if no match
     }
 
-    // Try to match parameter nodes
-    for (const child of this.children) {
-      if (child.type === _PARAM) {
-        params[child.paramName] = segment!;
-        const route = child.searchInternal(segments, method, params, index + 1);
-        if (route) return route;
-        delete params[child.paramName];
-      }
-    }
-
-    // Try to match wildcard nodes (least specific)
-    for (const child of this.children) {
-      if (child.type === _WILDCARD) {
-        const route = child.routes.get(method) || child.routes.get(HttpMethod._ALL);
-        return route || null;
-      }
+    // Try wildcard nodes last (least specific match)
+    const wildcardNode = this.children.find(child => child.type === WILDCARD);
+    if (wildcardNode) {
+      const route = wildcardNode.routes.get(method) || wildcardNode.routes.get(HttpMethod.ALL);
+      return route || null;
     }
 
     return null;
+  }
+
+  // Helper method to find a static node matching the segment
+  private findStaticNode(segment: string): RadixNode | undefined {
+    // Fast check for static nodes with bitmap index
+    if (this.staticChildrenIndex) {
+      const bitmap = this.staticChildrenIndex;
+      const firstChar = segment.charCodeAt(0);
+      const bitmapIndex = Math.floor(firstChar / 32);
+      const bit = firstChar % 32;
+
+      // Make sure index is valid
+      if (bitmapIndex < 0 || bitmapIndex >= bitmap.length) {
+        return undefined;
+      }
+
+      // Check if the bit is set for this character
+      if (!(bitmap[bitmapIndex]! & (1 << bit))) {
+        return undefined;
+      }
+    }
+
+    // Find the matching static node
+    return this.children.find(child => child.type === STATIC && child.segment === segment);
   }
 
   // Normalize a path (ensure leading slash, no trailing slash)
@@ -308,7 +317,7 @@ class RadixNode {
     let normalized = path;
 
     if (!normalized.startsWith('/')) {
-      normalized = '/' + normalized;
+      normalized = `/${normalized}`;
     }
 
     if (normalized.length > 1 && normalized.endsWith('/')) {
@@ -325,10 +334,13 @@ class RadixNode {
 export class Router {
   private root = new RadixNode();
   private globalPrefix: string;
-  private routeCache: Map<string, {
-    result: RouteMatch | null;
-    timestamp: number;
-  }> = new Map();
+  private routeCache: Map<
+    string,
+    {
+      result: RouteMatch | null;
+      timestamp: number;
+    }
+  > = new Map();
 
   private readonly CACHE_MAX_SIZE = 10000; // Maximum cache size
   private readonly DEFAULT_TTL = 60000; // Default TTL: 1 minute
@@ -359,11 +371,7 @@ export class Router {
    * Configure caching behavior
    * @param options Caching options
    */
-  configureCaching(options: {
-    enabled?: boolean;
-    maxSize?: number;
-    ttl?: number;
-  }): void {
+  configureCaching(options: { enabled?: boolean; maxSize?: number; ttl?: number }): void {
     if (options.enabled === false) {
       this.routeCache.clear();
       this.cacheTtl = 0; // Disable caching
@@ -597,13 +605,13 @@ export class Router {
    * Get router performance statistics
    */
   getStats(): {
-    hits: number,
-    misses: number,
-    inserts: number,
-    searches: number,
-    expirations: number,
-    cacheSize: number,
-    cacheTtl: number
+    hits: number;
+    misses: number;
+    inserts: number;
+    searches: number;
+    expirations: number;
+    cacheSize: number;
+    cacheTtl: number;
   } {
     return {
       ...this.stats,
@@ -651,7 +659,7 @@ export class Router {
     let normalized = path;
 
     if (!normalized.startsWith('/')) {
-      normalized = '/' + normalized;
+      normalized = `/${normalized}`;
     }
 
     if (normalized.length > 1 && normalized.endsWith('/')) {
@@ -686,7 +694,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._GET, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.GET, path, handler, middlewares, controller);
   }
 
   /**
@@ -702,7 +710,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._POST, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.POST, path, handler, middlewares, controller);
   }
 
   /**
@@ -718,7 +726,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._PUT, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.PUT, path, handler, middlewares, controller);
   }
 
   /**
@@ -734,7 +742,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._DELETE, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.DELETE, path, handler, middlewares, controller);
   }
 
   /**
@@ -750,7 +758,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._PATCH, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.PATCH, path, handler, middlewares, controller);
   }
 
   /**
@@ -766,7 +774,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._OPTIONS, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.OPTIONS, path, handler, middlewares, controller);
   }
 
   /**
@@ -782,7 +790,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._HEAD, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.HEAD, path, handler, middlewares, controller);
   }
 
   /**
@@ -798,7 +806,7 @@ export class Router {
     middlewares: MiddlewareHandler[] = [],
     controller: any = null
   ): void {
-    this.addRoute(HttpMethod._ALL, path, handler, middlewares, controller);
+    this.addRoute(HttpMethod.ALL, path, handler, middlewares, controller);
   }
 }
 
@@ -827,56 +835,96 @@ export class RadixRouter {
   /**
    * Add a GET route
    */
-  get(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  get(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.get(path, handler, middlewares, controller);
   }
 
   /**
    * Add a POST route
    */
-  post(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  post(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.post(path, handler, middlewares, controller);
   }
 
   /**
    * Add a PUT route
    */
-  put(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  put(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.put(path, handler, middlewares, controller);
   }
 
   /**
    * Add a DELETE route
    */
-  delete(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  delete(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.delete(path, handler, middlewares, controller);
   }
 
   /**
    * Add a PATCH route
    */
-  patch(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  patch(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.patch(path, handler, middlewares, controller);
   }
 
   /**
    * Add a OPTIONS route
    */
-  options(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  options(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.options(path, handler, middlewares, controller);
   }
 
   /**
    * Add a HEAD route
    */
-  head(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  head(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.head(path, handler, middlewares, controller);
   }
 
   /**
    * Add a route that matches all HTTP methods
    */
-  all(path: string, handler: RouteHandler, middlewares: MiddlewareHandler[] = [], controller: any = null): void {
+  all(
+    path: string,
+    handler: RouteHandler,
+    middlewares: MiddlewareHandler[] = [],
+    controller: any = null
+  ): void {
     this.router.all(path, handler, middlewares, controller);
   }
 }
