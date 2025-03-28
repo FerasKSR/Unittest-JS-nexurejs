@@ -25,6 +25,28 @@ enum ParserState {
   COMPLETE = 4
 }
 
+// Parser context type to hold state
+interface ParserContext {
+  state: ParserState;
+  config: Required<MultipartParserOptions>;
+  boundaryBuffer: Buffer;
+  endBoundaryBuffer: Buffer;
+  currentHeaders: Record<string, string>;
+  currentName: string;
+  currentFilename: string;
+  currentPart: Buffer | null;
+  currentFieldSize: number;
+  headerBuffer: string;
+  currentFileStream: Writable | null;
+  currentFileSize: number;
+  tempFilePath: string;
+  fields: MultipartFields;
+  files: MultipartFiles;
+  fieldCount: number;
+  buffer: Buffer | null;
+  bufferOffset: number;
+}
+
 export interface MultipartFile {
   fieldname: string;
   originalname: string;
@@ -69,6 +91,387 @@ const DEFAULT_OPTIONS: Required<MultipartParserOptions> = {
   boundary: ''
 };
 
+// Helper functions
+/**
+ * Process a chunk of data
+ */
+function processChunk(ctx: ParserContext, chunk: Buffer): void {
+  // If this is the first chunk, handle special case
+  if (ctx.state === ParserState.PENDING_BOUNDARY && !ctx.buffer) {
+    // First chunk may start with the boundary without the leading CRLF
+    const firstBoundary = `--${ctx.config.boundary}`;
+    const firstBoundaryBuffer = Buffer.from(firstBoundary);
+
+    // Check if the chunk starts with the boundary
+    if (
+      chunk.length >= firstBoundaryBuffer.length &&
+      chunk.subarray(0, firstBoundaryBuffer.length).equals(firstBoundaryBuffer)
+    ) {
+      // This is the first boundary, start processing headers from after it
+      ctx.buffer = chunk.subarray(firstBoundaryBuffer.length);
+      ctx.bufferOffset = 0;
+      ctx.state = ParserState.PENDING_HEADERS;
+      return;
+    }
+  }
+
+  // Append chunk to existing buffer or create a new one
+  if (ctx.buffer) {
+    const newBuffer = globalPool.acquire(ctx.buffer.length - ctx.bufferOffset + chunk.length);
+    ctx.buffer.copy(newBuffer, 0, ctx.bufferOffset);
+    chunk.copy(newBuffer, ctx.buffer.length - ctx.bufferOffset);
+
+    // Release the old buffer back to the pool
+    globalPool.release(ctx.buffer);
+
+    ctx.buffer = newBuffer;
+    ctx.bufferOffset = 0;
+  } else {
+    ctx.buffer = chunk;
+    ctx.bufferOffset = 0;
+  }
+
+  // Process the buffer based on current state
+  processBuffer(ctx);
+}
+
+/**
+ * Process the current buffer
+ */
+function processBuffer(ctx: ParserContext): void {
+  while (ctx.buffer && ctx.bufferOffset < ctx.buffer.length) {
+    switch (ctx.state) {
+      case ParserState.PENDING_BOUNDARY:
+        processPendingBoundary(ctx);
+        break;
+
+      case ParserState.PENDING_HEADERS:
+        processPendingHeaders(ctx);
+        break;
+
+      case ParserState.PENDING_DATA:
+        processPendingData(ctx);
+        break;
+
+      case ParserState.BOUNDARY_REACHED:
+        // Clean up the current part if any
+        finishCurrentPart(ctx);
+
+        // Move past the boundary
+        ctx.bufferOffset += 2; // Skip CRLF after boundary
+        ctx.state = ParserState.PENDING_HEADERS;
+        break;
+
+      case ParserState.COMPLETE:
+        // We're done parsing
+        return;
+    }
+
+    // If we've consumed the entire buffer, release it back to the pool
+    if (ctx.bufferOffset >= ctx.buffer.length) {
+      globalPool.release(ctx.buffer);
+      ctx.buffer = null;
+      ctx.bufferOffset = 0;
+    }
+  }
+}
+
+/**
+ * Process buffer when expecting a boundary
+ */
+function processPendingBoundary(ctx: ParserContext): void {
+  if (!ctx.buffer) return;
+
+  // Look for the boundary in the buffer
+  const boundaryIndex = findBoundary(ctx.buffer, ctx.bufferOffset, ctx.boundaryBuffer);
+
+  if (boundaryIndex >= 0) {
+    ctx.bufferOffset = boundaryIndex + ctx.boundaryBuffer.length;
+    ctx.state = ParserState.PENDING_HEADERS;
+  } else {
+    // Boundary not found yet, move past the buffer
+    ctx.bufferOffset = ctx.buffer.length;
+  }
+}
+
+/**
+ * Process buffer when expecting headers
+ */
+function processPendingHeaders(ctx: ParserContext): void {
+  if (!ctx.buffer) return;
+
+  // Find end of headers (double CRLF)
+  const index = ctx.buffer.indexOf('\r\n\r\n', ctx.bufferOffset, 'utf8');
+
+  if (index >= 0) {
+    // Extract headers text
+    const headersText = ctx.buffer.subarray(ctx.bufferOffset, index).toString();
+    ctx.bufferOffset = index + 4; // Move past double CRLF
+
+    // Parse headers
+    parseHeaders(ctx, headersText);
+
+    // Set up for receiving data
+    setupPartReceiver(ctx);
+
+    ctx.state = ParserState.PENDING_DATA;
+  } else {
+    // Headers not yet complete
+    ctx.headerBuffer += ctx.buffer.subarray(ctx.bufferOffset).toString();
+    ctx.bufferOffset = ctx.buffer.length;
+
+    // Check if headers are too long
+    if (ctx.headerBuffer.length > 16 * 1024) {
+      throw new Error('Headers too large');
+    }
+  }
+}
+
+/**
+ * Process buffer when expecting part data
+ */
+function processPendingData(ctx: ParserContext): void {
+  if (!ctx.buffer) return;
+
+  // Look for the next boundary
+  const boundaryIndex = findBoundary(ctx.buffer, ctx.bufferOffset, ctx.boundaryBuffer);
+  const endBoundaryIndex = findEndBoundary(ctx.buffer, ctx.bufferOffset, ctx.endBoundaryBuffer);
+
+  if (endBoundaryIndex >= 0) {
+    // Found end boundary - parse data up to it
+    const dataChunk = ctx.buffer.subarray(ctx.bufferOffset, endBoundaryIndex);
+    processPartData(ctx, dataChunk);
+
+    // Finish the current part
+    finishCurrentPart(ctx);
+
+    // Move past the end boundary
+    ctx.bufferOffset = endBoundaryIndex + ctx.endBoundaryBuffer.length;
+    ctx.state = ParserState.COMPLETE;
+  } else if (boundaryIndex >= 0) {
+    // Found normal boundary - parse data up to it
+    const dataChunk = ctx.buffer.subarray(ctx.bufferOffset, boundaryIndex);
+    processPartData(ctx, dataChunk);
+
+    // Move to boundary handling state
+    ctx.bufferOffset = boundaryIndex + ctx.boundaryBuffer.length;
+    ctx.state = ParserState.BOUNDARY_REACHED;
+  } else {
+    // No boundary found - process all but the last possible boundary match
+    const safeLength = ctx.buffer.length - ctx.boundaryBuffer.length - 1;
+
+    if (safeLength > ctx.bufferOffset) {
+      const dataChunk = ctx.buffer.subarray(ctx.bufferOffset, safeLength);
+      processPartData(ctx, dataChunk);
+      ctx.bufferOffset = safeLength;
+    } else {
+      // Not enough data to process safely
+      ctx.bufferOffset = ctx.buffer.length;
+    }
+  }
+}
+
+/**
+ * Find a boundary in the buffer
+ */
+function findBoundary(buf: Buffer, startIndex: number, boundaryBuffer: Buffer): number {
+  return buf.indexOf(boundaryBuffer, startIndex);
+}
+
+/**
+ * Find an end boundary in the buffer
+ */
+function findEndBoundary(buf: Buffer, startIndex: number, endBoundaryBuffer: Buffer): number {
+  return buf.indexOf(endBoundaryBuffer, startIndex);
+}
+
+/**
+ * Parse header text into header object
+ */
+function parseHeaders(ctx: ParserContext, headersText: string): void {
+  // Reset current headers
+  ctx.currentHeaders = {};
+  ctx.currentName = '';
+  ctx.currentFilename = '';
+
+  // Process each header line
+  const headerLines = (ctx.headerBuffer + headersText).split('\r\n');
+  ctx.headerBuffer = ''; // Reset the accumulated header buffer
+
+  for (const line of headerLines) {
+    if (!line) continue;
+
+    const colonIndex = line.indexOf(':');
+    if (colonIndex > 0) {
+      const name = line.slice(0, colonIndex).trim().toLowerCase();
+      const value = line.slice(colonIndex + 1).trim();
+      ctx.currentHeaders[name] = value;
+
+      // Extract content-disposition details
+      if (name === 'content-disposition') {
+        const nameMatch = /name="([^"]*)"/.exec(value);
+        const filenameMatch = /filename="([^"]*)"/.exec(value);
+
+        if (nameMatch) ctx.currentName = nameMatch[1]!;
+        if (filenameMatch) ctx.currentFilename = filenameMatch[1]!;
+      }
+    }
+  }
+}
+
+/**
+ * Set up for receiving part data
+ */
+function setupPartReceiver(ctx: ParserContext): void {
+  // Check field count limit
+  if (++ctx.fieldCount > ctx.config.maxFields) {
+    throw new Error(`Maximum number of fields (${ctx.config.maxFields}) exceeded`);
+  }
+
+  // Reset part tracking
+  ctx.currentPart = null;
+  ctx.currentFieldSize = 0;
+
+  // Set up appropriate receiver based on content-disposition
+  if (ctx.currentFilename) {
+    setupFileReceiver(ctx).catch(err => {
+      throw new Error(`Error setting up file receiver: ${err.message}`);
+    });
+  } else {
+    setupFieldReceiver(ctx);
+  }
+}
+
+/**
+ * Set up for receiving a file
+ */
+async function setupFileReceiver(ctx: ParserContext): Promise<void> {
+  // Generate a temporary file path
+  const tmpdir = ctx.config.uploadDir;
+  const randomPrefix = randomBytes(16).toString('hex');
+  ctx.tempFilePath = join(tmpdir, `multipart-${randomPrefix}`);
+
+  // Ensure the directory exists
+  await mkdir(dirname(ctx.tempFilePath), { recursive: true });
+
+  // Create the file stream
+  ctx.currentFileStream = createWriteStream(ctx.tempFilePath);
+  ctx.currentFileSize = 0;
+
+  // Create a new file entry
+  const file: MultipartFile = {
+    fieldname: ctx.currentName,
+    originalname: ctx.currentFilename,
+    encoding: ctx.currentHeaders['content-transfer-encoding'] || 'binary',
+    mimetype: ctx.currentHeaders['content-type'] || 'application/octet-stream',
+    path: ctx.tempFilePath,
+    size: 0,
+    truncated: false
+  };
+
+  // Add to files object
+  if (ctx.files[ctx.currentName]) {
+    // If we already have a file with this name, convert to array
+    if (Array.isArray(ctx.files[ctx.currentName])) {
+      (ctx.files[ctx.currentName] as MultipartFile[]).push(file);
+    } else {
+      ctx.files[ctx.currentName] = [ctx.files[ctx.currentName] as MultipartFile, file];
+    }
+  } else {
+    ctx.files[ctx.currentName] = file;
+  }
+}
+
+/**
+ * Set up for receiving a field
+ */
+function setupFieldReceiver(ctx: ParserContext): void {
+  ctx.currentPart = Buffer.allocUnsafe(0);
+  ctx.currentFieldSize = 0;
+}
+
+/**
+ * Process a chunk of part data
+ */
+function processPartData(ctx: ParserContext, data: Buffer): void {
+  if (ctx.currentFilename && ctx.currentFileStream) {
+    // Handle file data
+    ctx.currentFileSize += data.length;
+
+    // Check file size limit
+    if (ctx.currentFileSize > ctx.config.maxFileSize) {
+      // Mark as truncated, but keep writing
+      const file = getLastFile(ctx);
+      if (file) {
+        file.truncated = true;
+      }
+    }
+
+    // Write to file stream
+    ctx.currentFileStream.write(data);
+  } else {
+    // Handle field data
+    ctx.currentFieldSize += data.length;
+
+    // Check field size limit
+    if (ctx.currentFieldSize > ctx.config.maxFieldSize) {
+      throw new Error(`Field size exceeds limit (${ctx.config.maxFieldSize} bytes)`);
+    }
+
+    // Append to part buffer
+    const newPart = Buffer.allocUnsafe(
+      ctx.currentPart ? ctx.currentPart.length + data.length : data.length
+    );
+    if (ctx.currentPart) {
+      ctx.currentPart.copy(newPart);
+      data.copy(newPart, ctx.currentPart.length);
+    } else {
+      data.copy(newPart);
+    }
+    ctx.currentPart = newPart;
+  }
+}
+
+/**
+ * Get the most recent file in the files list
+ */
+function getLastFile(ctx: ParserContext): MultipartFile | null {
+  const fileEntry = ctx.files[ctx.currentName];
+  if (!fileEntry) return null;
+
+  if (Array.isArray(fileEntry)) {
+    return fileEntry[fileEntry.length - 1]!;
+  }
+  return fileEntry;
+}
+
+/**
+ * Finish processing the current part
+ */
+function finishCurrentPart(ctx: ParserContext): void {
+  if (ctx.currentFilename && ctx.currentFileStream) {
+    // Finish file
+    ctx.currentFileStream.end();
+    ctx.currentFileStream = null;
+
+    // Update file size
+    const file = getLastFile(ctx);
+    if (file) {
+      file.size = ctx.currentFileSize;
+    }
+  } else if (ctx.currentPart) {
+    // Finish field
+    ctx.fields[ctx.currentName] = ctx.currentPart.toString();
+    ctx.currentPart = null;
+  }
+
+  // Reset for next part
+  ctx.currentFieldSize = 0;
+  ctx.currentName = '';
+  ctx.currentFilename = '';
+  ctx.currentHeaders = {};
+}
+
 /**
  * Create a parser for multipart/form-data
  * @param options - Parser options
@@ -82,30 +485,27 @@ export function createMultipartParser(options: MultipartParserOptions = {}): Opt
     throw new Error('Boundary is required for multipart parsing');
   }
 
-  // Full boundary string with leading CRLF
-  const boundaryBuffer = Buffer.from(`\r\n--${boundary}`);
-  const endBoundaryBuffer = Buffer.from(`\r\n--${boundary}--`);
-
-  // Parser state
-  let state = ParserState.PENDING_BOUNDARY;
-  let currentHeaders: Record<string, string> = {};
-  let currentName = '';
-  let currentFilename = '';
-  let currentPart: Buffer | null = null;
-  let currentFieldSize = 0;
-  let headerBuffer = '';
-  let currentFileStream: Writable | null = null;
-  let currentFileSize = 0;
-  let tempFilePath = '';
-
-  // Results collection
-  const fields: MultipartFields = {};
-  const files: MultipartFiles = {};
-  let fieldCount = 0;
-
-  // Tracking boundaries in the buffer
-  let buffer: Buffer | null = null;
-  let bufferOffset = 0;
+  // Create parser context
+  const ctx: ParserContext = {
+    state: ParserState.PENDING_BOUNDARY,
+    config,
+    boundaryBuffer: Buffer.from(`\r\n--${boundary}`),
+    endBoundaryBuffer: Buffer.from(`\r\n--${boundary}--`),
+    currentHeaders: {},
+    currentName: '',
+    currentFilename: '',
+    currentPart: null,
+    currentFieldSize: 0,
+    headerBuffer: '',
+    currentFileStream: null,
+    currentFileSize: 0,
+    tempFilePath: '',
+    fields: {},
+    files: {},
+    fieldCount: 0,
+    buffer: null,
+    bufferOffset: 0
+  };
 
   // Create a custom transform stream with buffer pooling
   return createOptimizedTransform({
@@ -113,7 +513,7 @@ export function createMultipartParser(options: MultipartParserOptions = {}): Opt
 
     transform(chunk: Buffer, encoding: BufferEncoding, callback: (error?: Error | null) => void) {
       try {
-        processChunk(chunk);
+        processChunk(ctx, chunk);
         callback();
       } catch (err) {
         callback(err instanceof Error ? err : new Error(String(err)));
@@ -123,13 +523,13 @@ export function createMultipartParser(options: MultipartParserOptions = {}): Opt
     flush(callback: (error?: Error | null) => void) {
       try {
         // Clean up any open file streams
-        if (currentFileStream) {
-          currentFileStream.end();
-          currentFileStream = null;
+        if (ctx.currentFileStream) {
+          ctx.currentFileStream.end();
+          ctx.currentFileStream = null;
         }
 
         // Push the final results once
-        this.push({ fields, files });
+        this.push({ fields: ctx.fields, files: ctx.files });
 
         callback();
       } catch (err) {
@@ -137,392 +537,6 @@ export function createMultipartParser(options: MultipartParserOptions = {}): Opt
       }
     }
   });
-
-  /**
-   * Process a chunk of data
-   * @param chunk - The data to process
-   */
-  function processChunk(chunk: Buffer): void {
-    // If this is the first chunk, handle special case
-    if (state === ParserState.PENDING_BOUNDARY && !buffer) {
-      // First chunk may start with the boundary without the leading CRLF
-      const firstBoundary = `--${boundary}`;
-      const firstBoundaryBuffer = Buffer.from(firstBoundary);
-
-      // Check if the chunk starts with the boundary
-      if (chunk.length >= firstBoundaryBuffer.length &&
-          chunk.subarray(0, firstBoundaryBuffer.length).equals(firstBoundaryBuffer)) {
-
-        // This is the first boundary, start processing headers from after it
-        buffer = chunk.subarray(firstBoundaryBuffer.length);
-        bufferOffset = 0;
-        state = ParserState.PENDING_HEADERS;
-        return;
-      }
-    }
-
-    // Append chunk to existing buffer or create a new one
-    if (buffer) {
-      const newBuffer = globalPool.acquire(buffer.length - bufferOffset + chunk.length);
-      buffer.copy(newBuffer, 0, bufferOffset);
-      chunk.copy(newBuffer, buffer.length - bufferOffset);
-
-      // Release the old buffer back to the pool
-      globalPool.release(buffer);
-
-      buffer = newBuffer;
-      bufferOffset = 0;
-    } else {
-      buffer = chunk;
-      bufferOffset = 0;
-    }
-
-    // Process the buffer based on current state
-    processBuffer();
-  }
-
-  /**
-   * Process the current buffer
-   */
-  function processBuffer(): void {
-    while (buffer && bufferOffset < buffer.length) {
-      switch (state) {
-        case ParserState.PENDING_BOUNDARY:
-          processPendingBoundary();
-          break;
-
-        case ParserState.PENDING_HEADERS:
-          processPendingHeaders();
-          break;
-
-        case ParserState.PENDING_DATA:
-          processPendingData();
-          break;
-
-        case ParserState.BOUNDARY_REACHED:
-          // Clean up the current part if any
-          finishCurrentPart();
-
-          // Move past the boundary
-          bufferOffset += 2; // Skip CRLF after boundary
-          state = ParserState.PENDING_HEADERS;
-          break;
-
-        case ParserState.COMPLETE:
-          // We're done parsing
-          return;
-      }
-
-      // If we've consumed the entire buffer, release it back to the pool
-      if (buffer && bufferOffset >= buffer.length) {
-        globalPool.release(buffer);
-        buffer = null;
-        bufferOffset = 0;
-      }
-    }
-  }
-
-  /**
-   * Process buffer when expecting a boundary
-   */
-  function processPendingBoundary(): void {
-    if (!buffer) return;
-
-    // Look for the boundary in the buffer
-    const boundaryIndex = findBoundary(buffer, bufferOffset);
-
-    if (boundaryIndex >= 0) {
-      bufferOffset = boundaryIndex + boundaryBuffer.length;
-      state = ParserState.PENDING_HEADERS;
-    } else {
-      // Boundary not found yet, move past the buffer
-      bufferOffset = buffer.length;
-    }
-  }
-
-  /**
-   * Process buffer when expecting headers
-   */
-  function processPendingHeaders(): void {
-    if (!buffer) return;
-
-    // Find end of headers (double CRLF)
-    const index = buffer.indexOf('\r\n\r\n', bufferOffset, 'utf8');
-
-    if (index >= 0) {
-      // Extract headers text
-      const headersText = buffer.subarray(bufferOffset, index).toString();
-      bufferOffset = index + 4; // Move past double CRLF
-
-      // Parse headers
-      parseHeaders(headersText);
-
-      // Set up for receiving data
-      setupPartReceiver();
-
-      state = ParserState.PENDING_DATA;
-    } else {
-      // Headers not yet complete
-      headerBuffer += buffer.subarray(bufferOffset).toString();
-      bufferOffset = buffer.length;
-
-      // Check if headers are too long
-      if (headerBuffer.length > 16 * 1024) {
-        throw new Error('Headers too large');
-      }
-    }
-  }
-
-  /**
-   * Process buffer when expecting part data
-   */
-  function processPendingData(): void {
-    if (!buffer) return;
-
-    // Look for the next boundary
-    const boundaryIndex = findBoundary(buffer, bufferOffset);
-    const endBoundaryIndex = findEndBoundary(buffer, bufferOffset);
-
-    if (endBoundaryIndex >= 0) {
-      // Found end boundary - parse data up to it
-      const dataChunk = buffer.subarray(bufferOffset, endBoundaryIndex);
-      processPartData(dataChunk);
-
-      // Finish the current part
-      finishCurrentPart();
-
-      // Move past the end boundary
-      bufferOffset = endBoundaryIndex + endBoundaryBuffer.length;
-      state = ParserState.COMPLETE;
-    } else if (boundaryIndex >= 0) {
-      // Found normal boundary - parse data up to it
-      const dataChunk = buffer.subarray(bufferOffset, boundaryIndex);
-      processPartData(dataChunk);
-
-      // Move to boundary handling state
-      bufferOffset = boundaryIndex + boundaryBuffer.length;
-      state = ParserState.BOUNDARY_REACHED;
-    } else {
-      // No boundary found - process all but the last possible boundary match
-      const safeLength = buffer.length - boundaryBuffer.length - 1;
-
-      if (safeLength > bufferOffset) {
-        const dataChunk = buffer.subarray(bufferOffset, safeLength);
-        processPartData(dataChunk);
-        bufferOffset = safeLength;
-      } else {
-        // Not enough data to process safely
-        bufferOffset = buffer.length;
-      }
-    }
-  }
-
-  /**
-   * Find a boundary in the buffer
-   * @param buf - Buffer to search in
-   * @param startIndex - Starting index for search
-   * @returns Index of boundary or -1 if not found
-   */
-  function findBoundary(buf: Buffer, startIndex: number): number {
-    return buf.indexOf(boundaryBuffer, startIndex);
-  }
-
-  /**
-   * Find an end boundary in the buffer
-   * @param buf - Buffer to search in
-   * @param startIndex - Starting index for search
-   * @returns Index of end boundary or -1 if not found
-   */
-  function findEndBoundary(buf: Buffer, startIndex: number): number {
-    return buf.indexOf(endBoundaryBuffer, startIndex);
-  }
-
-  /**
-   * Parse header text into header object
-   * @param headersText - Raw headers text
-   */
-  function parseHeaders(headersText: string): void {
-    // Reset current headers
-    currentHeaders = {};
-    currentName = '';
-    currentFilename = '';
-
-    // Process each header line
-    const headerLines = (headerBuffer + headersText).split('\r\n');
-    headerBuffer = ''; // Reset the accumulated header buffer
-
-    for (const line of headerLines) {
-      if (!line) continue;
-
-      const colonIndex = line.indexOf(':');
-      if (colonIndex > 0) {
-        const name = line.slice(0, colonIndex).trim().toLowerCase();
-        const value = line.slice(colonIndex + 1).trim();
-        currentHeaders[name] = value;
-
-        // Extract content-disposition details
-        if (name === 'content-disposition') {
-          const nameMatch = /name="([^"]*)"/.exec(value);
-          const filenameMatch = /filename="([^"]*)"/.exec(value);
-
-          if (nameMatch) currentName = nameMatch[1];
-          if (filenameMatch) currentFilename = filenameMatch[1];
-        }
-      }
-    }
-  }
-
-  /**
-   * Set up for receiving part data
-   */
-  function setupPartReceiver(): void {
-    // Check field count limit
-    if (++fieldCount > config.maxFields) {
-      throw new Error(`Maximum number of fields (${config.maxFields}) exceeded`);
-    }
-
-    // Reset part tracking
-    currentPart = null;
-    currentFieldSize = 0;
-
-    // Set up appropriate receiver based on content-disposition
-    if (currentFilename) {
-      setupFileReceiver().catch(err => {
-        throw new Error(`Error setting up file receiver: ${err.message}`);
-      });
-    } else {
-      setupFieldReceiver();
-    }
-  }
-
-  /**
-   * Set up for receiving a file
-   */
-  async function setupFileReceiver(): Promise<void> {
-    // Generate a temporary file path
-    const tmpdir = config.uploadDir;
-    const randomPrefix = randomBytes(16).toString('hex');
-    tempFilePath = join(tmpdir, `multipart-${randomPrefix}`);
-
-    // Ensure the directory exists
-    await mkdir(dirname(tempFilePath), { recursive: true });
-
-    // Create the file stream
-    currentFileStream = createWriteStream(tempFilePath);
-    currentFileSize = 0;
-
-    // Create a new file entry
-    const file: MultipartFile = {
-      fieldname: currentName,
-      originalname: currentFilename,
-      encoding: currentHeaders['content-transfer-encoding'] || 'binary',
-      mimetype: currentHeaders['content-type'] || 'application/octet-stream',
-      path: tempFilePath,
-      size: 0,
-      truncated: false
-    };
-
-    // Add to files object
-    if (files[currentName]) {
-      // If we already have a file with this name, convert to array
-      if (Array.isArray(files[currentName])) {
-        (files[currentName] as MultipartFile[]).push(file);
-      } else {
-        files[currentName] = [files[currentName] as MultipartFile, file];
-      }
-    } else {
-      files[currentName] = file;
-    }
-  }
-
-  /**
-   * Set up for receiving a field
-   */
-  function setupFieldReceiver(): void {
-    currentPart = Buffer.allocUnsafe(0);
-    currentFieldSize = 0;
-  }
-
-  /**
-   * Process a chunk of part data
-   * @param data - Data chunk to process
-   */
-  function processPartData(data: Buffer): void {
-    if (currentFilename && currentFileStream) {
-      // Handle file data
-      currentFileSize += data.length;
-
-      // Check file size limit
-      if (currentFileSize > config.maxFileSize) {
-        // Mark as truncated, but keep writing
-        const file = getLastFile();
-        if (file) {
-          file.truncated = true;
-        }
-      }
-
-      // Write to file stream
-      currentFileStream.write(data);
-    } else {
-      // Handle field data
-      currentFieldSize += data.length;
-
-      // Check field size limit
-      if (currentFieldSize > config.maxFieldSize) {
-        throw new Error(`Field size exceeds limit (${config.maxFieldSize} bytes)`);
-      }
-
-      // Append to part buffer
-      const newPart = Buffer.allocUnsafe(currentPart ? currentPart.length + data.length : data.length);
-      if (currentPart) {
-        currentPart.copy(newPart);
-        data.copy(newPart, currentPart.length);
-      } else {
-        data.copy(newPart);
-      }
-      currentPart = newPart;
-    }
-  }
-
-  /**
-   * Get the most recent file in the files list
-   */
-  function getLastFile(): MultipartFile | null {
-    const fileEntry = files[currentName];
-    if (!fileEntry) return null;
-
-    if (Array.isArray(fileEntry)) {
-      return fileEntry[fileEntry.length - 1];
-    }
-    return fileEntry;
-  }
-
-  /**
-   * Finish processing the current part
-   */
-  function finishCurrentPart(): void {
-    if (currentFilename && currentFileStream) {
-      // Finish file
-      currentFileStream.end();
-      currentFileStream = null;
-
-      // Update file size
-      const file = getLastFile();
-      if (file) {
-        file.size = currentFileSize;
-      }
-    } else if (currentPart) {
-      // Finish field
-      fields[currentName] = currentPart.toString();
-      currentPart = null;
-    }
-
-    // Reset for next part
-    currentFieldSize = 0;
-    currentName = '';
-    currentFilename = '';
-    currentHeaders = {};
-  }
 }
 
 /**
@@ -531,7 +545,10 @@ export function createMultipartParser(options: MultipartParserOptions = {}): Opt
  * @param options - Parser options
  * @returns Promise that resolves with parsed fields and files
  */
-export function parseMultipartRequest(req: IncomingMessage, options: MultipartParserOptions = {}): Promise<MultipartResult> {
+export function parseMultipartRequest(
+  req: IncomingMessage,
+  options: MultipartParserOptions = {}
+): Promise<MultipartResult> {
   return new Promise((resolve, reject) => {
     // Get the content type and boundary
     const contentType = req.headers['content-type'];

@@ -20,8 +20,6 @@ interface RequestLike {
  * @returns True if request should have a body
  */
 export function hasBody(req: RequestLike): boolean {
-  if (!req) return false;
-
   // Methods that typically don't have a body
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
     return false;
@@ -40,17 +38,44 @@ export function hasBody(req: RequestLike): boolean {
 }
 
 /**
+ * Extract the base content type from a content-type header
+ * @param contentTypeHeader The content-type header value
+ * @returns The base content type without parameters
+ */
+function extractBaseContentType(contentTypeHeader: string | string[] | undefined): string {
+  if (!contentTypeHeader) {
+    return '';
+  }
+
+  if (typeof contentTypeHeader === 'string') {
+    const parts = contentTypeHeader.split(';');
+    return parts[0] ? parts[0].trim() : '';
+  }
+
+  if (Array.isArray(contentTypeHeader) && contentTypeHeader.length > 0) {
+    const firstValue = contentTypeHeader[0];
+    if (firstValue) {
+      const parts = firstValue.split(';');
+      return parts[0] ? parts[0].trim() : '';
+    }
+  }
+
+  return '';
+}
+
+/**
  * Check if the request content type matches the specified type
  * @param req - The HTTP request object
  * @param type - The type(s) to match against
  * @returns True if the content type matches
  */
 export function typeMatches(req: RequestLike, type: string | RegExp | string[]): boolean {
-  if (!req?.headers?.['content-type']) {
+  // Early return if there's no content-type header
+  if (!req.headers?.['content-type']) {
     return false;
   }
 
-  const contentType = req.headers['content-type'].toString().split(';')[0].trim();
+  const contentType = extractBaseContentType(req.headers['content-type']);
 
   if (Array.isArray(type)) {
     return type.some(t => typeMatches(req, t));
@@ -61,7 +86,7 @@ export function typeMatches(req: RequestLike, type: string | RegExp | string[]):
   }
 
   if (typeof type === 'string' && type.includes('*')) {
-    const typeRegex = new RegExp('^' + type.replace('*', '.*') + '$');
+    const typeRegex = new RegExp(`^${type.replace('*', '.*')}$`);
     return typeRegex.test(contentType);
   }
 
@@ -74,11 +99,7 @@ export function typeMatches(req: RequestLike, type: string | RegExp | string[]):
  * @returns The content type
  */
 export function getContentType(req: RequestLike): string {
-  if (!req?.headers?.['content-type']) {
-    return '';
-  }
-
-  return req.headers['content-type'].toString().split(';')[0].trim();
+  return extractBaseContentType(req.headers?.['content-type']);
 }
 
 /**
@@ -100,15 +121,15 @@ export function bytes(val: string | number): number {
     return parseInt(val, 10) || 0;
   }
 
-  const num = parseFloat(match[1]);
-  const unit = match[2];
+  const num = parseFloat(match[1]!);
+  const unit = match[2]!;
 
   const multiplier: Record<string, number> = {
-    'b': 1,
-    'kb': 1024,
-    'mb': 1024 * 1024,
-    'gb': 1024 * 1024 * 1024,
-    'tb': 1024 * 1024 * 1024 * 1024
+    b: 1,
+    kb: 1024,
+    mb: 1024 * 1024,
+    gb: 1024 * 1024 * 1024,
+    tb: 1024 * 1024 * 1024 * 1024
   };
 
   return Math.floor(num * (multiplier[unit.toLowerCase()] || 1));
@@ -153,7 +174,7 @@ export function extractBoundary(contentType: string): string | null {
   if (!contentType) return null;
 
   const match = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType);
-  return match ? (match[1] || match[2]) : null;
+  return match ? match[1] || match[2] || null : null;
 }
 
 /**
@@ -161,12 +182,10 @@ export function extractBoundary(contentType: string): string | null {
  * @param headers - Header object
  * @returns Formatted headers
  */
-export function formatHeaders(headers: Record<string, string | string[] | undefined>): Record<string, string | string[]> {
+export function formatHeaders(
+  headers: Record<string, string | string[] | undefined>
+): Record<string, string | string[]> {
   const result: Record<string, string | string[]> = {};
-
-  if (!headers || typeof headers !== 'object') {
-    return result;
-  }
 
   Object.keys(headers).forEach(key => {
     // Convert header name to lowercase
@@ -213,7 +232,7 @@ export function pathMatches(path: string, pattern: string): boolean {
     }
 
     // Parameter placeholders like :id match any non-empty segment
-    if (patternPart.startsWith(':')) {
+    if (patternPart && patternPart.startsWith(':')) {
       if (pathPart.length === 0) {
         return false;
       }

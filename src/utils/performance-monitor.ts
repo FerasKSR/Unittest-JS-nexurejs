@@ -178,7 +178,9 @@ export class PerformanceMonitor extends EventEmitter {
    * Start memory monitoring
    */
   private startMemoryMonitoring(): void {
-    this.logger.info(`Starting memory monitoring (interval: ${this.options.memoryMonitoringInterval}ms)`);
+    this.logger.info(
+      `Starting memory monitoring (interval: ${this.options.memoryMonitoringInterval}ms)`
+    );
 
     // Monitor memory usage
     this.memoryMonitoringInterval = setInterval(() => {
@@ -199,7 +201,9 @@ export class PerformanceMonitor extends EventEmitter {
    * Start event loop monitoring
    */
   private startEventLoopMonitoring(): void {
-    this.logger.info(`Starting event loop monitoring (interval: ${this.options.eventLoopMonitoringInterval}ms)`);
+    this.logger.info(
+      `Starting event loop monitoring (interval: ${this.options.eventLoopMonitoringInterval}ms)`
+    );
 
     let lastCheck = performance.now();
 
@@ -225,7 +229,7 @@ export class PerformanceMonitor extends EventEmitter {
   private startGcMonitoring(): void {
     try {
       // Create performance observer
-      this.observer = new PerformanceObserver((list) => {
+      this.observer = new PerformanceObserver(list => {
         const entries = list.getEntries();
 
         for (const entry of entries) {
@@ -377,8 +381,8 @@ export class PerformanceMonitor extends EventEmitter {
         max,
         avg,
         sum,
-        unit: metrics[0].unit,
-        latest: metrics[metrics.length - 1].value
+        unit: metrics[0]!.unit,
+        latest: metrics[metrics.length - 1]!.value
       };
     }
 

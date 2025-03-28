@@ -159,10 +159,7 @@ export class AdaptiveTimeoutManager {
 
     // Add base timeout and clamp to limits
     const finalTimeout = Math.min(
-      Math.max(
-        adjustedTimeout + this.config.baseTimeout,
-        this.config.minTimeout
-      ),
+      Math.max(adjustedTimeout + this.config.baseTimeout, this.config.minTimeout),
       this.config.maxTimeout
     );
 
@@ -172,12 +169,7 @@ export class AdaptiveTimeoutManager {
   /**
    * Record processing time for a completed operation
    */
-  recordProcessingTime({
-    size,
-    contentType,
-    operation,
-    duration
-  }: ProcessingTimeData): void {
+  recordProcessingTime({ size, contentType, operation, duration }: ProcessingTimeData): void {
     if (!size || !duration) return;
 
     // Normalize content type to a category
@@ -213,8 +205,8 @@ export class AdaptiveTimeoutManager {
     // Update average with weighted approach
     // New avg = (old avg * weight) + (new value * (1 - weight))
     historyData.avgBytesPerMs =
-      (historyData.avgBytesPerMs * this.config.historyWeight) +
-      (bytesPerMs * (1 - this.config.historyWeight));
+      historyData.avgBytesPerMs * this.config.historyWeight +
+      bytesPerMs * (1 - this.config.historyWeight);
 
     // Update history
     this.history.set(key, historyData);
@@ -231,9 +223,7 @@ export class AdaptiveTimeoutManager {
     }, this.config.loadCheckInterval);
 
     // Prevent interval from keeping process alive
-    if (this.loadMonitorInterval.unref) {
-      this.loadMonitorInterval.unref();
-    }
+    this.loadMonitorInterval.unref();
 
     // Initial load check
     this.updateSystemLoad();
@@ -311,7 +301,7 @@ export class AdaptiveTimeoutManager {
        * Start the timeout
        * @returns Timeout duration in ms
        */
-      start: () => {
+      start: (): number => {
         // Clear any existing timeout
         if (timeoutId) {
           clearTimeout(timeoutId);
@@ -335,7 +325,7 @@ export class AdaptiveTimeoutManager {
        * @param recordSuccess Whether to record this as a successful operation
        * @returns Duration of processing in ms
        */
-      clear: (recordSuccess = true) => {
+      clear: (recordSuccess = true): number => {
         if (timeoutId) {
           clearTimeout(timeoutId);
           timeoutId = null;
@@ -361,7 +351,7 @@ export class AdaptiveTimeoutManager {
        * @param percentageIncrease Percentage to increase timeout by
        * @returns New timeout duration in ms
        */
-      extend: (percentageIncrease = 50) => {
+      extend: (percentageIncrease = 50): number => {
         if (!timeoutId || hasTimedOut) {
           return 0;
         }
@@ -390,17 +380,12 @@ export class AdaptiveTimeoutManager {
        * Get timeout information
        * @returns Timeout details
        */
-      getInfo: () => {
-        const elapsed = startTime > 0 ? Date.now() - startTime : 0;
-        const remaining = timeoutId ? Math.max(0, timeout - elapsed) : 0;
-
-        return {
-          timeout,
-          elapsed,
-          remaining,
-          hasTimedOut
-        };
-      }
+      getInfo: () => ({
+        timeout,
+        elapsed: startTime > 0 ? Date.now() - startTime : 0,
+        remaining: timeoutId ? Math.max(0, timeout - (Date.now() - startTime)) : 0,
+        hasTimedOut
+      })
     };
   }
 
@@ -411,7 +396,8 @@ export class AdaptiveTimeoutManager {
    */
   private normalizeContentType(contentType: string): string {
     // Extract base content type
-    const baseType = contentType.split(';')[0].trim().toLowerCase();
+    const parts = contentType.split(';');
+    const baseType = parts.length > 0 ? parts[0]!.trim().toLowerCase() : '';
 
     // Group into categories
     if (baseType.includes('json')) return 'json';
@@ -475,7 +461,8 @@ export class AdaptiveTimeoutManager {
       totalBytesPerMs += category.avgBytesPerMs;
     }
 
-    const avgBytesPerMs = categories.length > 0 ? totalBytesPerMs / categories.length : this.config.bytesPerMillisecond;
+    const avgBytesPerMs =
+      categories.length > 0 ? totalBytesPerMs / categories.length : this.config.bytesPerMillisecond;
     const avgMBPerSecond = (avgBytesPerMs * 1000) / (1024 * 1024);
 
     return {

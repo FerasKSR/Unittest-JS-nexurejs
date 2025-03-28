@@ -111,7 +111,7 @@ export class Env {
       const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
 
       if (match) {
-        const key = match[1];
+        const key = match[1]!;
         let value = match[2] || '';
 
         // Remove quotes
@@ -119,7 +119,7 @@ export class Env {
         const quoteMatch = value.match(quoteRegex);
 
         if (quoteMatch) {
-          value = quoteMatch[2];
+          value = quoteMatch[2]!;
         }
 
         // Replace escaped newlines

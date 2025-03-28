@@ -172,7 +172,7 @@ export class BufferPool {
    * @param buffer Buffer to release
    */
   release(buffer: Buffer): void {
-    if (!buffer || !Buffer.isBuffer(buffer)) {
+    if (!Buffer.isBuffer(buffer)) {
       return;
     }
 
@@ -206,7 +206,7 @@ export class BufferPool {
       this.sizeUsage.set(size, 0);
     }
 
-    this.sizeUsage.set(size, (this.sizeUsage.get(size) || 0) + 1);
+    this.sizeUsage.set(size, this.sizeUsage.get(size)! + 1);
   }
 
   /**
@@ -219,9 +219,7 @@ export class BufferPool {
     }, this.config.adaptiveInterval);
 
     // Prevent interval from keeping process alive
-    if (this.adaptiveInterval.unref) {
-      this.adaptiveInterval.unref();
-    }
+    this.adaptiveInterval.unref();
   }
 
   /**
@@ -253,10 +251,7 @@ export class BufferPool {
 
       // If pool is low, pre-allocate more buffers
       const usageCount = this.sizeUsage.get(size) || 0;
-      const targetSize = Math.min(
-        Math.max(5, Math.ceil(usageCount / 10)),
-        this.config.maxSize / 4
-      );
+      const targetSize = Math.min(Math.max(5, Math.ceil(usageCount / 10)), this.config.maxSize / 4);
 
       if (pool.length < targetSize) {
         const toAdd = targetSize - pool.length;
@@ -275,12 +270,11 @@ export class BufferPool {
    * Get pool statistics
    * @returns Pool statistics
    */
-  getStats(): BufferPoolStats & { pools: { size: number, count: number }[] } {
-    const poolStats = Array.from(this.pools.entries())
-      .map(([size, pool]) => ({
-        size,
-        count: pool.length
-      }));
+  getStats(): BufferPoolStats & { pools: { size: number; count: number }[] } {
+    const poolStats = Array.from(this.pools.entries()).map(([size, pool]) => ({
+      size,
+      count: pool.length
+    }));
 
     return {
       ...this.stats,

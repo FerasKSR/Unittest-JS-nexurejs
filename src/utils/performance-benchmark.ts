@@ -155,9 +155,9 @@ export class Benchmark {
     // Setup performance trace if enabled
     let observer: PerformanceObserver | undefined;
     if (this.usePerformanceTrace) {
-      observer = new PerformanceObserver((list) => {
+      observer = new PerformanceObserver(list => {
         const entries = list.getEntries();
-        entries.forEach((entry) => {
+        entries.forEach(entry => {
           console.log(`Trace: ${entry.name}: ${entry.duration}ms`);
         });
       });
@@ -207,7 +207,7 @@ export class Benchmark {
     // Calculate standard deviation
     const sumDiffSquared = times.reduce((sum, time) => {
       const diff = time - avgTime;
-      return sum + (diff * diff);
+      return sum + diff * diff;
     }, 0);
     const stdDev = Math.sqrt(sumDiffSquared / actualIterations);
 
@@ -237,9 +237,10 @@ export class Benchmark {
           heapTotal: endMemory.heapTotal - startMemory.heapTotal,
           heapUsed: endMemory.heapUsed - startMemory.heapUsed,
           external: endMemory.external - startMemory.external,
-          arrayBuffers: endMemory.arrayBuffers && startMemory.arrayBuffers ?
-            endMemory.arrayBuffers - startMemory.arrayBuffers :
-            undefined
+          arrayBuffers:
+            endMemory.arrayBuffers && startMemory.arrayBuffers
+              ? endMemory.arrayBuffers - startMemory.arrayBuffers
+              : undefined
         }
       };
     }
@@ -290,12 +291,9 @@ export class Benchmark {
   private percentile(values: number[], percentile: number): number {
     if (values.length === 0) return 0;
 
-    const index = Math.max(0, Math.min(
-      Math.floor(percentile * values.length),
-      values.length - 1
-    ));
+    const index = Math.max(0, Math.min(Math.floor(percentile * values.length), values.length - 1));
 
-    return values[index];
+    return values[index]!;
   }
 }
 
@@ -368,7 +366,11 @@ export class BenchmarkSuite {
    * @param results Results to compare
    * @returns Comparison as a string
    */
-  compareResults(benchmark1Name: string, benchmark2Name: string, results: BenchmarkResult[]): string {
+  compareResults(
+    benchmark1Name: string,
+    benchmark2Name: string,
+    results: BenchmarkResult[]
+  ): string {
     const result1 = results.find(r => r.name === benchmark1Name);
     const result2 = results.find(r => r.name === benchmark2Name);
 
@@ -439,10 +441,14 @@ export class BenchmarkSuite {
  * @param descriptor Method descriptor
  * @returns Modified descriptor
  */
-export function trace(target: any, propertyKey: string, descriptor: PropertyDescriptor): PropertyDescriptor {
+export function trace(
+  target: any,
+  propertyKey: string,
+  descriptor: PropertyDescriptor
+): PropertyDescriptor {
   const originalMethod = descriptor.value;
 
-  descriptor.value = function(...args: any[]) {
+  descriptor.value = function (...args: any[]): any {
     const className = target.constructor.name;
     const methodName = propertyKey;
     const label = `${className}.${methodName}`;
