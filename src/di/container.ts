@@ -148,7 +148,9 @@ export class Container {
 
     return metadata.params.map((param: any) => {
       if (!param.type) {
-        throw new Error(`Cannot inject parameter at index ${param.index} in ${target.name}: type not specified`);
+        throw new Error(
+          `Cannot inject parameter at index ${param.index} in ${target.name}: type not specified`
+        );
       }
 
       return this.resolve(param.type);
@@ -195,5 +197,13 @@ export class Container {
     }
 
     return instances;
+  }
+
+  /**
+   * Get all registered provider classes
+   * @returns Array of all registered provider classes
+   */
+  getAllProviders(): any[] {
+    return Array.from(this.providers.values()).map(def => def.useClass);
   }
 }
