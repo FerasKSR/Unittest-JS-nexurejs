@@ -36,7 +36,10 @@ export interface RouteMetadata {
  * @param target The target to get metadata from
  * @param propertyKey Optional property key
  */
-export function getRouteMetadata(target: any, propertyKey?: string | symbol): RouteMetadata | undefined {
+export function getRouteMetadata(
+  target: any,
+  propertyKey?: string | symbol
+): RouteMetadata | undefined {
   if (propertyKey) {
     return Reflect.getMetadata(ROUTE_METADATA_KEY, target, propertyKey);
   }
@@ -50,7 +53,11 @@ export function getRouteMetadata(target: any, propertyKey?: string | symbol): Ro
  * @param target The target to set metadata on
  * @param propertyKey Optional property key
  */
-function setRouteMetadata(metadata: RouteMetadata, target: any, propertyKey?: string | symbol): void {
+function setRouteMetadata(
+  metadata: RouteMetadata,
+  target: any,
+  propertyKey?: string | symbol
+): void {
   if (propertyKey) {
     const existingMetadata = getRouteMetadata(target, propertyKey) || {};
     Reflect.defineMetadata(
@@ -61,11 +68,7 @@ function setRouteMetadata(metadata: RouteMetadata, target: any, propertyKey?: st
     );
   } else {
     const existingMetadata = getRouteMetadata(target) || {};
-    Reflect.defineMetadata(
-      ROUTE_METADATA_KEY,
-      { ...existingMetadata, ...metadata },
-      target
-    );
+    Reflect.defineMetadata(ROUTE_METADATA_KEY, { ...existingMetadata, ...metadata }, target);
   }
 }
 
@@ -86,8 +89,16 @@ export function Controller(path: string = '/'): ClassDecorator {
  * @param path The route path
  * @param statusCode The HTTP status code
  */
-function createRouteDecorator(method: HttpMethod, path: string = '/', statusCode: number = 200): MethodDecorator {
-  return function(target: any, propertyKey: string | symbol, descriptor: PropertyDescriptor): PropertyDescriptor {
+function createRouteDecorator(
+  method: HttpMethod,
+  path: string = '/',
+  statusCode: number = 200
+): MethodDecorator {
+  return function (
+    target: any,
+    propertyKey: string | symbol,
+    descriptor: PropertyDescriptor
+  ): PropertyDescriptor {
     setRouteMetadata({ method, path, statusCode }, target, propertyKey);
     return descriptor;
   };
@@ -99,7 +110,7 @@ function createRouteDecorator(method: HttpMethod, path: string = '/', statusCode
  * @param statusCode The HTTP status code
  */
 export function Get(path: string, statusCode = 200): MethodDecorator {
-  return createRouteDecorator(HttpMethod._GET, path, statusCode);
+  return createRouteDecorator(HttpMethod.GET, path, statusCode);
 }
 
 /**
@@ -108,7 +119,7 @@ export function Get(path: string, statusCode = 200): MethodDecorator {
  * @param statusCode The HTTP status code
  */
 export function Post(path: string, statusCode = 201): MethodDecorator {
-  return createRouteDecorator(HttpMethod._POST, path, statusCode);
+  return createRouteDecorator(HttpMethod.POST, path, statusCode);
 }
 
 /**
@@ -117,7 +128,7 @@ export function Post(path: string, statusCode = 201): MethodDecorator {
  * @param statusCode The HTTP status code
  */
 export function Put(path: string, statusCode = 200): MethodDecorator {
-  return createRouteDecorator(HttpMethod._PUT, path, statusCode);
+  return createRouteDecorator(HttpMethod.PUT, path, statusCode);
 }
 
 /**
@@ -126,7 +137,7 @@ export function Put(path: string, statusCode = 200): MethodDecorator {
  * @param statusCode The HTTP status code
  */
 export function Delete(path: string, statusCode = 204): MethodDecorator {
-  return createRouteDecorator(HttpMethod._DELETE, path, statusCode);
+  return createRouteDecorator(HttpMethod.DELETE, path, statusCode);
 }
 
 /**
@@ -135,7 +146,7 @@ export function Delete(path: string, statusCode = 204): MethodDecorator {
  * @param statusCode The HTTP status code
  */
 export function Patch(path: string, statusCode = 200): MethodDecorator {
-  return createRouteDecorator(HttpMethod._PATCH, path, statusCode);
+  return createRouteDecorator(HttpMethod.PATCH, path, statusCode);
 }
 
 /**
@@ -144,7 +155,7 @@ export function Patch(path: string, statusCode = 200): MethodDecorator {
  * @param statusCode The HTTP status code
  */
 export function Head(path: string, statusCode = 200): MethodDecorator {
-  return createRouteDecorator(HttpMethod._HEAD, path, statusCode);
+  return createRouteDecorator(HttpMethod.HEAD, path, statusCode);
 }
 
 /**
@@ -153,7 +164,7 @@ export function Head(path: string, statusCode = 200): MethodDecorator {
  * @param statusCode The HTTP status code
  */
 export function Options(path: string, statusCode = 200): MethodDecorator {
-  return createRouteDecorator(HttpMethod._OPTIONS, path, statusCode);
+  return createRouteDecorator(HttpMethod.OPTIONS, path, statusCode);
 }
 
 /**
@@ -162,7 +173,7 @@ export function Options(path: string, statusCode = 200): MethodDecorator {
  * @param statusCode The HTTP status code
  */
 export function All(path: string, statusCode = 200): MethodDecorator {
-  return createRouteDecorator(HttpMethod._ALL, path, statusCode);
+  return createRouteDecorator(HttpMethod.ALL, path, statusCode);
 }
 
 /**
