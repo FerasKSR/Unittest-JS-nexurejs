@@ -1,7 +1,10 @@
-export * from './http-exception';
-export * from './http-method';
-export * from './request-pool';
-export * from './body-parser';
-export * from './http2-server';
-export { JsHttpParser, HttpStreamParser, IHttpParser } from './http-parser';
-export { ZeroCopyHttpParser, parseHttpRequest } from './zero-copy-parser';
+/**
+ * HTTP module exports
+ */
+
+export { HttpMethod } from './http-method';
+export { HttpException } from './http-exception';
+export { parseBody } from './body-parser';
+export { Http2ServerAdapter, type Http2ServerOptions } from './http2-server';
+export { type HttpParseResult } from '../types/native';
+export { JsHttpParser } from './http-parser';
