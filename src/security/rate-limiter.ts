@@ -210,11 +210,14 @@ export class TokenBucketStore {
   /**
    * Check if a request is allowed and consume a token if it is
    */
-  async check(key: string, options: {
-    capacity: number;
-    refillRate: number;
-    tier: RateLimitTier;
-  }): Promise<RateLimitResult> {
+  async check(
+    key: string,
+    options: {
+      capacity: number;
+      refillRate: number;
+      tier: RateLimitTier;
+    }
+  ): Promise<RateLimitResult> {
     const now = Date.now();
     const bucket = this.getBucket(key, options);
 
@@ -252,11 +255,14 @@ export class TokenBucketStore {
   /**
    * Get a bucket, creating it if it doesn't exist
    */
-  private getBucket(key: string, options: {
-    capacity: number;
-    refillRate: number;
-    tier: RateLimitTier;
-  }): TokenBucket {
+  private getBucket(
+    key: string,
+    options: {
+      capacity: number;
+      refillRate: number;
+      tier: RateLimitTier;
+    }
+  ): TokenBucket {
     if (!this.buckets.has(key)) {
       // Create a new bucket
       this.buckets.set(key, {
@@ -344,16 +350,20 @@ export class RedisTokenBucketStore {
   /**
    * Check if a request is allowed and consume a token if it is
    */
-  async check(key: string, options: {
-    capacity: number;
-    refillRate: number;
-    tier: RateLimitTier;
-  }): Promise<RateLimitResult> {
+  async check(
+    key: string,
+    options: {
+      capacity: number;
+      refillRate: number;
+      tier: RateLimitTier;
+    }
+  ): Promise<RateLimitResult> {
     const now = Date.now();
     const bucketKey = `${this.prefix}${key}`;
 
     // Use Redis transaction to ensure atomicity
-    const result = await this.client.eval(`
+    const result = await this.client.eval(
+      `
       local bucket = redis.call('HMGET', KEYS[1], 'tokens', 'lastRefill', 'capacity', 'refillRate', 'tierMultiplier')
       local tokens = tonumber(bucket[1]) or tonumber(ARGV[1])
       local lastRefill = tonumber(bucket[2]) or tonumber(ARGV[4])
@@ -408,7 +418,13 @@ export class RedisTokenBucketStore {
 
       return {allowed, tokens, capacity, resetTime, tierMultiplier}
     `,
-    1, bucketKey, options.capacity, options.refillRate, options.tier.multiplier, now);
+      1,
+      bucketKey,
+      options.capacity,
+      options.refillRate,
+      options.tier.multiplier,
+      now
+    );
 
     // Parse result
     const [allowed, remaining, limit, resetTime, tierMultiplier] = result;
@@ -442,6 +458,150 @@ export const RateLimitTiers = {
 };
 
 /**
+ * Prepare rate limiter configuration with defaults
+ */
+function prepareRateLimiterConfig(
+  options: RateLimiterOptions = {},
+  store?: TokenBucketStore | RedisTokenBucketStore
+): {
+  headers: boolean;
+  headerNames: {
+    remaining: string;
+    limit: string;
+    reset: string;
+    retryAfter: string;
+  };
+  burstSize: number;
+  refillRate: number;
+  keyGenerator: (req: IncomingMessage) => string;
+  tierGenerator: (req: IncomingMessage) => Promise<RateLimitTier> | RateLimitTier;
+  skip: (req: IncomingMessage) => boolean;
+  bucketStore: TokenBucketStore | RedisTokenBucketStore;
+  handler: (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => Promise<void>;
+} {
+  const config = getDefaultOptions(options);
+  const headerNames = getHeaderNames(options.headerNames || {});
+  const handlers = getHandlers(options, config.statusCode, config.message, config.group);
+
+  // Use provided store or create appropriate store
+  const bucketStore = store || (config.distributed ? null : new TokenBucketStore());
+
+  // If distributed is true but no store provided, throw error
+  if (config.distributed && !store) {
+    throw new Error('A store must be provided for distributed rate limiting');
+  }
+
+  return {
+    headers: config.headers,
+    headerNames,
+    burstSize: config.burstSize,
+    refillRate: config.refillRate,
+    keyGenerator: handlers.keyGenerator,
+    tierGenerator: handlers.tierGenerator,
+    skip: handlers.skip,
+    bucketStore: bucketStore!,
+    handler: handlers.handler
+  };
+}
+
+/**
+ * Get default options for rate limiter
+ */
+function getDefaultOptions(options: RateLimiterOptions): {
+  max: number;
+  windowMs: number;
+  headers: boolean;
+  statusCode: number;
+  message: string;
+  group: string;
+  distributed: boolean;
+  burstSize: number;
+  refillRate: number;
+} {
+  const max = options.max || 100;
+  const windowMs = options.windowMs || 60000;
+
+  return {
+    max,
+    windowMs,
+    headers: options.headers !== false,
+    statusCode: options.statusCode || 429,
+    message: options.message || 'Too many requests, please try again later.',
+    group: options.group || '',
+    distributed: options.distributed || false,
+    burstSize: options.burstSize || max,
+    refillRate: options.refillRate || max / windowMs
+  };
+}
+
+/**
+ * Get header names for rate limiter
+ */
+function getHeaderNames(headerNames: RateLimiterOptions['headerNames'] = {}): {
+  remaining: string;
+  limit: string;
+  reset: string;
+  retryAfter: string;
+} {
+  return {
+    remaining: headerNames.remaining || 'X-RateLimit-Remaining',
+    limit: headerNames.limit || 'X-RateLimit-Limit',
+    reset: headerNames.reset || 'X-RateLimit-Reset',
+    retryAfter: headerNames.retryAfter || 'Retry-After'
+  };
+}
+
+/**
+ * Get handlers for rate limiter
+ */
+function getHandlers(
+  options: RateLimiterOptions,
+  statusCode: number,
+  message: string,
+  group: string
+): {
+  keyGenerator: (req: IncomingMessage) => string;
+  tierGenerator: (req: IncomingMessage) => Promise<RateLimitTier> | RateLimitTier;
+  skip: (req: IncomingMessage) => boolean;
+  handler: (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => Promise<void>;
+} {
+  // Set default key generator
+  const keyGenerator =
+    options.keyGenerator ||
+    ((req: IncomingMessage): string => {
+      return `${group ? `${group}:` : ''}${req.socket.remoteAddress || 'unknown'}`;
+    });
+
+  // Set default tier generator
+  const tierGenerator = options.tierGenerator || ((): RateLimitTier => RateLimitTiers.STANDARD);
+
+  // Set default skip function
+  const skip = options.skip || ((): boolean => false);
+
+  // Set default handler
+  const handler =
+    options.handler ||
+    (async (
+      req: IncomingMessage,
+      _res: ServerResponse,
+      _next: () => Promise<void>
+    ): Promise<void> => {
+      const retry =
+        Math.ceil((req as any).rateLimit.resetTime / 1000) - Math.ceil(Date.now() / 1000);
+      throw new HttpException(statusCode, message, {
+        retryAfter: retry
+      });
+    });
+
+  return {
+    keyGenerator,
+    tierGenerator,
+    skip,
+    handler
+  };
+}
+
+/**
  * Create rate limiting middleware with token bucket algorithm
  * @param options Rate limiter options
  * @param store Rate limiter store
@@ -450,76 +610,28 @@ export function createRateLimiterMiddleware(
   options: RateLimiterOptions = {},
   store?: TokenBucketStore | RedisTokenBucketStore
 ): MiddlewareHandler {
-  // Set default options
-  const max = options.max || 100;
-  const windowMs = options.windowMs || 60000;
-  const headers = options.headers !== false;
-  const statusCode = options.statusCode || 429;
-  const message = options.message || 'Too many requests, please try again later.';
-  const group = options.group || '';
-  const distributed = options.distributed || false;
-
-  // Calculate tokens per second (refill rate)
-  const refillRate = options.refillRate || (max / windowMs);
-  const burstSize = options.burstSize || max;
-
-  // Set default header names
-  const headerNames = options.headerNames || {};
-  const remainingHeader = headerNames.remaining || 'X-RateLimit-Remaining';
-  const limitHeader = headerNames.limit || 'X-RateLimit-Limit';
-  const resetHeader = headerNames.reset || 'X-RateLimit-Reset';
-  const retryAfterHeader = headerNames.retryAfter || 'Retry-After';
-
-  // Set default key generator
-  const keyGenerator = options.keyGenerator || ((req: IncomingMessage) => {
-    return `${group ? group + ':' : ''}${req.socket.remoteAddress || 'unknown'}`;
-  });
-
-  // Set default tier generator
-  const tierGenerator = options.tierGenerator || (() => RateLimitTiers.STANDARD);
-
-  // Set default skip function
-  const skip = options.skip || (() => false);
-
-  // Use provided store or create appropriate store
-  const bucketStore = store || (distributed ? null : new TokenBucketStore());
-
-  // If distributed is true but no store provided, throw error
-  if (distributed && !store) {
-    throw new Error('A store must be provided for distributed rate limiting');
-  }
-
-  // Set default handler
-  const handler = options.handler || defaultHandler;
-
-  async function defaultHandler(req: IncomingMessage, _res: ServerResponse, _next: () => Promise<void>): Promise<void> {
-    const retry = Math.ceil((req as any).rateLimit.resetTime / 1000) - Math.ceil(Date.now() / 1000);
-
-    throw new HttpException(statusCode, message, {
-      retryAfter: retry
-    });
-  }
+  const config = prepareRateLimiterConfig(options, store);
 
   // Return middleware
   return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
     // Skip rate limiting if needed
-    if (skip(req)) {
+    if (config.skip(req)) {
       return next();
     }
 
     try {
       // Generate key for this request
-      const key = keyGenerator(req);
+      const key = config.keyGenerator(req);
 
       // Get tier for this request
-      const tier = await Promise.resolve(tierGenerator(req));
+      const tier = await Promise.resolve(config.tierGenerator(req));
 
       // Apply tier multiplier to limits
-      const tierMax = Math.ceil(burstSize * tier.multiplier);
-      const tierRefillRate = refillRate * tier.multiplier;
+      const tierMax = Math.ceil(config.burstSize * tier.multiplier);
+      const tierRefillRate = config.refillRate * tier.multiplier;
 
       // Check rate limit
-      const result = await bucketStore!.check(key, {
+      const result = await config.bucketStore.check(key, {
         capacity: tierMax,
         refillRate: tierRefillRate / 1000, // Convert to tokens per millisecond
         tier
@@ -529,10 +641,10 @@ export function createRateLimiterMiddleware(
       (req as any).rateLimit = result;
 
       // Add headers if enabled
-      if (headers) {
-        res.setHeader(remainingHeader, result.remaining.toString());
-        res.setHeader(limitHeader, result.limit.toString());
-        res.setHeader(resetHeader, Math.ceil(result.resetTime / 1000).toString());
+      if (config.headers) {
+        res.setHeader(config.headerNames.remaining, result.remaining.toString());
+        res.setHeader(config.headerNames.limit, result.limit.toString());
+        res.setHeader(config.headerNames.reset, Math.ceil(result.resetTime / 1000).toString());
 
         // Add tier header
         res.setHeader('X-RateLimit-Tier', result.tier.name);
@@ -540,13 +652,13 @@ export function createRateLimiterMiddleware(
 
       // If not allowed, handle rate limit exceeded
       if (!result.allowed) {
-        if (headers) {
+        if (config.headers) {
           // Add retry-after header
           const retryAfter = Math.ceil((result.resetTime - Date.now()) / 1000);
-          res.setHeader(retryAfterHeader, retryAfter.toString());
+          res.setHeader(config.headerNames.retryAfter, retryAfter.toString());
         }
 
-        return handler(req, res, next);
+        return config.handler(req, res, next);
       }
 
       // Continue to next middleware
@@ -564,7 +676,10 @@ export function createRateLimiterMiddleware(
  * @param redisClient Redis client instance
  * @param prefix Key prefix
  */
-export function createRedisStore(redisClient: any, prefix: string = 'rate:'): RedisTokenBucketStore {
+export function createRedisStore(
+  redisClient: any,
+  prefix: string = 'rate:'
+): RedisTokenBucketStore {
   return new RedisTokenBucketStore(redisClient, prefix);
 }
 
@@ -576,8 +691,11 @@ export function createRateLimiterGroup(
   options: RateLimiterOptions = {},
   store?: TokenBucketStore | RedisTokenBucketStore
 ): MiddlewareHandler {
-  return createRateLimiterMiddleware({
-    ...options,
-    group: groupName
-  }, store);
+  return createRateLimiterMiddleware(
+    {
+      ...options,
+      group: groupName
+    },
+    store
+  );
 }

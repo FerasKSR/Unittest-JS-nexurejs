@@ -187,13 +187,10 @@ export class CryptoService {
 
     const key = crypto.pbkdf2Sync(
       this.masterPassword,
-      Buffer.concat([
-        this.keyDerivationOptions.salt,
-        Buffer.from(version.toString())
-      ]),
-      this.keyDerivationOptions.iterations,
-      this.keyDerivationOptions.keyLength,
-      this.keyDerivationOptions.hash
+      Buffer.concat([this.keyDerivationOptions.salt, Buffer.from(version.toString())]),
+      this.keyDerivationOptions.iterations || 100000,
+      this.keyDerivationOptions.keyLength || 32,
+      this.keyDerivationOptions.hash || 'sha256'
     );
 
     this.keys.set(version, {
@@ -266,7 +263,9 @@ export class CryptoService {
     const encryptedContent = Buffer.concat([cipher.update(data), cipher.final()]);
 
     // Get auth tag if using GCM mode
-    const tag = algorithm.includes('gcm') ? (cipher as AuthenticatedCipher).getAuthTag() : undefined;
+    const tag = algorithm.includes('gcm')
+      ? (cipher as AuthenticatedCipher).getAuthTag()
+      : undefined;
 
     return {
       content: encryptedContent,
@@ -283,7 +282,10 @@ export class CryptoService {
    * @param options Decryption options
    * @returns Decrypted data
    */
-  decrypt(encryptedData: EncryptedData, options?: { aad?: Buffer, encoding?: BufferEncoding }): Buffer {
+  decrypt(
+    encryptedData: EncryptedData,
+    options?: { aad?: Buffer; encoding?: BufferEncoding }
+  ): Buffer {
     // Get key
     const masterKey = this.keys.get(encryptedData.keyVersion);
     if (!masterKey) {
@@ -314,10 +316,7 @@ export class CryptoService {
     }
 
     // Decrypt data
-    return Buffer.concat([
-      decipher.update(encryptedData.content),
-      decipher.final()
-    ]);
+    return Buffer.concat([decipher.update(encryptedData.content), decipher.final()]);
   }
 
   /**
@@ -334,13 +333,15 @@ export class CryptoService {
     const encrypted = this.encrypt(json, options);
 
     // Serialize the encrypted data to JSON and encode as base64
-    return Buffer.from(JSON.stringify({
-      c: encrypted.content.toString('base64'),
-      i: encrypted.iv.toString('base64'),
-      t: encrypted.tag?.toString('base64'),
-      a: encrypted.algorithm,
-      v: encrypted.keyVersion
-    })).toString('base64');
+    return Buffer.from(
+      JSON.stringify({
+        c: encrypted.content.toString('base64'),
+        i: encrypted.iv.toString('base64'),
+        t: encrypted.tag?.toString('base64'),
+        a: encrypted.algorithm,
+        v: encrypted.keyVersion
+      })
+    ).toString('base64');
   }
 
   /**
@@ -384,20 +385,19 @@ export class CryptoService {
    * @returns Secure random password
    */
   static generateSecurePassword(length: number = 24): string {
-    // Character set for passwords
-    const charset = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+{}[]|:;<>,.?/';
-
-    // Generate random bytes
+    const charset =
+      'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*()-_=+[]{}|;:,.<>?';
     const randomBytes = crypto.randomBytes(length);
+    let result = '';
 
-    // Map random bytes to charset
-    let password = '';
     for (let i = 0; i < length; i++) {
-      const index = randomBytes[i] % charset.length;
-      password += charset[index];
+      // Ensure randomBytes[i] is treated as a number and not undefined
+      const byteValue = randomBytes[i] || 0;
+      const index = byteValue % charset.length;
+      result += charset[index];
     }
 
-    return password;
+    return result;
   }
 
   /**
@@ -423,13 +423,29 @@ export class CryptoService {
    * @returns Whether the password matches
    */
   static verifyPassword(password: string, hashedPassword: string): boolean {
-    // Split the hashed password into salt and hash
-    const [salt, hash] = hashedPassword.split(':');
+    // Extract salt from stored hash
+    const parts = hashedPassword.split(':');
+    if (parts.length !== 2) {
+      return false;
+    }
 
-    // Hash the password with the same salt
+    const salt = parts[0];
+    const storedHash = parts[1];
+
+    // Verify salt exists before proceeding
+    if (!salt) {
+      return false;
+    }
+
+    // Compute hash of provided password with same salt
     const verifyHash = crypto.pbkdf2Sync(password, salt, 100000, 64, 'sha512').toString('hex');
 
-    // Compare the hashes
-    return hash === verifyHash;
+    // Compare hashes using constant-time comparison
+    // Make sure we have valid strings before comparing
+    if (!storedHash) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(Buffer.from(storedHash), Buffer.from(verifyHash));
   }
 }

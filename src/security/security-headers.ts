@@ -169,18 +169,18 @@ export interface SecurityHeadersOptions {
  * Default CSP directives
  */
 const DEFAULT_CSP_DIRECTIVES: CSPDirectives = {
-  'default-src': ['\'self\''],
-  'script-src': ['\'self\''],
-  'style-src': ['\'self\''],
-  'img-src': ['\'self\''],
-  'connect-src': ['\'self\''],
-  'font-src': ['\'self\''],
-  'object-src': ['\'none\''],
-  'media-src': ['\'self\''],
-  'frame-src': ['\'self\''],
-  'base-uri': ['\'self\''],
-  'form-action': ['\'self\''],
-  'frame-ancestors': ['\'self\'']
+  'default-src': ["'self'"],
+  'script-src': ["'self'"],
+  'style-src': ["'self'"],
+  'img-src': ["'self'"],
+  'connect-src': ["'self'"],
+  'font-src': ["'self'"],
+  'object-src': ["'none'"],
+  'media-src': ["'self'"],
+  'frame-src': ["'self'"],
+  'base-uri': ["'self'"],
+  'form-action': ["'self'"],
+  'frame-ancestors': ["'self'"]
 };
 
 /**
@@ -203,7 +203,7 @@ function buildCSPDirective(directives: CSPDirectives, nonce?: string): string {
       if (Array.isArray(value)) {
         // Add nonce to script-src and style-src if provided
         if (nonce && (key === 'script-src' || key === 'style-src')) {
-          if (!value.some(src => src.includes('\'nonce-'))) {
+          if (!value.some(src => src.includes("'nonce-"))) {
             value = [...value, `'nonce-${nonce}'`];
           }
         }
@@ -224,66 +224,41 @@ export function createSecurityHeadersMiddleware(
 ): MiddlewareHandler {
   // Set content security policy
   let cspHeaderName = 'Content-Security-Policy';
-  let cspDirectives: CSPDirectives = DEFAULT_CSP_DIRECTIVES;
+  const cspDirectives: CSPDirectives = DEFAULT_CSP_DIRECTIVES;
   let useNonce = true;
-  let reportUri: string | undefined;
-  let reportOnly = false;
-  let reportToConfig: {
-    group: string;
-    max_age: number;
-    endpoints: { url: string }[];
-  } | undefined;
+  let reportToConfig: any = null;
 
   // Process CSP options
-  if (typeof options.contentSecurityPolicy === 'object' && options.contentSecurityPolicy !== null) {
-    const cspOptions = options.contentSecurityPolicy;
-
-    // Set directives
-    if (cspOptions.directives) {
-      cspDirectives = {
-        ...DEFAULT_CSP_DIRECTIVES,
-        ...cspOptions.directives
-      };
-    }
+  if (typeof options.contentSecurityPolicy === 'object') {
+    const cspOptions: CSPOptions = options.contentSecurityPolicy;
+    const cspDirectives: CSPDirectives = cspOptions.directives || { 'default-src': ["'self'"] };
 
     // Set nonce usage
     if (cspOptions.useNonce !== undefined) {
       useNonce = cspOptions.useNonce;
     }
 
-    // Set reporting options
+    // Set up reporting
     if (cspOptions.enableReporting) {
-      if (cspOptions.reportUri) {
-        reportUri = cspOptions.reportUri;
-      } else {
-        reportUri = '/api/csp-report';
-      }
+      const reportUri = cspOptions.reportUri || '/api/csp-report';
 
-      // Configure Report-To
       if (cspOptions.useReportTo !== false) {
-        if (cspOptions.reportToConfig) {
-          reportToConfig = cspOptions.reportToConfig;
-        } else {
-          reportToConfig = {
-            group: 'csp-endpoint',
-            max_age: 10886400, // 126 days
-            endpoints: [{ url: reportUri }]
-          };
-        }
-      }
+        // Set up Report-To header
+        reportToConfig = cspOptions.reportToConfig || {
+          group: 'csp-endpoint',
+          max_age: 10886400,
+          endpoints: [{ url: reportUri }]
+        };
 
-      // Add reporting directives
-      if (reportToConfig) {
-        cspDirectives['report-to'] = [reportToConfig.group];
-      }
-      if (reportUri && !cspDirectives['report-uri']) {
+        cspDirectives['report-to'] = ['csp-endpoint'];
+      } else {
+        // Use legacy report-uri directive
         cspDirectives['report-uri'] = [reportUri];
       }
     }
 
     // Set report-only mode
     if (cspOptions.reportOnly) {
-      reportOnly = true;
       cspHeaderName = 'Content-Security-Policy-Report-Only';
     }
   } else if (typeof options.contentSecurityPolicy === 'string') {
@@ -301,39 +276,32 @@ export function createSecurityHeadersMiddleware(
   }
 
   // Other security headers settings
-  const frameOptions = options.frameOptions !== undefined
-    ? options.frameOptions
-    : 'SAMEORIGIN';
+  const frameOptions = options.frameOptions !== undefined ? options.frameOptions : 'SAMEORIGIN';
 
-  const contentTypeOptions = options.contentTypeOptions !== undefined
-    ? options.contentTypeOptions
-    : 'nosniff';
+  const contentTypeOptions =
+    options.contentTypeOptions !== undefined ? options.contentTypeOptions : 'nosniff';
 
-  const xssProtection = options.xssProtection !== undefined
-    ? options.xssProtection
-    : '1; mode=block';
+  const xssProtection =
+    options.xssProtection !== undefined ? options.xssProtection : '1; mode=block';
 
-  const strictTransportSecurity = options.strictTransportSecurity !== undefined
-    ? options.strictTransportSecurity
-    : 'max-age=15552000; includeSubDomains';
+  const strictTransportSecurity =
+    options.strictTransportSecurity !== undefined
+      ? options.strictTransportSecurity
+      : 'max-age=15552000; includeSubDomains';
 
-  const referrerPolicy = options.referrerPolicy !== undefined
-    ? options.referrerPolicy
-    : 'no-referrer-when-downgrade';
+  const referrerPolicy =
+    options.referrerPolicy !== undefined ? options.referrerPolicy : 'no-referrer-when-downgrade';
 
   const permissionsPolicy = options.permissionsPolicy;
 
-  const cacheControl = options.cacheControl !== undefined
-    ? options.cacheControl
-    : 'no-store, no-cache, must-revalidate, proxy-revalidate';
+  const cacheControl =
+    options.cacheControl !== undefined
+      ? options.cacheControl
+      : 'no-store, no-cache, must-revalidate, proxy-revalidate';
 
-  const pragma = options.pragma !== undefined
-    ? options.pragma
-    : 'no-cache';
+  const pragma = options.pragma !== undefined ? options.pragma : 'no-cache';
 
-  const expires = options.expires !== undefined
-    ? options.expires
-    : '0';
+  const expires = options.expires !== undefined ? options.expires : '0';
 
   const crossOriginEmbedderPolicy = options.crossOriginEmbedderPolicy;
   const crossOriginOpenerPolicy = options.crossOriginOpenerPolicy;
@@ -423,36 +391,27 @@ export function createSecurityHeadersMiddleware(
  * Create basic security headers middleware for simple string CSP
  * This is used internally when a string CSP value is provided
  */
-function createBasicSecurityHeadersMiddleware(
-  options: SecurityHeadersOptions
-): MiddlewareHandler {
+function createBasicSecurityHeadersMiddleware(options: SecurityHeadersOptions): MiddlewareHandler {
   // Extract all options
   const contentSecurityPolicy = options.contentSecurityPolicy;
-  const frameOptions = options.frameOptions !== undefined
-    ? options.frameOptions
-    : 'SAMEORIGIN';
-  const contentTypeOptions = options.contentTypeOptions !== undefined
-    ? options.contentTypeOptions
-    : 'nosniff';
-  const xssProtection = options.xssProtection !== undefined
-    ? options.xssProtection
-    : '1; mode=block';
-  const strictTransportSecurity = options.strictTransportSecurity !== undefined
-    ? options.strictTransportSecurity
-    : 'max-age=15552000; includeSubDomains';
-  const referrerPolicy = options.referrerPolicy !== undefined
-    ? options.referrerPolicy
-    : 'no-referrer-when-downgrade';
+  const frameOptions = options.frameOptions !== undefined ? options.frameOptions : 'SAMEORIGIN';
+  const contentTypeOptions =
+    options.contentTypeOptions !== undefined ? options.contentTypeOptions : 'nosniff';
+  const xssProtection =
+    options.xssProtection !== undefined ? options.xssProtection : '1; mode=block';
+  const strictTransportSecurity =
+    options.strictTransportSecurity !== undefined
+      ? options.strictTransportSecurity
+      : 'max-age=15552000; includeSubDomains';
+  const referrerPolicy =
+    options.referrerPolicy !== undefined ? options.referrerPolicy : 'no-referrer-when-downgrade';
   const permissionsPolicy = options.permissionsPolicy;
-  const cacheControl = options.cacheControl !== undefined
-    ? options.cacheControl
-    : 'no-store, no-cache, must-revalidate, proxy-revalidate';
-  const pragma = options.pragma !== undefined
-    ? options.pragma
-    : 'no-cache';
-  const expires = options.expires !== undefined
-    ? options.expires
-    : '0';
+  const cacheControl =
+    options.cacheControl !== undefined
+      ? options.cacheControl
+      : 'no-store, no-cache, must-revalidate, proxy-revalidate';
+  const pragma = options.pragma !== undefined ? options.pragma : 'no-cache';
+  const expires = options.expires !== undefined ? options.expires : '0';
   const crossOriginEmbedderPolicy = options.crossOriginEmbedderPolicy;
   const crossOriginOpenerPolicy = options.crossOriginOpenerPolicy;
   const crossOriginResourcePolicy = options.crossOriginResourcePolicy;
