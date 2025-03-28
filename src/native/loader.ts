@@ -34,10 +34,10 @@ export interface NativeBindingModule {
 // Module cache to prevent redundant loading attempts
 const moduleCache: Record<string, any> = {};
 
-// Logger instance
-const logger = new Logger({
-  enabled: true,
-  level: LogLevel._DEBUG
+// Create a logger
+const nativeLoaderLogger = new Logger({
+  enabled: process.env.NEXURE_NATIVE_DEBUG === 'true',
+  level: LogLevel.DEBUG
 });
 
 /**
@@ -58,7 +58,7 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
 
     // Check if the file exists
     if (!existsSync(nativeBindingPath)) {
-      logger.debug(`Native binding module not found at: ${nativeBindingPath}`);
+      nativeLoaderLogger.debug(`Native binding module not found at: ${nativeBindingPath}`);
       moduleCache[bindingPath] = null;
       return null;
     }
@@ -67,13 +67,15 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
     const nativeBinding = require(nativeBindingPath);
 
     const endTime = performance.now();
-    logger.debug(`Native binding loaded successfully in ${(endTime - startTime).toFixed(2)}ms: ${bindingPath}`);
+    nativeLoaderLogger.debug(
+      `Native binding loaded successfully in ${(endTime - startTime).toFixed(2)}ms: ${bindingPath}`
+    );
 
     // Cache the loaded module
     moduleCache[bindingPath] = nativeBinding;
     return nativeBinding;
   } catch (error: any) {
-    logger.warn(`Failed to load native binding: ${bindingPath}`, error.message);
+    nativeLoaderLogger.warn(`Failed to load native binding: ${bindingPath}`, error.message);
 
     // Cache the failure
     moduleCache[bindingPath] = null;
@@ -96,19 +98,23 @@ export function loadNativeBinding(modulePath?: string): NativeBindingModule | nu
     './nexurejs_native.node',
     '../build/Release/nexurejs_native.node',
     '../build/Debug/nexurejs_native.node',
-    '../nexurejs_native.node',
+    '../nexurejs_native.node'
   ].filter(Boolean) as string[];
 
   // Try each path until one works
   for (const path of paths) {
     const module = tryLoadNativeBinding(path);
     if (module) {
+      // Set debug level for native module (if available)
+      if (module.setDebugLevel) {
+        module.setDebugLevel(process.env.NEXURE_NATIVE_DEBUG === 'true' ? 1 : 0);
+      }
       return module;
     }
   }
 
   // If we get here, no modules could be loaded
-  logger.warn('No native bindings could be loaded, using JavaScript fallbacks');
+  nativeLoaderLogger.warn('No native bindings could be loaded, using JavaScript fallbacks');
   return null;
 }
 
@@ -126,21 +132,21 @@ export function isBindingAvailable(bindingType: BindingType): boolean {
 
   switch (bindingType) {
     case BindingType.WEBSOCKET:
-      return !!nativeModule.NativeWebSocketServer;
+      return Boolean(nativeModule.NativeWebSocketServer);
     case BindingType.JSON:
-      return !!nativeModule.JSONParser;
+      return Boolean(nativeModule.JSONParser);
     case BindingType.HTTP:
-      return !!nativeModule.HTTPParser;
+      return Boolean(nativeModule.HTTPParser);
     case BindingType.URL:
-      return !!nativeModule.URLParser;
+      return Boolean(nativeModule.URLParser);
     case BindingType.CRYPTO:
-      return !!nativeModule.Crypto;
+      return Boolean(nativeModule.Crypto);
     case BindingType.COMPRESSION:
-      return !!nativeModule.Compression;
+      return Boolean(nativeModule.Compression);
     case BindingType.ROUTER:
-      return !!nativeModule.RadixRouter;
+      return Boolean(nativeModule.RadixRouter);
     case BindingType.SCHEMA:
-      return !!nativeModule.SchemaValidator;
+      return Boolean(nativeModule.SchemaValidator);
     default:
       return false;
   }
@@ -154,13 +160,17 @@ export function clearModuleCache(): void {
   Object.keys(moduleCache).forEach(key => {
     delete moduleCache[key];
   });
-  logger.debug('Native module cache cleared');
+  nativeLoaderLogger.debug('Native module cache cleared');
 }
 
 /**
  * Get performance metrics for native module operations
  */
-export function getNativeLoaderMetrics(): { loadAttempts: number; loadSuccesses: number; loadTime: number } {
+export function getNativeLoaderMetrics(): {
+  loadAttempts: number;
+  loadSuccesses: number;
+  loadTime: number;
+} {
   // This would normally track actual metrics, but for now just returns placeholders
   return {
     loadAttempts: Object.keys(moduleCache).length,
