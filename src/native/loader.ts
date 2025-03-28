@@ -11,8 +11,28 @@ import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
 import { Logger, LogLevel } from '../utils/logger';
 
-// Create a require function for ESM
-const require = createRequire(import.meta.url);
+// Handle both ESM and CommonJS environments for require
+let customRequire: NodeRequire;
+
+if (typeof __dirname !== 'undefined') {
+  // CommonJS environment
+  customRequire = require;
+} else {
+  // ESM environment with compatibility for CJS build
+  try {
+    // @ts-ignore - Conditionally use import.meta.url
+    const metaUrl = typeof import.meta !== 'undefined' ? import.meta.url : '';
+    if (metaUrl) {
+      customRequire = createRequire(metaUrl);
+    } else {
+      // Fallback if import.meta is not available (during CJS build)
+      customRequire = require;
+    }
+  } catch (_err) {
+    // Final fallback
+    customRequire = require;
+  }
+}
 
 // Define binding types
 export enum BindingType {
@@ -64,7 +84,7 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
     }
 
     // Try to load the module
-    const nativeBinding = require(nativeBindingPath);
+    const nativeBinding = customRequire(nativeBindingPath);
 
     const endTime = performance.now();
     nativeLoaderLogger.debug(
