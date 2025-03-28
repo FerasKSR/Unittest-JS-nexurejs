@@ -1,11 +1,12 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": false,
-    "outDir": "dist",
-    "skipLibCheck": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
     "declaration": true,
-    "sourceMap": true
+    "declarationMap": true,
+    "sourceMap": true,
+    "removeComments": false
   },
   "include": [
     "src/**/*.ts"
@@ -13,12 +14,9 @@
   "exclude": [
     "node_modules",
     "dist",
-    "lib",
+    "test",
     "examples",
-    "tests",
-    "benchmarks",
     "**/*.spec.ts",
-    "**/*.test.ts",
-    "src/utils/stream-optimizer.js"
+    "**/*.test.ts"
   ]
 }
