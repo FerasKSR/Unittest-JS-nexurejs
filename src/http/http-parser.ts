@@ -9,7 +9,7 @@ import type { HttpParseResult as NativeHttpParseResult } from '../types/native';
 /**
  * HTTP parse result
  */
-export type HttpParseResult = NativeHttpParseResult
+export type HttpParseResult = NativeHttpParseResult;
 
 /**
  * Base HTTP parser interface
@@ -71,8 +71,8 @@ export class JsHttpParser implements IHttpParser {
     return {
       method: method!,
       url: url!,
-      versionMajor: parseInt(versionMatch![1], 10),
-      versionMinor: parseInt(versionMatch![2], 10),
+      versionMajor: parseInt(versionMatch![1]!, 10),
+      versionMinor: parseInt(versionMatch![2]!, 10),
       headers,
       body: null,
       complete: true,
@@ -192,10 +192,10 @@ export class HttpStreamParser {
       }
 
       // If we have headers and enough data for the body, we're done
-      if (this.headersParsed && this.result && this.buffer.length >= this.contentLength) {
+      if (this.buffer.length >= this.contentLength) {
         // Create the final result with the body
         const finalResult: HttpParseResult = {
-          ...this.result,
+          ...this.result!,
           body: this.buffer.slice(0, this.contentLength),
           complete: true
         };

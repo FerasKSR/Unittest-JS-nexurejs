@@ -215,7 +215,7 @@ export class Http2ServerAdapter {
 
       const next = async (): Promise<void> => {
         if (middlewareIndex < this.middlewares.length) {
-          const middleware = this.middlewares[middlewareIndex++];
+          const middleware = this.middlewares[middlewareIndex++]!;
           await middleware(req, res, next);
         } else {
           // Process the route after all middleware has run
@@ -242,7 +242,7 @@ export class Http2ServerAdapter {
    */
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server.close((err) => {
+      this.server.close(err => {
         if (err) {
           reject(err);
         } else {

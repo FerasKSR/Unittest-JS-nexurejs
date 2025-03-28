@@ -8,7 +8,11 @@ import { randomBytes } from 'node:crypto';
 import { pipeline } from 'node:stream/promises';
 import { globalPool } from '../utils/buffer-pool';
 import { createJsonTransformer, createTextTransformer } from '../utils/stream-optimizer';
-import { hasBody, getContentType, parseUrlEncodedText as parseUrlEncodedString } from '../utils/http-utils';
+import {
+  hasBody,
+  getContentType,
+  parseUrlEncodedText as parseUrlEncodedString
+} from '../utils/http-utils';
 import { HttpException } from './http-exception';
 
 /**
@@ -92,16 +96,22 @@ const _DEFAULT_PARSE_TIMEOUT = 30000; // 30 seconds
  * @param {Object} options - Configuration options
  * @returns {Function} - Middleware function
  */
-export function bodyParser(options: any = {}) {
-  return async function bodyParserMiddleware(req: IncomingMessage, res: any, next: () => Promise<void>) {
+export function bodyParser(
+  options: any = {}
+): (req: IncomingMessage, res: any, next: () => Promise<void>) => Promise<void> {
+  return async function bodyParserMiddleware(
+    req: IncomingMessage,
+    res: any,
+    next: () => Promise<void>
+  ) {
     if (!hasBody(req)) {
       return next();
     }
 
     try {
       const contentType = getContentType(req);
-      const contentLength = parseInt(req.headers['content-length'] as string || '0');
-      const _encoding = req.headers['content-_encoding'] as string || 'utf-8';
+      const contentLength = parseInt((req.headers['content-length'] as string) || '0');
+      const _encoding = (req.headers['content-_encoding'] as string) || 'utf-8';
 
       // Check max size
       const maxSize = options.maxBodySize || 1024 * 1024 * 100; // 100MB default
@@ -131,18 +141,18 @@ export function bodyParser(options: any = {}) {
 /**
  * Parse JSON body using optimized streaming
  */
-async function parseJson(req: any, options: any = {}) {
+async function parseJson(req: any, options: any = {}): Promise<any> {
   const { maxBytes, _encoding } = options;
 
   return new Promise((resolve, reject) => {
     // Create an optimized JSON transformer
     const jsonTransformer = createJsonTransformer({
-      processJson: (data) => {
+      processJson: data => {
         // Store parsed result when complete
         req.body = data;
         return undefined; // Don't push data
       },
-      processError: (_err) => {
+      processError: _err => {
         const error = new SyntaxError('Invalid JSON');
         (error as any).status = 400;
         (error as any).body = req.body || '';
@@ -154,7 +164,7 @@ async function parseJson(req: any, options: any = {}) {
     jsonTransformer.on('end', () => resolve(req.body));
 
     // Handle error
-    jsonTransformer.on('error', (err) => {
+    jsonTransformer.on('error', err => {
       if ((err as any).code === 'ECONNABORTED') {
         const timeoutErr = new Error('Request timeout');
         (timeoutErr as any).status = 408;
@@ -166,29 +176,28 @@ async function parseJson(req: any, options: any = {}) {
 
     // Pipe request to parser
     let bytes = 0;
-    req.pipe(jsonTransformer)
-      .on('data', (chunk: Buffer) => {
-        bytes += chunk.length;
-        if (bytes > maxBytes) {
-          const err = new Error('Request entity too large');
-          (err as any).status = 413;
-          (err as any).type = 'entity.too.large';
-          jsonTransformer.destroy(err);
-        }
-      });
+    req.pipe(jsonTransformer).on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        const err = new Error('Request entity too large');
+        (err as any).status = 413;
+        (err as any).type = 'entity.too.large';
+        jsonTransformer.destroy(err);
+      }
+    });
   });
 }
 
 /**
  * Parse text body using optimized streaming
  */
-async function parseText(req: any, options: any = {}) {
+async function parseText(req: any, options: any = {}): Promise<string> {
   const { maxBytes, _encoding } = options;
 
   return new Promise((resolve, reject) => {
     // Create an optimized text transformer
     const textTransformer = createTextTransformer({
-      processText: (text) => {
+      processText: text => {
         req.body = text;
         return undefined; // Don't push data
       }
@@ -198,27 +207,26 @@ async function parseText(req: any, options: any = {}) {
     textTransformer.on('end', () => resolve(req.body));
 
     // Handle error
-    textTransformer.on('error', (err) => reject(err));
+    textTransformer.on('error', err => reject(err));
 
     // Pipe request to parser
     let bytes = 0;
-    req.pipe(textTransformer)
-      .on('data', (chunk: Buffer) => {
-        bytes += chunk.length;
-        if (bytes > maxBytes) {
-          const err = new Error('Request entity too large');
-          (err as any).status = 413;
-          (err as any).type = 'entity.too.large';
-          textTransformer.destroy(err);
-        }
-      });
+    req.pipe(textTransformer).on('data', (chunk: Buffer) => {
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        const err = new Error('Request entity too large');
+        (err as any).status = 413;
+        (err as any).type = 'entity.too.large';
+        textTransformer.destroy(err);
+      }
+    });
   });
 }
 
 /**
  * Parse raw body using optimized buffer pooling
  */
-async function parseRaw(req: any, options: any = {}) {
+async function parseRaw(req: any, options: any = {}): Promise<Buffer> {
   const { maxBytes } = options;
 
   return new Promise((resolve, reject) => {
@@ -269,7 +277,10 @@ async function parseRaw(req: any, options: any = {}) {
  * Parse URL-encoded request body
  * @param req The incoming request
  */
-async function parseUrlEncoded(req: IncomingMessage, options: Required<BodyParserOptions>): Promise<Record<string, string>> {
+async function parseUrlEncoded(
+  req: IncomingMessage,
+  options: Required<BodyParserOptions>
+): Promise<Record<string, string>> {
   try {
     const raw = await parseRaw(req, options);
     const text = raw.toString();
@@ -284,13 +295,16 @@ async function parseUrlEncoded(req: IncomingMessage, options: Required<BodyParse
  * @param req The incoming request
  * @param options Body parser options
  */
-async function _parseUrlEncodedStream(req: IncomingMessage, options: Required<BodyParserOptions>): Promise<Record<string, string>> {
+async function _parseUrlEncodedStream(
+  req: IncomingMessage,
+  options: Required<BodyParserOptions>
+): Promise<Record<string, string>> {
   try {
     // Create a URL-encoded parser stream
     const urlEncodedChunks: Buffer[] = [];
 
     const urlEncodedParser = new Transform({
-      transform(chunk, _encoding, callback) {
+      transform(chunk, _encoding, callback): void {
         try {
           urlEncodedChunks.push(Buffer.from(chunk));
           callback(null, chunk);
@@ -346,7 +360,10 @@ function _parseUrlEncodedText(text: string): Record<string, string> {
  * @param req The incoming request
  * @param options Body parser options
  */
-async function parseMultipart(req: IncomingMessage, options: Required<BodyParserOptions>): Promise<any> {
+async function parseMultipart(
+  req: IncomingMessage,
+  options: Required<BodyParserOptions>
+): Promise<any> {
   // For a complete implementation, you would use a library like formidable or busboy
   // or implement a more robust multipart parser
 
@@ -386,7 +403,10 @@ async function parseMultipart(req: IncomingMessage, options: Required<BodyParser
  * @param options Body parser options
  * @returns Path to the temporary file
  */
-async function streamToTempFile(req: IncomingMessage, options: Required<BodyParserOptions>): Promise<string> {
+async function streamToTempFile(
+  req: IncomingMessage,
+  options: Required<BodyParserOptions>
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const tempFilePath = join(options.tempDir, `nexure-body-${randomBytes(8).toString('hex')}`);
     const writeStream = createWriteStream(tempFilePath);
@@ -397,7 +417,7 @@ async function streamToTempFile(req: IncomingMessage, options: Required<BodyPars
     // Create a transform stream to monitor the size
     const sizeMonitor = new Transform({
       highWaterMark: options.streamChunkSize,
-      transform(chunk, _encoding, callback) {
+      transform(chunk, _encoding, callback): void {
         totalBytes += chunk.length;
 
         // Check if body exceeds max size during streaming
@@ -429,10 +449,14 @@ async function streamToTempFile(req: IncomingMessage, options: Required<BodyPars
     // Pipe through the size monitor to the file
     pipeline(source, sizeMonitor, writeStream)
       .then(() => resolve(tempFilePath))
-      .catch((err) => {
+      .catch(err => {
         // Clean up file on error
         cleanupTempFile(tempFilePath);
-        reject(err instanceof HttpException ? err : HttpException.badRequest('Error processing request body'));
+        reject(
+          err instanceof HttpException
+            ? err
+            : HttpException.badRequest('Error processing request body')
+        );
       });
   });
 }
@@ -483,7 +507,9 @@ async function cleanupTempFile(path: string): Promise<void> {
  * Create a body parser middleware with custom options
  * @param options Body parser options
  */
-export function createBodyParserMiddleware(options: BodyParserOptions = {}) {
+export function createBodyParserMiddleware(
+  options: BodyParserOptions = {}
+): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   return async (req: IncomingMessage, _res: any, next: () => Promise<void>) => {
     try {
       (req as any).body = await parseBody(req, options);
@@ -497,7 +523,10 @@ export function createBodyParserMiddleware(options: BodyParserOptions = {}) {
 /**
  * Parse request body based on content type
  */
-export async function parseBody(req, options = {}) {
+export async function parseBody(
+  req: IncomingMessage,
+  options: Partial<BodyParserOptions> = {}
+): Promise<any> {
   // Default options
   const defaultOptions = {
     maxBufferSize: 1024 * 1024, // 1MB
