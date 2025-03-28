@@ -3,8 +3,19 @@ import { Router } from '../routing/router';
 import { MiddlewareHandler } from '../middleware/middleware';
 import { Container } from '../di/container';
 import { Logger } from '../utils/logger';
-import { configureNativeModules, getNativeModuleStatus, WebSocketServer, WebSocketServerOptions } from '../native/index';
-import { getWebSocketHandlers, isWebSocketController, getWebSocketAuthHandler } from '../decorators/websocket-decorators';
+import {
+  configureNativeModules,
+  getNativeModuleStatus,
+  WebSocketServer,
+  WebSocketServerOptions,
+  getNativeModuleMetrics
+} from '../native/index';
+import {
+  getWebSocketHandlers,
+  isWebSocketController,
+  getWebSocketAuthHandler
+} from '../decorators/websocket-decorators';
+import { setUseNativeByDefault, getUseNativeByDefault } from '../utils/native-bindings';
 
 export interface NexureOptions {
   /**
@@ -38,7 +49,7 @@ export interface NexureOptions {
     /**
      * Advanced WebSocket configuration
      */
-    config?: WebSocketServerOptions
+    config?: WebSocketServerOptions;
   };
 
   /**
@@ -51,6 +62,12 @@ export interface NexureOptions {
      * @default true
      */
     nativeModules?: boolean;
+
+    /**
+     * Force using native modules even when they might not be fully compatible
+     * @default false
+     */
+    forceNativeModules?: boolean;
 
     /**
      * Native module configuration
@@ -67,6 +84,12 @@ export interface NexureOptions {
        * @default 1000
        */
       maxCacheSize?: number;
+
+      /**
+       * Preload all available native modules on startup
+       * @default true
+       */
+      preloadModules?: boolean;
     };
 
     /**
@@ -103,9 +126,11 @@ export class Nexure {
       },
       performance: {
         nativeModules: true,
+        forceNativeModules: false,
         nativeModuleConfig: {
           verbose: false,
-          maxCacheSize: 1000
+          maxCacheSize: 1000,
+          preloadModules: true
         },
         gcInterval: 0,
         maxMemoryMB: 0
@@ -113,12 +138,14 @@ export class Nexure {
       ...options
     };
 
+    // Setup logging first
+    this.logger = new Logger(this.options.logging);
+
     // Initialize native modules
     this.initializeNativeModules();
 
     this.container = new Container();
     this.router = new Router(this.options.globalPrefix);
-    this.logger = new Logger(this.options.logging);
 
     this.server = createServer(this.handleRequest.bind(this));
 
@@ -127,17 +154,16 @@ export class Nexure {
       const nativeStatus = getNativeModuleStatus();
       if (nativeStatus.loaded && nativeStatus.webSocket) {
         // Create WebSocket server with configured options
-        this.wsServer = new WebSocketServer(
-          this.server,
-          this.options.websocket?.config || {}
-        );
+        this.wsServer = new WebSocketServer(this.server, this.options.websocket?.config || {});
 
         // Set up WebSocket controllers
         this.setupWebSocketControllers();
 
         this.logger.info('Native WebSocket server initialized');
       } else {
-        this.logger.warn('Native WebSocket support is not available. WebSocket functionality is disabled.');
+        this.logger.warn(
+          'Native WebSocket support is not available. WebSocket functionality is disabled.'
+        );
       }
     }
 
@@ -172,6 +198,20 @@ export class Nexure {
   listen(port: number, callback?: () => void): Server {
     this.server.listen(port, () => {
       this.logger.info(`Server running at http://localhost:${port}/`);
+
+      // Log native module status
+      const moduleStatus = getNativeModuleStatus();
+      if (moduleStatus.loaded) {
+        this.logger.info(
+          `Native modules enabled: ${Object.entries(moduleStatus)
+            .filter(([key, value]) => key !== 'loaded' && value === true)
+            .map(([key]) => key)
+            .join(', ')}`
+        );
+      } else {
+        this.logger.info('Running in pure JavaScript mode (native modules not loaded)');
+      }
+
       if (callback) callback();
     });
 
@@ -179,6 +219,41 @@ export class Nexure {
     this.wsServer?.start();
 
     return this.server;
+  }
+
+  /**
+   * Get metrics about native module usage
+   */
+  getNativeModuleMetrics(): Record<string, any> {
+    // We'll use the existing function without requiring an import
+    try {
+      if (typeof getNativeModuleMetrics === 'function') {
+        return getNativeModuleMetrics();
+      }
+      // Fallback if function doesn't exist
+      return { status: getNativeModuleStatus() };
+    } catch {
+      return { status: getNativeModuleStatus() };
+    }
+  }
+
+  /**
+   * Enable or disable native modules at runtime
+   * @param enabled Whether to enable native modules
+   * @param force Whether to force reload modules
+   */
+  setNativeModulesEnabled(enabled: boolean, force: boolean = false): void {
+    setUseNativeByDefault(enabled);
+    if (force) {
+      this.initializeNativeModules();
+    }
+  }
+
+  /**
+   * Check if native modules are enabled
+   */
+  isNativeModulesEnabled(): boolean {
+    return getUseNativeByDefault();
   }
 
   /**
@@ -199,7 +274,11 @@ export class Nexure {
       const next = async (): Promise<void> => {
         if (middlewareIndex < this.middlewares.length) {
           const middleware = this.middlewares[middlewareIndex++];
-          await middleware(req, res, next);
+          if (middleware) {
+            await middleware(req, res, next);
+          } else {
+            await next();
+          }
         } else {
           // Process the route after all middleware has run
           await this.router.process(req, res);
@@ -230,33 +309,45 @@ export class Nexure {
     const message = error.message || 'Internal Server Error';
 
     res.statusCode = statusCode;
-    res.end(JSON.stringify({
-      statusCode,
-      message,
-      timestamp: new Date().toISOString(),
-      path: req.url
-    }, null, this.options.prettyJson ? 2 : 0));
+    res.end(
+      JSON.stringify(
+        {
+          statusCode,
+          message,
+          timestamp: new Date().toISOString(),
+          path: req.url
+        },
+        null,
+        this.options.prettyJson ? 2 : 0
+      )
+    );
   }
 
   /**
    * Initialize native modules
    */
   private initializeNativeModules(): void {
-    if (this.options.performance?.nativeModules !== false) {
+    const useNative = this.options.performance?.nativeModules !== false;
+
+    // Set global preference for native modules
+    setUseNativeByDefault(useNative);
+
+    if (useNative) {
       configureNativeModules({
         enabled: true,
-        verbose: !!this.options.logging,
-        ...this.options.performance
+        verbose: Boolean(this.options.logging),
+        maxCacheSize: this.options.performance?.nativeModuleConfig?.maxCacheSize || 1000
       });
 
-      const nativeStatus = getNativeModuleStatus();
-
-      if (this.options.logging) {
-        this.logger.info(`Native modules loaded: ${nativeStatus.loaded}`);
-        if (nativeStatus.loaded) {
-          this.logger.debug(`Available native modules: HTTP Parser: ${nativeStatus.httpParser}, Router: ${nativeStatus.radixRouter}, JSON: ${nativeStatus.jsonProcessor}, WebSocket: ${nativeStatus.webSocket}`);
-        }
+      const moduleStatus = getNativeModuleStatus();
+      if (moduleStatus.loaded) {
+        this.logger.info('Native modules successfully initialized');
+      } else {
+        this.logger.warn('Native modules could not be loaded, using JavaScript fallbacks');
       }
+    } else {
+      configureNativeModules({ enabled: false });
+      this.logger.info('Native modules disabled, using JavaScript implementations');
     }
   }
 
@@ -279,10 +370,14 @@ export class Nexure {
       }
 
       if (this.options.logging) {
-        this.logger.info(`Memory management enabled: interval=${gcInterval}ms, maxMemory=${maxMemoryMB}MB`);
+        this.logger.info(
+          `Memory management enabled: interval=${gcInterval}ms, maxMemory=${maxMemoryMB}MB`
+        );
       }
     } else if (this.options.logging) {
-      this.logger.warn('Memory management options set but garbage collector not available. Run with --expose-gc flag.');
+      this.logger.warn(
+        'Memory management options set but garbage collector not available. Run with --expose-gc flag.'
+      );
     }
   }
 
@@ -296,7 +391,9 @@ export class Nexure {
 
     if (maxMemoryMB > 0 && heapUsedMB > maxMemoryMB) {
       if (this.options.logging) {
-        this.logger.debug(`Memory threshold exceeded: ${heapUsedMB}MB > ${maxMemoryMB}MB. Running garbage collection.`);
+        this.logger.debug(
+          `Memory threshold exceeded: ${heapUsedMB}MB > ${maxMemoryMB}MB. Running garbage collection.`
+        );
       }
       global.gc?.();
     } else if (this.options.performance?.gcInterval && this.options.performance.gcInterval > 0) {
@@ -328,67 +425,48 @@ export class Nexure {
   }
 
   /**
-   * Set up WebSocket controllers and their handlers
-   * @private
+   * Set up WebSocket controllers
    */
   private setupWebSocketControllers(): void {
-    if (!this.wsServer) return;
-
-    // Get all instances registered in the container that are WebSocket controllers
-    const controllers = Array.from(this.container.getAllInstances())
-      .filter(controller => isWebSocketController(controller.constructor));
-
-    if (controllers.length === 0) {
-      this.logger.debug('No WebSocket controllers found');
+    if (!this.wsServer) {
       return;
     }
 
-    // Configure authentication handler if available
-    if (this.options.websocket?.config?.auth?.required) {
-      // Find controllers with auth handlers
-      const authHandlers = controllers
-        .map(controller => ({
-          controller,
-          handler: getWebSocketAuthHandler(controller.constructor)
-        }))
-        .filter(item => !!item.handler);
+    // Get all controllers with WebSocket handlers
+    for (const target of this.container.getAllProviders()) {
+      if (isWebSocketController(target)) {
+        const handlers = getWebSocketHandlers(target);
 
-      if (authHandlers.length > 0) {
-        // Use the first auth handler found
-        const { controller, handler } = authHandlers[0];
+        // Register each handler
+        for (const { event, handler } of handlers) {
+          this.wsServer.on(event, (context: any) => {
+            const controller = this.container.resolve(target);
+            if (controller) {
+              try {
+                handler.call(controller, context);
+              } catch (error) {
+                this.logger.error(
+                  `Error handling WebSocket event ${event}: ${(error as Error).message}`
+                );
+              }
+            }
+          });
+        }
 
-        // Configure auth handler using the public method
-        this.wsServer.setAuthenticationHandler(async (token, connection) => {
-          try {
-            // Call the controller's auth handler
-            return await handler.call(controller, { token, connection, success: false });
-          } catch (error) {
-            this.logger.error('Error in WebSocket authentication handler:', error);
-            return null;
-          }
-        });
-
-        this.logger.debug('WebSocket authentication handler configured');
-      } else {
-        this.logger.warn('WebSocket authentication is required but no authentication handler was found');
+        // Register authentication handler if defined
+        const authHandler = getWebSocketAuthHandler(target);
+        if (authHandler) {
+          this.wsServer.setAuthenticationHandler(async (token, connection) => {
+            try {
+              const controller = this.container.resolve(target);
+              return await authHandler.call(controller, { token, connection, success: false });
+            } catch (error) {
+              this.logger.error(`WebSocket authentication error: ${(error as Error).message}`);
+              return false;
+            }
+          });
+        }
       }
-    }
-
-    // Register event handlers for all controllers
-    for (const controller of controllers) {
-      const handlers = getWebSocketHandlers(controller.constructor);
-
-      for (const { event, handler } of handlers) {
-        this.wsServer.on(event, async (context) => {
-          try {
-            await handler.call(controller, context);
-          } catch (error) {
-            this.logger.error(`Error in WebSocket handler for event '${event}':`, error);
-          }
-        });
-      }
-
-      this.logger.debug(`Registered ${handlers.length} WebSocket handlers for controller ${controller.constructor.name}`);
     }
   }
 }

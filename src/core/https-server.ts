@@ -82,16 +82,19 @@ export class HttpsServerAdapter {
     const ca = options.ca ? readFileSync(options.ca) : undefined;
 
     // Create HTTPS server
-    this.server = createServer({
-      cert,
-      key,
-      ca,
-      requestCert: options.requestCert,
-      rejectUnauthorized: options.rejectUnauthorized !== false,
-      minVersion: options.minVersion || 'TLSv1.2' as SecureVersion,
-      maxVersion: options.maxVersion,
-      ciphers: options.ciphers
-    }, this.handleRequest.bind(this));
+    this.server = createServer(
+      {
+        cert,
+        key,
+        ca,
+        requestCert: options.requestCert,
+        rejectUnauthorized: options.rejectUnauthorized !== false,
+        minVersion: options.minVersion || ('TLSv1.2' as SecureVersion),
+        maxVersion: options.maxVersion,
+        ciphers: options.ciphers
+      },
+      this.handleRequest.bind(this)
+    );
 
     this.server.on('error', this.handleError.bind(this));
   }
@@ -136,7 +139,7 @@ export class HttpsServerAdapter {
       let middlewareIndex = 0;
       const next = async (): Promise<void> => {
         if (middlewareIndex < this.middlewares.length) {
-          const middleware = this.middlewares[middlewareIndex++];
+          const middleware = this.middlewares[middlewareIndex++]!;
           await middleware(req, res, next);
         } else {
           // Process the route after all middleware has run
@@ -169,12 +172,14 @@ export class HttpsServerAdapter {
       const message = error.message || 'Internal Server Error';
 
       res.statusCode = statusCode;
-      res.end(JSON.stringify({
-        statusCode,
-        message,
-        timestamp: new Date().toISOString(),
-        path: req.url
-      }));
+      res.end(
+        JSON.stringify({
+          statusCode,
+          message,
+          timestamp: new Date().toISOString(),
+          path: req.url
+        })
+      );
     }
   }
 
@@ -183,7 +188,7 @@ export class HttpsServerAdapter {
    */
   close(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      this.server.close((err) => {
+      this.server.close(err => {
         if (err) {
           this.logger.error(`Error closing HTTPS server: ${err.message}`);
           reject(err);
