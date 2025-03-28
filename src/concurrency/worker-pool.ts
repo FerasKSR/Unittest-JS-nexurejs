@@ -82,11 +82,14 @@ export class WorkerPool extends EventEmitter {
   private workerScript: string;
   private workerData: any;
   private taskQueue: WorkerTask[] = [];
-  private taskCallbacks = new Map<string, {
-    resolve: (result: any) => void;
-    reject: (error: Error) => void;
-    timer: NodeJS.Timeout;
-  }>();
+  private taskCallbacks = new Map<
+    string,
+    {
+      resolve: (result: any) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
   private taskTimeout: number;
   private logger = new Logger();
   private isShuttingDown = false;
@@ -124,7 +127,7 @@ export class WorkerPool extends EventEmitter {
         this.handleWorkerResult(result);
       });
 
-      worker.on('error', (error) => {
+      worker.on('error', error => {
         this.logger.error(`Worker error: ${error.message}`);
 
         // Remove the worker from the pool
@@ -139,7 +142,7 @@ export class WorkerPool extends EventEmitter {
         }
       });
 
-      worker.on('exit', (code) => {
+      worker.on('exit', code => {
         this.logger.info(`Worker exited with code ${code}`);
 
         // Remove the worker from the pool
@@ -197,9 +200,7 @@ export class WorkerPool extends EventEmitter {
    */
   private processPendingTasks(): void {
     // Find an available worker
-    const availableWorker = this.workers.find(worker => {
-      return worker.threadId !== undefined;
-    });
+    const availableWorker = this.workers[0];
 
     if (!availableWorker || this.taskQueue.length === 0) {
       return;

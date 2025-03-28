@@ -102,11 +102,14 @@ interface WorkerStatus {
   cumulativeTaskTime: number;
   cpuUsage: number; // Added for CPU tracking
   memoryUsage: number; // Added for memory tracking
-  pendingTasks: Map<string, {
-    task: WorkerTask<any, any>;
-    startTime: number;
-    timer: NodeJS.Timeout | null;
-  }>;
+  pendingTasks: Map<
+    string,
+    {
+      task: WorkerTask<any, any>;
+      startTime: number;
+      timer: NodeJS.Timeout | null;
+    }
+  >;
 }
 
 // Worker pool implementation
@@ -135,24 +138,26 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
     responseLatencies: [] as number[],
     taskThroughput: 0,
     lastThroughputTime: Date.now(),
-    taskThroughputHistory: [] as {timestamp: number, value: number}[],
-    cpuUtilizationHistory: [] as {timestamp: number, value: number}[],
+    taskThroughputHistory: [] as { timestamp: number; value: number }[],
+    cpuUtilizationHistory: [] as { timestamp: number; value: number }[],
     predictedLoad: 0
   };
 
   // Options with defaults
-  private readonly options: Required<WorkerPoolOptions & {
-    // Additional options for enhanced scaling
-    predictiveScaling?: boolean;
-    patternHistorySize?: number;
-    utilizationSmoothingFactor?: number;
-    scaleUpAggressiveness?: number;
-    scaleDownCaution?: number;
-    metricHistorySize?: number;
-    throughputMeasurementInterval?: number;
-    scalingCooldown?: number;
-    highPriorityQueueThreshold?: number;
-  }>;
+  private readonly options: Required<
+    WorkerPoolOptions & {
+      // Additional options for enhanced scaling
+      predictiveScaling?: boolean;
+      patternHistorySize?: number;
+      utilizationSmoothingFactor?: number;
+      scaleUpAggressiveness?: number;
+      scaleDownCaution?: number;
+      metricHistorySize?: number;
+      throughputMeasurementInterval?: number;
+      scalingCooldown?: number;
+      highPriorityQueueThreshold?: number;
+    }
+  >;
 
   // Stats for monitoring and auto-scaling
   private stats = {
@@ -166,57 +171,26 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
     waitTimeTotal: 0, // Total time tasks spent in queue
     lastMinuteTasks: 0,
     lastHourTasks: 0,
-    recentTaskRates: [] as number[], // For tracking recent task rates
+    recentTaskRates: [] as number[] // For tracking recent task rates
   };
 
-  constructor(options: WorkerPoolOptions & {
-    predictiveScaling?: boolean;
-    patternHistorySize?: number;
-    utilizationSmoothingFactor?: number;
-    scaleUpAggressiveness?: number;
-    scaleDownCaution?: number;
-    metricHistorySize?: number;
-    throughputMeasurementInterval?: number;
-    scalingCooldown?: number;
-    highPriorityQueueThreshold?: number;
-  }) {
+  constructor(
+    options: WorkerPoolOptions & {
+      predictiveScaling?: boolean;
+      patternHistorySize?: number;
+      utilizationSmoothingFactor?: number;
+      scaleUpAggressiveness?: number;
+      scaleDownCaution?: number;
+      metricHistorySize?: number;
+      throughputMeasurementInterval?: number;
+      scalingCooldown?: number;
+      highPriorityQueueThreshold?: number;
+    }
+  ) {
     super();
 
-    const cpuCount = cpus().length;
-
-    // Set default options
-    this.options = {
-      minWorkers: options.minWorkers ?? Math.max(1, Math.floor(cpuCount / 2)),
-      maxWorkers: options.maxWorkers ?? cpuCount,
-      startWorkers: options.startWorkers ?? false,
-      maxIdleTime: options.maxIdleTime ?? 60000, // 1 minute
-      checkInterval: options.checkInterval ?? 5000, // 5 seconds
-      scaleUpThreshold: options.scaleUpThreshold ?? 0.7, // 70% utilization
-      scaleDownThreshold: options.scaleDownThreshold ?? 0.3, // 30% utilization
-      taskQueueSize: options.taskQueueSize ?? 1000,
-      workerOptions: options.workerOptions ?? {},
-      workerScript: options.workerScript,
-
-      // New advanced scaling options
-      predictiveScaling: options.predictiveScaling ?? true,
-      patternHistorySize: options.patternHistorySize ?? 20,
-      utilizationSmoothingFactor: options.utilizationSmoothingFactor ?? 0.3,
-      scaleUpAggressiveness: options.scaleUpAggressiveness ?? 1.5,
-      scaleDownCaution: options.scaleDownCaution ?? 0.8,
-      metricHistorySize: options.metricHistorySize ?? 50,
-      throughputMeasurementInterval: options.throughputMeasurementInterval ?? 10000, // 10 seconds
-      scalingCooldown: options.scalingCooldown ?? 5000, // 5 seconds
-      highPriorityQueueThreshold: options.highPriorityQueueThreshold ?? 10
-    };
-
-    // Verify options
-    if (this.options.minWorkers > this.options.maxWorkers) {
-      throw new Error('minWorkers cannot be greater than maxWorkers');
-    }
-
-    if (this.options.scaleUpThreshold <= this.options.scaleDownThreshold) {
-      throw new Error('scaleUpThreshold must be greater than scaleDownThreshold');
-    }
+    // Initialize options and verify them
+    this.initializeOptions(options);
 
     // Initialize worker pool
     if (this.options.startWorkers) {
@@ -228,6 +202,87 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
 
     // Start throughput measurement
     this.startThroughputMeasurement();
+  }
+
+  // Initialize and validate options
+  private initializeOptions(
+    options: WorkerPoolOptions & {
+      predictiveScaling?: boolean;
+      patternHistorySize?: number;
+      utilizationSmoothingFactor?: number;
+      scaleUpAggressiveness?: number;
+      scaleDownCaution?: number;
+      metricHistorySize?: number;
+      throughputMeasurementInterval?: number;
+      scalingCooldown?: number;
+      highPriorityQueueThreshold?: number;
+    }
+  ): void {
+    const cpuCount = cpus().length;
+
+    // Set basic options
+    const basicOptions = {
+      minWorkers: options.minWorkers ?? Math.max(1, Math.floor(cpuCount / 2)),
+      maxWorkers: options.maxWorkers ?? cpuCount,
+      startWorkers: options.startWorkers ?? false,
+      maxIdleTime: options.maxIdleTime ?? 60000, // 1 minute
+      checkInterval: options.checkInterval ?? 5000, // 5 seconds
+      scaleUpThreshold: options.scaleUpThreshold ?? 0.7, // 70% utilization
+      scaleDownThreshold: options.scaleDownThreshold ?? 0.3, // 30% utilization
+      taskQueueSize: options.taskQueueSize ?? 1000,
+      workerOptions: options.workerOptions ?? {},
+      workerScript: options.workerScript
+    };
+
+    // Set advanced scaling options
+    const advancedOptions = this.getAdvancedScalingOptions(options);
+
+    // Combine options
+    Object.assign(this.options, basicOptions, advancedOptions);
+
+    // Verify options
+    if (this.options.minWorkers > this.options.maxWorkers) {
+      throw new Error('minWorkers cannot be greater than maxWorkers');
+    }
+
+    if (this.options.scaleUpThreshold <= this.options.scaleDownThreshold) {
+      throw new Error('scaleUpThreshold must be greater than scaleDownThreshold');
+    }
+  }
+
+  // Get advanced scaling options with defaults
+  private getAdvancedScalingOptions(options: {
+    predictiveScaling?: boolean;
+    patternHistorySize?: number;
+    utilizationSmoothingFactor?: number;
+    scaleUpAggressiveness?: number;
+    scaleDownCaution?: number;
+    metricHistorySize?: number;
+    throughputMeasurementInterval?: number;
+    scalingCooldown?: number;
+    highPriorityQueueThreshold?: number;
+  }): {
+    predictiveScaling: boolean;
+    patternHistorySize: number;
+    utilizationSmoothingFactor: number;
+    scaleUpAggressiveness: number;
+    scaleDownCaution: number;
+    metricHistorySize: number;
+    throughputMeasurementInterval: number;
+    scalingCooldown: number;
+    highPriorityQueueThreshold: number;
+  } {
+    return {
+      predictiveScaling: options.predictiveScaling ?? true,
+      patternHistorySize: options.patternHistorySize ?? 20,
+      utilizationSmoothingFactor: options.utilizationSmoothingFactor ?? 0.3,
+      scaleUpAggressiveness: options.scaleUpAggressiveness ?? 1.5,
+      scaleDownCaution: options.scaleDownCaution ?? 0.8,
+      metricHistorySize: options.metricHistorySize ?? 50,
+      throughputMeasurementInterval: options.throughputMeasurementInterval ?? 10000, // 10 seconds
+      scalingCooldown: options.scalingCooldown ?? 5000, // 5 seconds
+      highPriorityQueueThreshold: options.highPriorityQueueThreshold ?? 10
+    };
   }
 
   // Initialize worker pool
@@ -264,76 +319,79 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
       };
 
       // Setup message handler
-      worker.on('message', (message: {
-        id: string,
-        result?: TResult,
-        error?: Error,
-        metrics?: {
-          cpuUsage: number,
-          memoryUsage: number
+      worker.on(
+        'message',
+        (message: {
+          id: string;
+          result?: TResult;
+          error?: Error;
+          metrics?: {
+            cpuUsage: number;
+            memoryUsage: number;
+          };
+        }) => {
+          const pendingTask = workerStatus.pendingTasks.get(message.id);
+
+          if (pendingTask) {
+            // Clear timeout if exists
+            if (pendingTask.timer) {
+              clearTimeout(pendingTask.timer);
+            }
+
+            // Calculate execution time
+            const endTime = performance.now();
+            const executionTime = endTime - pendingTask.startTime;
+
+            // Update resource usage metrics
+            if (message.metrics) {
+              workerStatus.cpuUsage = message.metrics.cpuUsage;
+              workerStatus.memoryUsage = message.metrics.memoryUsage;
+            }
+
+            // Update worker stats
+            workerStatus.tasksProcessed++;
+            workerStatus.lastTaskTime = Date.now();
+            workerStatus.busy = false;
+            workerStatus.cumulativeTaskTime += executionTime;
+            workerStatus.pendingTasks.delete(message.id);
+
+            // Update pool stats
+            this.stats.tasksCompleted++;
+            this.stats.totalExecutionTime += executionTime;
+
+            // Record task execution for pattern analysis
+            this.recordTaskExecution(pendingTask.task.type, executionTime);
+
+            // Emit task completion event
+            if (message.error) {
+              this.stats.tasksErrors++;
+              this.emit('task:failed', message.id, message.error);
+            } else {
+              this.emit('task:completed', {
+                taskId: message.id,
+                result: message.result,
+                metrics: {
+                  executionTime,
+                  cpuUsage: workerStatus.cpuUsage,
+                  memoryUsage: workerStatus.memoryUsage,
+                  workerId: id,
+                  wasStolen: false
+                }
+              });
+
+              // Record response latency for metrics
+              this.performanceMetrics.responseLatencies.push(executionTime);
+              this.maintainMetricHistory(this.performanceMetrics.responseLatencies);
+            }
+
+            // Process next task from queue if available
+            this.processQueue();
+          }
         }
-      }) => {
-        const pendingTask = workerStatus.pendingTasks.get(message.id);
-
-        if (pendingTask) {
-          // Clear timeout if exists
-          if (pendingTask.timer) {
-            clearTimeout(pendingTask.timer);
-          }
-
-          // Calculate execution time
-          const endTime = performance.now();
-          const executionTime = endTime - pendingTask.startTime;
-
-          // Update resource usage metrics
-          if (message.metrics) {
-            workerStatus.cpuUsage = message.metrics.cpuUsage;
-            workerStatus.memoryUsage = message.metrics.memoryUsage;
-          }
-
-          // Update worker stats
-          workerStatus.tasksProcessed++;
-          workerStatus.lastTaskTime = Date.now();
-          workerStatus.busy = false;
-          workerStatus.cumulativeTaskTime += executionTime;
-          workerStatus.pendingTasks.delete(message.id);
-
-          // Update pool stats
-          this.stats.tasksCompleted++;
-          this.stats.totalExecutionTime += executionTime;
-
-          // Record task execution for pattern analysis
-          this.recordTaskExecution(pendingTask.task.type, executionTime);
-
-          // Emit task completion event
-          if (message.error) {
-            this.stats.tasksErrors++;
-            this.emit('task:failed', message.id, message.error);
-          } else {
-            this.emit('task:completed', {
-              taskId: message.id,
-              result: message.result,
-              metrics: {
-                executionTime,
-                cpuUsage: workerStatus.cpuUsage,
-                memoryUsage: workerStatus.memoryUsage,
-                workerId: id,
-                wasStolen: false
-              }
-            });
-
-            // Record response latency for metrics
-            this.performanceMetrics.responseLatencies.push(executionTime);
-            this.maintainMetricHistory(this.performanceMetrics.responseLatencies);
-          }
-
-          // Process next task from queue if available
-          this.processQueue();
-        }
-      });
+      );
 
       // Handle worker errors
-      worker.on('error', (error) => {
+      worker.on('error', error => {
         this.logger.error(`Worker ${id} error:`, error);
         this.emit('worker:error', error, id);
 
@@ -376,7 +434,7 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
       return this.terminationPromises.get(id)!;
     }
 
-    const workerStatus = this.workers[index];
+    const workerStatus = this.workers[index]!;
 
     // Don't terminate if worker is busy and not forced
     if (workerStatus.busy && !force) {
@@ -387,7 +445,8 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
     const terminationPromise = new Promise<number>((resolve, reject) => {
       try {
         // Terminate worker
-        workerStatus.worker.terminate()
+        workerStatus.worker
+          .terminate()
           .then(() => {
             // Remove worker from pool
             this.workers.splice(index, 1);
@@ -437,9 +496,7 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
     // Sort tasks by priority if present
     if (task.priority) {
       // Find insertion point based on priority (higher priority first)
-      const index = this.taskQueue.findIndex(t =>
-        (t.priority || 0) < (task.priority || 0)
-      );
+      const index = this.taskQueue.findIndex(t => (t.priority || 0) < (task.priority || 0));
 
       if (index >= 0) {
         this.taskQueue.splice(index, 0, task);
@@ -471,7 +528,9 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
     const availableWorkers = this.workers.filter(w => !w.busy);
 
     // Check if we have high priority tasks that need more workers
-    const highPriorityTasks = this.taskQueue.filter(t => (t.priority || 0) > this.options.highPriorityQueueThreshold);
+    const highPriorityTasks = this.taskQueue.filter(
+      t => (t.priority || 0) > this.options.highPriorityQueueThreshold
+    );
 
     // Preemptively scale up if we have high priority tasks
     if (highPriorityTasks.length > 0 && availableWorkers.length < highPriorityTasks.length) {
@@ -498,9 +557,10 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
 
     // Scale up if queue has tasks but no available workers
     if (this.taskQueue.length > 0 && availableWorkers.length === 0) {
-      const reason = this.taskQueue.length > 5 ?
-        `Queue backed up with ${this.taskQueue.length} tasks` :
-        'No available workers';
+      const reason =
+        this.taskQueue.length > 5
+          ? `Queue backed up with ${this.taskQueue.length} tasks`
+          : 'No available workers';
       this.scaleUp(reason);
     }
   }
@@ -593,8 +653,9 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
       // Calculate weighted utilization using smoothing factor
       const instantUtilization = totalWorkers === 0 ? 0 : busyWorkers / totalWorkers;
       const previousUtilization = this.stats.cpuUtilization;
-      const smoothedUtilization = (this.options.utilizationSmoothingFactor * instantUtilization) +
-                                 ((1 - this.options.utilizationSmoothingFactor) * previousUtilization);
+      const smoothedUtilization =
+        this.options.utilizationSmoothingFactor * instantUtilization +
+        (1 - this.options.utilizationSmoothingFactor) * previousUtilization;
 
       // Store CPU utilization for stats and history
       this.stats.cpuUtilization = smoothedUtilization;
@@ -617,53 +678,70 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
       const _recentTaskRate = this.calculateRecentTaskRate();
 
       // Scale based on both current utilization and predicted load
-      const effectiveUtilization = this.options.predictiveScaling ?
-        Math.max(smoothedUtilization, this.performanceMetrics.predictedLoad) :
-        smoothedUtilization;
+      const effectiveUtilization = this.options.predictiveScaling
+        ? Math.max(smoothedUtilization, this.performanceMetrics.predictedLoad)
+        : smoothedUtilization;
 
       // Aggressive scale up if we're above threshold
       if (effectiveUtilization >= this.options.scaleUpThreshold) {
         // Calculate how many workers to add based on aggressiveness factor
-        const workersToAdd = Math.max(1, Math.ceil(
-          (effectiveUtilization - this.options.scaleUpThreshold) *
-          totalWorkers * this.options.scaleUpAggressiveness
-        ));
+        const workersToAdd = Math.max(
+          1,
+          Math.ceil(
+            (effectiveUtilization - this.options.scaleUpThreshold) *
+              totalWorkers *
+              this.options.scaleUpAggressiveness
+          )
+        );
 
         this.scaleUpBy(workersToAdd, `High utilization: ${effectiveUtilization.toFixed(2)}`);
       }
       // Cautious scale down if we're below threshold
       else if (effectiveUtilization <= this.options.scaleDownThreshold) {
-        // Check for idle workers
-        const now = Date.now();
-        const idleThreshold = now - this.options.maxIdleTime;
-
-        // Find idle workers to terminate
-        const idleWorkers = this.workers
-          .filter(w => !w.busy && w.lastTaskTime < idleThreshold)
-          .sort((a, b) => a.tasksProcessed - b.tasksProcessed); // Terminate least used workers first
-
-        // Scale down if we have idle workers and are above minimum
-        // Apply caution factor to prevent aggressive scaling down
-        const workersToRemove = Math.min(
-          idleWorkers.length,
-          Math.floor((totalWorkers - this.options.minWorkers) * this.options.scaleDownCaution)
-        );
-
-        if (workersToRemove > 0) {
-          for (let i = 0; i < workersToRemove; i++) {
-            if (i < idleWorkers.length) {
-              await this.terminateWorker(idleWorkers[i].id);
-            }
-          }
-
-          // Emit scaling event
-          this.emit('pool:scaled-down', this.workers.length,
-            `Low utilization: ${effectiveUtilization.toFixed(2)}, removed ${workersToRemove} workers`);
-        }
+        const _workersRemoved = await this.scaleDownIfNeeded(totalWorkers, effectiveUtilization);
       }
     } finally {
       this.scalingLock = false;
     }
+  }
+
+  // Scale down worker pool if there are idle workers and we're above minimum
+  private async scaleDownIfNeeded(
+    totalWorkers: number,
+    effectiveUtilization: number
+  ): Promise<number> {
+    // Check for idle workers
+    const now = Date.now();
+    const idleThreshold = now - this.options.maxIdleTime;
+
+    // Find idle workers to terminate
+    const idleWorkers = this.workers
+      .filter(w => !w.busy && w.lastTaskTime < idleThreshold)
+      .sort((a, b) => a.tasksProcessed - b.tasksProcessed); // Terminate least used workers first
+
+    // Scale down if we have idle workers and are above minimum
+    // Apply caution factor to prevent aggressive scaling down
+    const workersToRemove = Math.min(
+      idleWorkers.length,
+      Math.floor((totalWorkers - this.options.minWorkers) * this.options.scaleDownCaution)
+    );
+
+    if (workersToRemove > 0) {
+      for (let i = 0; i < workersToRemove; i++) {
+        if (i < idleWorkers.length) {
+          await this.terminateWorker(idleWorkers[i]!.id);
+        }
+      }
+
+      // Emit scaling event
+      this.emit(
+        'pool:scaled-down',
+        this.workers.length,
+        `Low utilization: ${effectiveUtilization.toFixed(2)}, removed ${workersToRemove} workers`
+      );
+    }
+
+    return workersToRemove;
   }
 
   // Calculate recent task rate (tasks per second)
@@ -692,9 +770,10 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
     // Find similar patterns from history (same hour, similar day of week)
     const similarPatterns = this.requestPatterns.filter(pattern => {
       const patternDate = new Date(pattern.timestamp);
-      return patternDate.getHours() === hourOfDay &&
-             (patternDate.getDay() === dayOfWeek ||
-              Math.abs(patternDate.getDay() - dayOfWeek) === 1); // Same day or adjacent day
+      return (
+        patternDate.getHours() === hourOfDay &&
+        (patternDate.getDay() === dayOfWeek || Math.abs(patternDate.getDay() - dayOfWeek) === 1)
+      ); // Same day or adjacent day
     });
 
     if (similarPatterns.length > 0) {
@@ -709,7 +788,8 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
       const trend = recentTaskRate > avgTaskRate ? 1.1 : 0.9;
 
       // Predict load based on historical patterns and recent trend
-      this.performanceMetrics.predictedLoad = Math.min(1.0,
+      this.performanceMetrics.predictedLoad = Math.min(
+        1.0,
         (avgTaskRate / this.workers.length) * trend
       );
     }
@@ -747,8 +827,11 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
     this.lastScalingAction = now;
 
     // Emit scaling event
-    this.emit('pool:scaled-up', this.workers.length,
-      `${reason} - Added ${workersToAdd} workers, new size: ${this.workers.length}`);
+    this.emit(
+      'pool:scaled-up',
+      this.workers.length,
+      `${reason} - Added ${workersToAdd} workers, new size: ${this.workers.length}`
+    );
   }
 
   // Start measuring task throughput
@@ -774,7 +857,6 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
       // Reset counter for next interval
       this.stats.tasksCompleted = 0;
       this.performanceMetrics.lastThroughputTime = now;
-
     }, this.options.throughputMeasurementInterval);
   }
 
@@ -808,27 +890,27 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
 
   // Get enhanced pool status with metrics
   getStatus(): {
-    workers: number,
-    busy: number,
-    idle: number,
-    queueSize: number,
+    workers: number;
+    busy: number;
+    idle: number;
+    queueSize: number;
     stats: {
-      tasksProcessed: number,
-      tasksSucceeded: number,
-      tasksFailed: number,
-      avgExecutionTime: number,
-      avgWaitTime: number,
-      throughput: number,
-      predictedLoad: number,
-      cpuUtilization: number
-    },
+      tasksProcessed: number;
+      tasksSucceeded: number;
+      tasksFailed: number;
+      avgExecutionTime: number;
+      avgWaitTime: number;
+      throughput: number;
+      predictedLoad: number;
+      cpuUtilization: number;
+    };
     metrics: {
-      workerUtilization: number[],
-      queueWaitTimes: number[],
-      responseLatencies: number[],
-      taskThroughputHistory: {timestamp: number, value: number}[],
-      cpuUtilizationHistory: {timestamp: number, value: number}[]
-    }
+      workerUtilization: number[];
+      queueWaitTimes: number[];
+      responseLatencies: number[];
+      taskThroughputHistory: { timestamp: number; value: number }[];
+      cpuUtilizationHistory: { timestamp: number; value: number }[];
+    };
   } {
     const totalWorkers = this.workers.length;
     const busyWorkers = this.workers.filter(w => w.busy).length;
@@ -843,10 +925,12 @@ export class AdaptiveWorkerPool<TData, TResult> extends EventEmitter {
         tasksProcessed: totalTasksCompleted,
         tasksSucceeded: totalTasksCompleted - this.stats.tasksErrors,
         tasksFailed: this.stats.tasksErrors,
-        avgExecutionTime: this.stats.tasksCompleted > 0 ?
-          this.stats.totalExecutionTime / this.stats.tasksCompleted : 0,
-        avgWaitTime: this.stats.tasksCompleted > 0 ?
-          this.stats.waitTimeTotal / this.stats.tasksCompleted : 0,
+        avgExecutionTime:
+          this.stats.tasksCompleted > 0
+            ? this.stats.totalExecutionTime / this.stats.tasksCompleted
+            : 0,
+        avgWaitTime:
+          this.stats.tasksCompleted > 0 ? this.stats.waitTimeTotal / this.stats.tasksCompleted : 0,
         throughput: this.performanceMetrics.taskThroughput,
         predictedLoad: this.performanceMetrics.predictedLoad,
         cpuUtilization: this.stats.cpuUtilization

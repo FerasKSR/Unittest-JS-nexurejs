@@ -56,7 +56,7 @@ interface ReadyMessage {
 }
 
 // Initialize worker
-const workerId = (workerData as WorkerData)?.id || 0;
+const workerId = (workerData as WorkerData).id || 0;
 
 // Send ready message to parent
 parentPort!.postMessage({
@@ -66,60 +66,71 @@ parentPort!.postMessage({
 
 // Handle messages from parent
 parentPort!.on('message', async (message: WorkerMessage) => {
-  if (!message || typeof message !== 'object') {
+  if (typeof message !== 'object') {
     return sendError('Invalid message format');
   }
 
-  if (message.type === 'task') {
-    const { taskId, data } = message;
+  switch (message.type) {
+    case 'task': {
+      const { taskId, data } = message;
 
-    try {
-      // Start measuring performance
-      const startTime = performance.now();
-      const startCpuUsage = process.cpuUsage();
-      const startMemUsage = process.memoryUsage();
+      try {
+        // Start measuring performance
+        const startTime = performance.now();
+        const startCpuUsage = process.cpuUsage();
+        const startMemUsage = process.memoryUsage();
 
-      // Execute the task based on its type
-      let result;
-      switch (data.type) {
-        case 'fibonacci':
-          result = fibonacci(data.data as number);
-          break;
-        case 'sleep':
-          result = await sleep(data.data as number);
-          break;
-        case 'mixed':
-          const mixedData = data.data as number[];
-          result = await mixedWorkload(mixedData[0], mixedData[1]);
-          break;
-        default:
-          throw new Error(`Unknown task type: ${(data as any).type}`);
-      }
-
-      // Calculate metrics
-      const endTime = performance.now();
-      const cpuUsage = process.cpuUsage(startCpuUsage);
-      const memUsage = process.memoryUsage();
-
-      // Send result back to parent
-      parentPort!.postMessage({
-        type: 'result',
-        taskId,
-        result,
-        metrics: {
-          executionTime: endTime - startTime,
-          cpuUsage: (cpuUsage.user + cpuUsage.system) / 1000,
-          memoryUsage: memUsage.heapUsed - startMemUsage.heapUsed,
-          workerId,
-          wasStolen: false
+        // Execute the task based on its type
+        let result;
+        switch (data.type) {
+          case 'fibonacci':
+            result = fibonacci(data.data as number);
+            break;
+          case 'sleep':
+            result = await sleep(data.data as number);
+            break;
+          case 'mixed':
+            const mixedData = data.data as number[];
+            if (
+              mixedData.length >= 2 &&
+              typeof mixedData[0] === 'number' &&
+              typeof mixedData[1] === 'number'
+            ) {
+              result = await mixedWorkload(mixedData[0], mixedData[1]);
+            } else {
+              throw new Error('Invalid mixed workload data');
+            }
+            break;
+          default:
+            throw new Error(`Unknown task type: ${(data as any).type}`);
         }
-      } as ResultMessage);
-    } catch (error) {
-      sendError((error as Error).message, taskId);
+
+        // Calculate metrics
+        const endTime = performance.now();
+        const cpuUsage = process.cpuUsage(startCpuUsage);
+        const memUsage = process.memoryUsage();
+
+        // Send result back to parent
+        parentPort!.postMessage({
+          type: 'result',
+          taskId,
+          result,
+          metrics: {
+            executionTime: endTime - startTime,
+            cpuUsage: (cpuUsage.user + cpuUsage.system) / 1000,
+            memoryUsage: memUsage.heapUsed - startMemUsage.heapUsed,
+            workerId,
+            wasStolen: false
+          }
+        } as ResultMessage);
+      } catch (error) {
+        sendError((error as Error).message, taskId);
+      }
+      break;
     }
-  } else if (message.type === 'terminate') {
-    // Clean up and exit
-    process.exit(0);
+    case 'terminate':
+      // Clean up and exit
+      process.exit(0);
   }
 });
 
