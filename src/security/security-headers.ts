@@ -3,8 +3,8 @@
  */
 
 import { IncomingMessage, ServerResponse } from 'node:http';
-import { MiddlewareHandler } from '../middleware/middleware';
 import { randomBytes } from 'node:crypto';
+import { MiddlewareHandler } from '../types/index.js';
 
 /**
  * Content Security Policy directive types
@@ -500,7 +500,7 @@ export function createCSPReportingMiddleware(
 ): MiddlewareHandler {
   return async (req: IncomingMessage, res: ServerResponse, next: () => Promise<void>) => {
     // Only handle POST requests to the CSP reporting endpoint
-    if (req.method !== 'POST' || !req.url?.endsWith('/api/csp-report')) {
+    if (req.method !== 'POST' || !req.url || !req.url.endsWith('/api/csp-report')) {
       return next();
     }
 
@@ -514,7 +514,7 @@ export function createCSPReportingMiddleware(
       const report = JSON.parse(body);
 
       // Log the report
-      console.warn('CSP Violation:', report);
+      Logger.warn('CSP Violation:', report);
 
       // Call custom handler if provided
       if (handler) {
@@ -525,7 +525,7 @@ export function createCSPReportingMiddleware(
         res.end();
       }
     } catch (error) {
-      console.error('Error processing CSP report:', error);
+      Logger.error('Error processing CSP report:', error);
       res.statusCode = 400;
       res.end('Bad Request');
     }

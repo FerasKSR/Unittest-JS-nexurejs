@@ -4,8 +4,7 @@
 
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { createHmac, timingSafeEqual, randomBytes } from 'node:crypto';
-import { MiddlewareHandler } from '../middleware/middleware';
-import { HttpException } from '../http/http-exception';
+import { MiddlewareHandler, HttpException } from '../types/index.js';
 
 /**
  * JWT options
@@ -111,7 +110,11 @@ interface JwtHeader {
  * @param secret The secret key
  * @param options JWT options
  */
-export function signJwt(payload: JwtPayload, secret: string, options: JwtOptions = { secret }): string {
+export function signJwt(
+  payload: JwtPayload,
+  secret: string,
+  options: JwtOptions = { secret }
+): string {
   const algorithm = options.algorithm || 'HS256';
   const expiresIn = options.expiresIn || 3600;
 
@@ -160,7 +163,11 @@ export function signJwt(payload: JwtPayload, secret: string, options: JwtOptions
  * @param secret The secret key
  * @param options JWT options
  */
-export function verifyJwt(token: string, secret: string, options: JwtOptions = { secret }): JwtPayload {
+export function verifyJwt(
+  token: string,
+  secret: string,
+  options: JwtOptions = { secret }
+): JwtPayload {
   // Split token into parts
   const parts = token.split('.');
 
@@ -240,7 +247,7 @@ export function verifyJwt(token: string, secret: string, options: JwtOptions = {
 function defaultExtractToken(req: IncomingMessage): string | null {
   const authHeader = req.headers.authorization;
 
-  if (!authHeader?.startsWith('Bearer ')) {
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
     return null;
   }
 

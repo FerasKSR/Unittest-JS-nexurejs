@@ -9,8 +9,7 @@
  */
 
 import { IncomingMessage, ServerResponse } from 'node:http';
-import { MiddlewareHandler } from '../middleware/middleware';
-import { HttpException } from '../http/http-exception';
+import { HttpException, MiddlewareHandler } from '../types/index.js';
 
 /**
  * Rate limiter options
@@ -665,7 +664,7 @@ export function createRateLimiterMiddleware(
       await next();
     } catch (error) {
       // If the rate limiter fails, allow the request
-      console.error('Rate limiter error:', error);
+      Logger.error('Rate limiter error:', error);
       await next();
     }
   };

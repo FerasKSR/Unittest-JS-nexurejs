@@ -4,8 +4,7 @@
 
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { randomBytes, createHmac } from 'node:crypto';
-import { MiddlewareHandler } from '../middleware/middleware';
-import { HttpException } from '../http/http-exception';
+import { MiddlewareHandler, HttpException } from '../types/index.js';
 
 /**
  * CSRF options
@@ -139,7 +138,11 @@ export class CsrfTokenGenerator {
  * @param value Cookie value
  * @param options Cookie options
  */
-function buildCookieString(name: string, value: string, options: CsrfOptions['cookie'] = {}): string {
+function buildCookieString(
+  name: string,
+  value: string,
+  options: CsrfOptions['cookie'] = {}
+): string {
   const parts: string[] = [`${name}=${value}`];
 
   // Add path
@@ -206,8 +209,8 @@ export function createCsrfMiddleware(options: CsrfOptions = {}): MiddlewareHandl
     }
 
     // Get token from request
-    const requestToken = (req.headers[headerName.toLowerCase()] as string)
-      || ((req as any).body?.[fieldName]);
+    const requestToken =
+      (req.headers[headerName.toLowerCase()] as string) || (req as any).body?.[fieldName];
 
     // Verify token
     if (!requestToken || !tokenGenerator.verifyToken(requestToken, sessionId)) {
