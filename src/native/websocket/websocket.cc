@@ -151,6 +151,8 @@ public:
     void SetAuthenticated(const Napi::CallbackInfo& info);
     Napi::Value GetConnectionStats(const Napi::CallbackInfo& info);
     void DisconnectInactiveConnections(const Napi::CallbackInfo& info);
+    void Cleanup(const Napi::CallbackInfo& info);
+    Napi::Value On(const Napi::CallbackInfo& info);
 
     // Internal methods
     void OnConnection(uv_stream_t* server, int status);
@@ -923,17 +925,28 @@ Napi::Object WebSocketServer::Init(Napi::Env env, Napi::Object exports) {
         InstanceMethod("setMaxConnections", &WebSocketServer::SetMaxConnections),
         InstanceMethod("setAuthenticated", &WebSocketServer::SetAuthenticated),
         InstanceMethod("getConnectionStats", &WebSocketServer::GetConnectionStats),
-        InstanceMethod("disconnectInactiveConnections", &WebSocketServer::DisconnectInactiveConnections)
+        InstanceMethod("disconnectInactiveConnections", &WebSocketServer::DisconnectInactiveConnections),
+        InstanceMethod("cleanup", &WebSocketServer::Cleanup),
+        InstanceMethod("on", &WebSocketServer::On)
     });
 
+    // Create constructor reference safely
     Napi::FunctionReference* constructor = new Napi::FunctionReference();
-    *constructor = Napi::Persistent(func);
-    env.SetInstanceData(constructor);
 
-    // Add to cleanup list
-    nexurejs::AddCleanupReference(constructor);
+    // Make sure the reference is valid before adding it to cleanup
+    if (constructor) {
+        *constructor = Napi::Persistent(func);
 
-    exports.Set("WebSocketServer", func);
+        // Store constructor reference for future access
+        env.SetInstanceData(constructor);
+
+        // Add to cleanup list with proper null check
+        nexurejs::AddCleanupReference(constructor);
+
+        // Set export
+        exports.Set("WebSocketServer", func);
+    }
+
     return exports;
 }
 
@@ -1402,25 +1415,61 @@ WebSocketServer::WebSocketServer(const Napi::CallbackInfo& info)
 
 // WebSocketServer destructor
 WebSocketServer::~WebSocketServer() {
-    if (isRunning_) {
-        // Close all connections
-        std::vector<uint64_t> connectionIds;
-        {
+    // Use a separate destructor block to avoid potential issues during shutdown
+    try {
+        if (isRunning_) {
+            // Acquire a lock
             std::lock_guard<std::mutex> lock(mutex_);
+
+            // Stop the server - mark as not running first to prevent new connections
+            isRunning_ = false;
+
+            // Close all connections safely
+            std::vector<uint64_t> connectionIds;
+            connectionIds.reserve(connections_.size());
+
             for (const auto& pair : connections_) {
                 connectionIds.push_back(pair.first);
             }
+
+            // Release the lock to avoid deadlocks when closing connections
+            mutex_.unlock();
+
+            // Close connections one by one
+            for (uint64_t id : connectionIds) {
+                try {
+                    CloseConnectionById(id, 1001, "Server shutting down");
+                } catch (...) {
+                    // Ignore errors during cleanup
+                }
+            }
+
+            // Re-acquire the lock for final cleanup
+            std::lock_guard<std::mutex> finalLock(mutex_);
+
+            // Close the server handle if it's still active
+            if (uv_is_active(reinterpret_cast<uv_handle_t*>(&server_))) {
+                uv_close(reinterpret_cast<uv_handle_t*>(&server_), nullptr);
+            }
+
+            // Clear remaining connections and rooms
+            connections_.clear();
+            rooms_.clear();
         }
-
-        for (uint64_t id : connectionIds) {
-            CloseConnectionById(id, 1001, "Server shutting down");
-        }
-
-        // Close server
-        uv_close(reinterpret_cast<uv_handle_t*>(&server_), nullptr);
-
-        isRunning_ = false;
+    } catch (...) {
+        // Ensure we don't throw from the destructor
     }
+
+    // Release callback references explicitly
+    onConnectionCallback_.Reset();
+    onMessageCallback_.Reset();
+    onBinaryMessageCallback_.Reset();
+    onDisconnectCallback_.Reset();
+    onErrorCallback_.Reset();
+    onRoomJoinCallback_.Reset();
+    onRoomLeaveCallback_.Reset();
+    onPingCallback_.Reset();
+    onPongCallback_.Reset();
 }
 
 // Implementation of OnConnection method
@@ -1657,4 +1706,136 @@ std::vector<WebSocketConnection*> WebSocketRoom::GetAuthenticatedConnections() c
 // Implementation of the ping method
 void WebSocketConnection::Ping() {
     SendFrame(WS_PING, nullptr, 0, false);
+}
+
+// Implementation of WebSocketConnection destructor
+WebSocketConnection::~WebSocketConnection() {
+    // Clean up userData references
+    try {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        // Reset all Napi references
+        for (auto& item : userData_) {
+            try {
+                if (!item.second.IsEmpty()) {
+                    item.second.Reset();
+                }
+            } catch (...) {
+                // Ignore errors during cleanup
+            }
+        }
+
+        userData_.clear();
+
+        // Clean up client if it still exists
+        if (client_ && client_->data) {
+            client_->data = nullptr;
+
+            // If handle is still active, close it
+            if (!uv_is_closing(reinterpret_cast<uv_handle_t*>(client_))) {
+                uv_close(reinterpret_cast<uv_handle_t*>(client_), OnClose);
+            }
+
+            client_ = nullptr;
+        }
+
+        // Clear the rooms list to avoid any lingering references
+        rooms_.clear();
+    } catch (...) {
+        // Ensure we don't throw from destructor
+    }
+}
+
+// Implementation of WebSocketServer::Cleanup
+void WebSocketServer::Cleanup(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    try {
+        // Stop the server if it's running
+        if (isRunning_) {
+            // Acquire a lock
+            std::lock_guard<std::mutex> lock(mutex_);
+
+            // Stop the server - mark as not running first to prevent new connections
+            isRunning_ = false;
+
+            // Close all connections safely
+            std::vector<uint64_t> connectionIds;
+            connectionIds.reserve(connections_.size());
+
+            for (const auto& pair : connections_) {
+                connectionIds.push_back(pair.first);
+            }
+
+            // Release the lock to avoid deadlocks when closing connections
+            mutex_.unlock();
+
+            // Close connections one by one
+            for (uint64_t id : connectionIds) {
+                try {
+                    CloseConnectionById(id, 1001, "Server cleanup");
+                } catch (...) {
+                    // Ignore errors during cleanup
+                }
+            }
+
+            // Re-acquire the lock for final cleanup
+            std::lock_guard<std::mutex> finalLock(mutex_);
+
+            // Close the server handle if it's still active
+            if (uv_is_active(reinterpret_cast<uv_handle_t*>(&server_))) {
+                uv_close(reinterpret_cast<uv_handle_t*>(&server_), nullptr);
+            }
+
+            // Clear remaining connections and rooms
+            connections_.clear();
+            rooms_.clear();
+        }
+    } catch (const std::exception& e) {
+        Napi::Error::New(env, std::string("Error during WebSocketServer cleanup: ") + e.what())
+            .ThrowAsJavaScriptException();
+    } catch (...) {
+        Napi::Error::New(env, "Unknown error during WebSocketServer cleanup")
+            .ThrowAsJavaScriptException();
+    }
+}
+
+// Implementation of WebSocketServer::On
+Napi::Value WebSocketServer::On(const Napi::CallbackInfo& info) {
+    Napi::Env env = info.Env();
+
+    if (info.Length() < 2 || !info[0].IsString() || !info[1].IsFunction()) {
+        Napi::TypeError::New(env, "Expected event name and callback function").ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    std::string eventName = info[0].As<Napi::String>().Utf8Value();
+    Napi::Function callback = info[1].As<Napi::Function>();
+
+    // Store the callback based on the event name
+    if (eventName == "connection") {
+        onConnectionCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "message") {
+        onMessageCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "binaryMessage") {
+        onBinaryMessageCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "disconnect") {
+        onDisconnectCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "error") {
+        onErrorCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "roomJoin") {
+        onRoomJoinCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "roomLeave") {
+        onRoomLeaveCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "ping") {
+        onPingCallback_ = Napi::Persistent(callback);
+    } else if (eventName == "pong") {
+        onPongCallback_ = Napi::Persistent(callback);
+    } else {
+        Napi::TypeError::New(env, "Unknown event name: " + eventName).ThrowAsJavaScriptException();
+        return env.Undefined();
+    }
+
+    // Return this for chaining
+    return info.This();
 }
