@@ -4,7 +4,6 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Logger } from './logger';
 
 /**
  * Environment variable options
