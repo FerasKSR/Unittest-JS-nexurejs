@@ -4,12 +4,22 @@
  */
 
 import { Buffer } from 'node:buffer';
-import type { HttpParseResult as NativeHttpParseResult } from '../types/native';
+import { HTTP_CONSTANTS, HTTP_LIMITS } from './constants.js';
+import { ZeroCopyHttpParser, parseHttpRequest, ZeroCopyResult } from '../types/index.js';
 
 /**
  * HTTP parse result
  */
-export type HttpParseResult = NativeHttpParseResult;
+export interface HttpParseResult {
+  method: string;
+  url: string;
+  versionMajor: number;
+  versionMinor: number;
+  headers: Record<string, string>;
+  body: Buffer | null;
+  complete: boolean;
+  upgrade: boolean;
+}
 
 /**
  * Base HTTP parser interface
@@ -21,6 +31,10 @@ export interface IHttpParser {
   reset(): void;
 }
 
+/**
+ * JavaScript implementation of HTTP parser
+ * This serves as a fallback when the native C++ implementation is not available
+ */
 export class JsHttpParser implements IHttpParser {
   /**
    * Parse an HTTP request
@@ -29,13 +43,68 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parse(buffer: Buffer): HttpParseResult {
-    // Implementation of parse method
-    // This is a basic implementation that should be enhanced
+    // Try zero-copy parser first
+    try {
+      const zeroCopyResult = parseHttpRequest(buffer);
+      return this.convertZeroCopyResult(zeroCopyResult);
+    } catch (_error) {
+      // Fall back to basic implementation if zero-copy fails
+      return this.parseBasic(buffer);
+    }
+  }
+
+  /**
+   * Convert zero-copy result to standard HttpParseResult
+   */
+  private convertZeroCopyResult(result: ZeroCopyResult): HttpParseResult {
+    // Extract version from httpVersion string (HTTP/1.1)
+    let versionMajor = 1;
+    let versionMinor = 1;
+
+    if (result.httpVersion) {
+      const versionMatch = result.httpVersion.match(/HTTP\/(\d+)\.(\d+)/i);
+      if (versionMatch && versionMatch[1] && versionMatch[2]) {
+        versionMajor = parseInt(versionMatch[1], 10);
+        versionMinor = parseInt(versionMatch[2], 10);
+      }
+    }
+
+    return {
+      method: result.method,
+      url: result.url,
+      versionMajor,
+      versionMinor,
+      headers: this.convertHeaders(result.headers),
+      body: result.body,
+      complete: result.bodyComplete ?? true,
+      upgrade: result.headers['upgrade'] === 'websocket'
+    };
+  }
+
+  /**
+   * Convert HeadersInit to Record<string, string>
+   */
+  private convertHeaders(
+    headers: Record<string, string | string[] | undefined>
+  ): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      if (value !== undefined) {
+        result[key] = Array.isArray(value) ? value[0]! : value;
+      }
+    }
+    return result;
+  }
+
+  /**
+   * Basic implementation for parsing HTTP request
+   */
+  private parseBasic(buffer: Buffer): HttpParseResult {
     const str = buffer.toString('utf8');
-    const lines = str.split('\r\n');
+    const lines = str.split(HTTP_CONSTANTS.CRLF.toString());
 
     // Parse request line
-    const requestLine = lines[0]!.split(' ');
+    const requestLine = lines[0]!.split(HTTP_CONSTANTS.SPACE.toString());
     if (requestLine.length !== 3) {
       throw new Error('Invalid request line');
     }
@@ -51,21 +120,21 @@ export class JsHttpParser implements IHttpParser {
     let i = 1;
     while (i < lines.length && lines[i] !== '') {
       const line = lines[i];
-      const colonIndex = line!.indexOf(':');
+      const colonIndex = line!.indexOf(HTTP_CONSTANTS.COLON_SPACE.toString());
       if (colonIndex === -1) {
         throw new Error('Invalid header line');
       }
       const key = line!.slice(0, colonIndex).trim().toLowerCase();
-      const value = line!.slice(colonIndex + 1).trim();
+      const value = line!.slice(colonIndex + 2).trim();
       headers[key] = value;
       i++;
     }
 
     // Parse body
-    let _body: Buffer | null = null;
+    let body: Buffer | null = null;
     if (i < lines.length - 1) {
-      const bodyStr = lines.slice(i + 1).join('\r\n');
-      _body = Buffer.from(bodyStr);
+      const bodyStr = lines.slice(i + 1).join(HTTP_CONSTANTS.CRLF.toString());
+      body = Buffer.from(bodyStr);
     }
 
     return {
@@ -74,7 +143,7 @@ export class JsHttpParser implements IHttpParser {
       versionMajor: parseInt(versionMatch![1]!, 10),
       versionMinor: parseInt(versionMatch![2]!, 10),
       headers,
-      body: null,
+      body,
       complete: true,
       upgrade: headers['upgrade'] === 'websocket'
     };
@@ -87,22 +156,13 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parseHeaders(buffer: Buffer): Record<string, string> {
-    const str = buffer.toString('utf8');
-    const lines = str.split('\r\n');
-    const headers: Record<string, string> = {};
-
-    for (let i = 1; i < lines.length && lines[i] !== ''; i++) {
-      const line = lines[i];
-      const colonIndex = line!.indexOf(':');
-      if (colonIndex === -1) {
-        throw new Error('Invalid header line');
-      }
-      const key = line!.slice(0, colonIndex).trim().toLowerCase();
-      const value = line!.slice(colonIndex + 1).trim();
-      headers[key] = value;
+    const parser = ZeroCopyHttpParser.getParser();
+    try {
+      const result = parser.parse(buffer);
+      return this.convertHeaders(result.headers);
+    } finally {
+      ZeroCopyHttpParser.releaseParser(parser);
     }
-
-    return headers;
   }
 
   /**
@@ -113,17 +173,18 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parseBody(buffer: Buffer, contentLength: number): Buffer {
-    if (buffer.length < contentLength) {
-      throw new Error('Buffer too small for content length');
+    if (contentLength > HTTP_LIMITS.MAX_HEADER_SIZE) {
+      throw new Error('Content length exceeds maximum allowed size');
     }
+
     return buffer.slice(0, contentLength);
   }
 
   /**
-   * Reset the parser state
+   * Reset parser state
    */
   reset(): void {
-    // No state to reset in JS implementation
+    // No state to reset in this implementation
   }
 }
 
@@ -158,7 +219,7 @@ export class HttpStreamParser {
     try {
       // If we haven't parsed headers yet, check if we have a complete header section
       if (!this.headersParsed) {
-        const headerEnd = this.buffer.indexOf('\r\n\r\n');
+        const headerEnd = this.buffer.indexOf(HTTP_CONSTANTS.DOUBLE_CRLF);
         if (headerEnd === -1) {
           // Headers not complete yet
           return null;
@@ -191,28 +252,22 @@ export class HttpStreamParser {
         }
       }
 
-      // If we have headers and enough data for the body, we're done
+      // Check if we have the complete body
       if (this.buffer.length >= this.contentLength) {
-        // Create the final result with the body
-        const finalResult: HttpParseResult = {
-          ...this.result!,
-          body: this.buffer.slice(0, this.contentLength),
-          complete: true
-        };
+        // Parse the body
+        const body = this.parser.parseBody(this.buffer, this.contentLength);
+        if (this.result) {
+          this.result.body = body;
+          this.result.complete = true;
+        }
 
-        // Remove the processed body from the buffer
-        this.buffer = this.buffer.slice(this.contentLength);
-
-        // Reset for the next request
+        const finalResult = this.result;
         this.reset();
-
         return finalResult;
       }
 
-      // Need more data
       return null;
     } catch (error) {
-      // Reset state on error
       this.reset();
       throw error;
     }
