@@ -1,5 +1,3 @@
-import { getInjectionMetadata } from '../decorators/injection-decorators';
-
 /**
  * Dependency injection scope
  */
