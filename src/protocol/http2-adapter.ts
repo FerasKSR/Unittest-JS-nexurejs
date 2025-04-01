@@ -460,7 +460,7 @@ export function createHttp2Client(options: {
 
   // Handle connection errors
   client.on('error', err => {
-    console.error('HTTP/2 client error:', err);
+    Logger.error('HTTP/2 client error:', err);
   });
 
   return client;
