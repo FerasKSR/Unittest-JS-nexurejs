@@ -5,7 +5,6 @@
 import cluster, { Worker } from 'node:cluster';
 import { cpus } from 'node:os';
 import { EventEmitter } from 'node:events';
-import { Logger } from '../utils/logger';
 
 /**
  * Cluster manager options
@@ -106,17 +105,17 @@ export class ClusterManager extends EventEmitter {
     }
 
     // Set up event listeners
-    cluster.on('fork', (worker) => {
+    cluster.on('fork', worker => {
       this.logger.info(`Worker ${worker.id} forked`);
       this.emit('fork', worker);
     });
 
-    cluster.on('online', (worker) => {
+    cluster.on('online', worker => {
       this.logger.info(`Worker ${worker.id} is online`);
       this.emit('online', worker);
     });
 
-    cluster.on('disconnect', (worker) => {
+    cluster.on('disconnect', worker => {
       this.logger.info(`Worker ${worker.id} disconnected`);
       this.emit('disconnect', worker);
     });
@@ -191,7 +190,7 @@ export class ClusterManager extends EventEmitter {
     }
 
     // Wait for all workers to exit
-    return new Promise<void>((resolve) => {
+    return new Promise<void>(resolve => {
       const checkInterval = setInterval(() => {
         const workerCount = this.getWorkerCount();
 
