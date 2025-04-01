@@ -4,7 +4,6 @@
 
 import { EventEmitter } from 'node:events';
 import { performance, PerformanceObserver } from 'node:perf_hooks';
-import { Logger } from './logger';
 
 /**
  * Performance metric

@@ -8,7 +8,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { performance, PerformanceObserver } from 'node:perf_hooks';
-import { v8Optimizer } from './v8-optimizer';
 
 /**
  * Benchmark options
@@ -471,3 +470,18 @@ export function trace(
 
   return descriptor;
 }
+
+// V8 optimizer utility
+const v8Optimizer = {
+  /**
+   * Optimize a function for V8 engine
+   * @param fn Function to optimize
+   * @returns Optimized function
+   */
+  optimizeFunction<T extends Function>(fn: T): T {
+    // This is a stub implementation
+    // In a real implementation, we would use V8 intrinsics or flags
+    // For now, we just return the original function
+    return fn;
+  }
+};

@@ -8,7 +8,7 @@
 import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { Logger } from './logger';
+import { Logger } from './logger.js';
 
 const logger = new Logger();
 

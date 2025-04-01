@@ -5,16 +5,19 @@
  * using buffer pooling to minimize allocations.
  */
 
-import { Writable } from 'node:stream';
+import { Writable, Transform } from 'node:stream';
 import { createWriteStream, unlinkSync } from 'node:fs';
 import { mkdir } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import os from 'node:os';
 import { randomBytes } from 'node:crypto';
 import { IncomingMessage } from 'node:http';
-import { globalPool } from './buffer-pool';
-import { createOptimizedTransform, OptimizedTransform } from './stream-optimizer';
-import { extractBoundary } from './http-utils';
+import { Buffer } from 'node:buffer';
+import { globalPool } from '../utils/buffer-pool.js';
+import { extractBoundary } from '../http/http-utils.js';
+import { createOptimizedTransform } from '../utils/stream-optimizer.js';
+import { ensureDirectory, getTempFilePath, fileExists, deleteFile } from '../utils/file-utils.js';
+import type { BodyParserOptions } from '../http/body-parser.js';
 
 // States for the parser
 enum ParserState {
@@ -370,7 +373,7 @@ async function setupFileReceiver(ctx: ParserContext): Promise<void> {
   };
 
   // Add to files object
-  if (ctx.files[ctx.currentName]) {
+  if (Object.prototype.hasOwnProperty.call(ctx.files, ctx.currentName)) {
     // If we already have a file with this name, convert to array
     if (Array.isArray(ctx.files[ctx.currentName])) {
       (ctx.files[ctx.currentName] as MultipartFile[]).push(file);
@@ -437,7 +440,6 @@ function processPartData(ctx: ParserContext, data: Buffer): void {
  */
 function getLastFile(ctx: ParserContext): MultipartFile | null {
   const fileEntry = ctx.files[ctx.currentName];
-  if (!fileEntry) return null;
 
   if (Array.isArray(fileEntry)) {
     return fileEntry[fileEntry.length - 1]!;
@@ -473,11 +475,11 @@ function finishCurrentPart(ctx: ParserContext): void {
 }
 
 /**
- * Create a parser for multipart/form-data
- * @param options - Parser options
+ * Create a multipart parser transform stream
+ * @param options - Multipart parser options
  * @returns A transform stream that parses multipart data
  */
-export function createMultipartParser(options: MultipartParserOptions = {}): OptimizedTransform {
+export function createMultipartParser(options: MultipartParserOptions = {}): Transform {
   const config = { ...DEFAULT_OPTIONS, ...options };
   const boundary = config.boundary || '';
 
@@ -625,6 +627,216 @@ export function parseMultipartRequest(
       return result;
     }
   });
+}
+
+/**
+ * Multipart form data parser
+ */
+export class MultipartParser {
+  private boundary: string;
+  private options: Required<BodyParserOptions>;
+  private files: Map<string, string> = new Map();
+
+  constructor(boundary: string, options: Required<BodyParserOptions>) {
+    this.boundary = boundary;
+    this.options = options;
+  }
+
+  /**
+   * Parse multipart form data
+   * @param buffer Buffer containing multipart form data
+   * @returns Parsed form data
+   */
+  parse(buffer: Buffer): Record<string, any> {
+    const result: Record<string, any> = {};
+    const parts = this.splitParts(buffer);
+
+    for (const part of parts) {
+      const { name, filename, value } = this.parsePart(part);
+      if (!name) continue;
+
+      if (filename) {
+        // Handle file upload
+        const tempPath = this.saveTempFile(value, filename);
+        result[name] = {
+          filename,
+          path: tempPath,
+          size: value.length
+        };
+      } else {
+        // Handle regular field
+        result[name] = value.toString('utf8');
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Split buffer into parts
+   * @param buffer Buffer containing multipart form data
+   * @returns Array of part buffers
+   */
+  private splitParts(buffer: Buffer): Buffer[] {
+    // Use buffer pool for improved memory efficiency
+    const boundaryBuffer = Buffer.from(`--${this.boundary}`);
+    const parts: Buffer[] = [];
+    let start = 0;
+
+    while (start < buffer.length) {
+      const boundaryIndex = buffer.indexOf(boundaryBuffer, start);
+      if (boundaryIndex === -1) break;
+
+      // Skip boundary and CRLF
+      start = boundaryIndex + boundaryBuffer.length + 2;
+
+      // Find end of this part
+      const nextBoundary = buffer.indexOf(boundaryBuffer, start);
+      if (nextBoundary === -1) break;
+
+      // Extract part data (excluding CRLF before boundary)
+      // Use buffer pool for large parts
+      if (nextBoundary - start - 2 > 8192) {
+        const partBuffer = globalPool.acquire(nextBoundary - start - 2);
+        buffer.copy(partBuffer, 0, start, nextBoundary - 2);
+        parts.push(partBuffer);
+      } else {
+        // For small parts, use standard slice for efficiency
+        parts.push(buffer.slice(start, nextBoundary - 2));
+      }
+
+      start = nextBoundary;
+    }
+
+    return parts;
+  }
+
+  /**
+   * Parse a single part
+   * @param buffer Part buffer
+   * @returns Parsed part data
+   */
+  private parsePart(buffer: Buffer): {
+    name?: string;
+    filename?: string;
+    value: Buffer;
+  } {
+    // Find end of headers
+    const headerEnd = buffer.indexOf('\r\n\r\n');
+    if (headerEnd === -1) return { value: buffer };
+
+    // Parse headers
+    const headers = this.parseHeaders(buffer.slice(0, headerEnd));
+    const disposition = headers['content-disposition'];
+    if (!disposition) return { value: buffer.slice(headerEnd + 4) };
+
+    // Parse content disposition
+    const name = this.getDispositionParam(disposition, 'name');
+    const filename = this.getDispositionParam(disposition, 'filename');
+
+    // Value data starts after headers
+    const value = buffer.slice(headerEnd + 4);
+
+    return {
+      name,
+      filename,
+      value
+    };
+  }
+
+  /**
+   * Parse headers from buffer
+   * @param buffer Buffer containing headers
+   * @returns Parsed headers
+   */
+  private parseHeaders(buffer: Buffer): Record<string, string> {
+    const headers: Record<string, string> = {};
+    const lines = buffer.toString('utf8').split('\r\n');
+
+    for (const line of lines) {
+      const colonIndex = line.indexOf(':');
+      if (colonIndex === -1) continue;
+
+      const name = line.slice(0, colonIndex).trim().toLowerCase();
+      const value = line.slice(colonIndex + 1).trim();
+      headers[name] = value;
+    }
+
+    return headers;
+  }
+
+  /**
+   * Get parameter from content disposition
+   * @param disposition Content disposition header
+   * @param param Parameter name
+   * @returns Parameter value
+   */
+  private getDispositionParam(disposition: string, param: string): string | undefined {
+    const match = disposition.match(new RegExp(`${param}="([^"]*)"`));
+    return match ? match[1] : undefined;
+  }
+
+  /**
+   * Save file to temporary location
+   * @param buffer File contents
+   * @param filename Original filename
+   * @returns Temporary file path
+   */
+  private async saveTempFile(buffer: Buffer, filename: string): Promise<string> {
+    try {
+      // Generate a unique filename with the original extension
+      const tempPath = await getTempFilePath('upload-', `-${filename}`);
+
+      // Ensure directory exists
+      await ensureDirectory(dirname(tempPath));
+
+      // Write file efficiently using streaming
+      const stream = createWriteStream(tempPath);
+      stream.write(buffer);
+      stream.end();
+
+      // Wait for file to be fully written
+      await new Promise<void>((resolve, reject) => {
+        stream.on('finish', () => resolve());
+        stream.on('error', reject);
+      });
+
+      // Remember file for cleanup
+      this.files.set(tempPath, filename);
+
+      return tempPath;
+    } catch (err) {
+      Logger.error(
+        'Error saving temporary file:',
+        err instanceof Error ? err.message : String(err)
+      );
+      throw new Error(
+        `Failed to save uploaded file: ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+  }
+
+  /**
+   * Clean up temporary files
+   */
+  async cleanup(): Promise<void> {
+    if (!this.options.keepFiles) {
+      for (const [path] of this.files) {
+        try {
+          if (await fileExists(path)) {
+            await deleteFile(path);
+          }
+        } catch (error) {
+          // Ignore cleanup errors
+          Logger.debug(
+            'Error removing temporary file:',
+            error instanceof Error ? error.message : String(error)
+          );
+        }
+      }
+    }
+    this.files.clear();
+  }
 }
 
 export default {

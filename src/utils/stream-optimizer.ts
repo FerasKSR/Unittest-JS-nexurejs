@@ -6,11 +6,19 @@
  */
 
 import { Transform, TransformCallback, TransformOptions } from 'node:stream';
-import { BufferPool, globalPool } from './buffer-pool';
+import { globalPool } from './buffer-pool.js';
 
 // Custom transform option types separate from the base TransformOptions
 interface OptimizedBufferOptions {
   bufferPool?: BufferPool;
+}
+
+/**
+ * Buffer pool interface
+ */
+export interface BufferPool {
+  acquire(size: number): Buffer;
+  release(buffer: Buffer): void;
 }
 
 /**
