@@ -6,7 +6,7 @@
   "module": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
-    "build": "node scripts/build-all-platforms.js",
+    "build": "node scripts/build.js",
     "build:ts": "tsc",
     "watch": "tsc -w",
     "start": "npm run build && node dist/index.js",
