@@ -41,7 +41,8 @@ function _getBufferForString(str: string): Buffer {
   let buffer = stringBufferPool.get(str);
   if (!buffer) {
     buffer = Buffer.from(str);
-    if (stringBufferPool.size < 1000) { // Limit pool size
+    if (stringBufferPool.size < 1000) {
+      // Limit pool size
       stringBufferPool.set(str, buffer);
     }
   }
@@ -106,7 +107,8 @@ export class ZeroCopyHttpParser {
 
   // Return parser to the pool
   static releaseParser(parser: ZeroCopyHttpParser): void {
-    if (this.parserPool.length < 1000) { // Limit pool size
+    if (this.parserPool.length < 1000) {
+      // Limit pool size
       this.parserPool.push(parser);
     }
   }
@@ -245,7 +247,10 @@ export class ZeroCopyHttpParser {
       if (colonPos === -1) continue; // Invalid header
 
       const headerName = line.subarray(0, colonPos).toString().toLowerCase();
-      const headerValue = line.subarray(colonPos + 2).toString().trim();
+      const headerValue = line
+        .subarray(colonPos + 2)
+        .toString()
+        .trim();
 
       // Store in headers object
       this.result.headers[headerName] = headerValue;
