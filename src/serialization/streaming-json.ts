@@ -321,10 +321,6 @@ export class JsonParser extends Transform {
     const char = this.buffer[this.position];
 
     // Ensure we have a valid character
-    if (char === undefined) {
-      return; // Not enough data
-    }
-
     switch (char) {
       case '{':
         this.startObject();
