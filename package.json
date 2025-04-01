@@ -48,7 +48,7 @@
     "release:major": "node scripts/release.js --type=major",
     "release:pre": "node scripts/release.js --pre",
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\"",
-    "prepare": "husky install",
+    "prepare": "husky",
     "pre-commit": "lint-staged"
   },
   "keywords": [
@@ -92,7 +92,9 @@
     "ts-node": "^10.9.2",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.28.0",
-    "ws": "^8.16.0"
+    "ws": "^8.16.0",
+    "test-exclude": "^7.0.0",
+    "babel-plugin-istanbul": "^7.0.0"
   },
   "dependencies": {
     "reflect-metadata": "^0.2.1"
@@ -143,5 +145,11 @@
       "import": "./dist/security/index.js",
       "require": "./dist/cjs/security/index.js"
     }
+  },
+  "overrides": {
+    "glob": "^10.4.5",
+    "inflight": "^2.0.0",
+    "test-exclude": "^7.0.0",
+    "babel-plugin-istanbul": "^7.0.0"
   }
 }

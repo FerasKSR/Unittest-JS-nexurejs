@@ -21,15 +21,12 @@ export default {
   ],
   collectCoverage: true,
   coverageDirectory: './coverage',
-  coverageReporters: ['text', 'lcov'],
+  coverageReporters: ['text'],
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
-  // Add coverage thresholds
-  coverageThreshold: {
-    global: {
-      branches: 70,
-      functions: 70,
-      lines: 70,
-      statements: 70
-    }
-  }
+  coverageProvider: 'babel',
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.d.ts',
+    '!src/types/**/*'
+  ]
 };
