@@ -5,7 +5,6 @@
 import { Worker } from 'node:worker_threads';
 import { cpus } from 'node:os';
 import { EventEmitter } from 'node:events';
-import { Logger } from '../utils/logger';
 
 /**
  * Worker task
@@ -93,6 +92,9 @@ export class WorkerPool extends EventEmitter {
   private taskTimeout: number;
   private logger = new Logger();
   private isShuttingDown = false;
+
+  // Track which workers are busy
+  private busyWorkers = new Set<Worker>();
 
   /**
    * Create a new worker pool
@@ -200,7 +202,7 @@ export class WorkerPool extends EventEmitter {
    */
   private processPendingTasks(): void {
     // Find an available worker
-    const availableWorker = this.workers[0];
+    const availableWorker = this.workers.find(worker => !this.busyWorkers.has(worker));
 
     if (!availableWorker || this.taskQueue.length === 0) {
       return;
@@ -213,8 +215,25 @@ export class WorkerPool extends EventEmitter {
       return;
     }
 
+    // Mark worker as busy
+    this.busyWorkers.add(availableWorker);
+
     // Send the task to the worker
     availableWorker.postMessage(task);
+
+    // Add listener to free up worker when done
+    const messageHandler = (result: WorkerResult): void => {
+      if (result.taskId === task.id) {
+        // Mark worker as available
+        this.busyWorkers.delete(availableWorker);
+        availableWorker.removeListener('message', messageHandler);
+
+        // Process next task if available
+        setTimeout(() => this.processPendingTasks(), 0);
+      }
+    };
+
+    availableWorker.on('message', messageHandler);
   }
 
   /**
