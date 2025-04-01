@@ -13,7 +13,6 @@ import { cpus } from 'node:os';
 import { EventEmitter } from 'node:events';
 import { performance } from 'node:perf_hooks';
 import { setTimeout, clearTimeout } from 'node:timers';
-import { Logger } from '../utils/logger';
 
 // Task to be executed by a worker
 export interface WorkerTask<TData = any, _TResult = any> {
