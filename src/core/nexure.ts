@@ -1,21 +1,14 @@
 import { createServer, Server, IncomingMessage, ServerResponse } from 'node:http';
-import { Router } from '../routing/router';
-import { MiddlewareHandler } from '../middleware/middleware';
-import { Container } from '../di/container';
-import { Logger } from '../utils/logger';
+import { Router } from '../routing/router.js';
+import { MiddlewareHandler } from '../middleware/middleware.js';
+import { Container } from '../di/container.js';
 import {
-  configureNativeModules,
   getNativeModuleStatus,
+  configureNativeModules,
   WebSocketServer,
-  WebSocketServerOptions,
-  getNativeModuleMetrics
-} from '../native/index';
-import {
-  getWebSocketHandlers,
-  isWebSocketController,
-  getWebSocketAuthHandler
-} from '../decorators/websocket-decorators';
-import { setUseNativeByDefault, getUseNativeByDefault } from '../utils/native-bindings';
+  WebSocketServerOptions
+} from '../native/index.js';
+import { setUseNativeByDefault } from '../utils/native-bindings.js';
 
 export interface NexureOptions {
   /**
@@ -140,7 +133,9 @@ export class Nexure {
     };
 
     // Setup logging first
-    this.logger = new Logger(this.options.logging);
+    this.logger = new Logger({
+      console: this.options.logging
+    });
 
     // Initialize native modules
     this.initializeNativeModules();
@@ -275,11 +270,7 @@ export class Nexure {
       const next = async (): Promise<void> => {
         if (middlewareIndex < this.middlewares.length) {
           const middleware = this.middlewares[middlewareIndex++];
-          if (middleware) {
-            await middleware(req, res, next);
-          } else {
-            await next();
-          }
+          await middleware(req, res, next);
         } else {
           // Process the route after all middleware has run
           await this.router.process(req, res);
