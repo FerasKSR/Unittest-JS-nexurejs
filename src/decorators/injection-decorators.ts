@@ -1,5 +1,5 @@
 import 'reflect-metadata';
-import { Scope } from '../di/container';
+import { Scope } from '../di/container.js';
 
 /**
  * Metadata key for injection information
@@ -105,12 +105,17 @@ export function Inject(token?: any): ParameterDecorator {
     }
 
     // Set the injection metadata
-    setInjectionMetadata({
-      params: [{
-        index: parameterIndex,
-        type: paramType
-      }]
-    }, propertyKey ? target.constructor : target);
+    setInjectionMetadata(
+      {
+        params: [
+          {
+            index: parameterIndex,
+            type: paramType
+          }
+        ]
+      },
+      propertyKey ? target.constructor : target
+    );
   };
 }
 
