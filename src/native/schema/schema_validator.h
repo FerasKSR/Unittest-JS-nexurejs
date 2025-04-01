@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <memory>
 #include <functional>
+#include <mutex>
 
 namespace SchemaValidator {
 
@@ -67,6 +68,12 @@ namespace SchemaValidator {
   bool ValidateIncrementalUpdate(const Napi::Object& data, const Napi::Object& updates,
                                 const std::shared_ptr<Schema>& schema,
                                 std::vector<ValidationError>& errors);
+
+  // Cleanup method
+  void Cleanup();
+
+  // Schema cache
+  static std::mutex cacheMutex;
 }
 
 #endif // SCHEMA_VALIDATOR_H

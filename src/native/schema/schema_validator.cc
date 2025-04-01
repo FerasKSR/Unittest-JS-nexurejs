@@ -13,6 +13,8 @@
 #include <list>
 #include <regex>
 #include <cmath>
+#include <iostream>
+#include <mutex>
 #include "schema_validator.h"
 
 /**
@@ -886,6 +888,16 @@ namespace SchemaValidator {
     exports.Set("compileSchema", Napi::Function::New(env, CompileSchema));
     exports.Set("clearCache", Napi::Function::New(env, ClearCache));
     exports.Set("getCacheStats", Napi::Function::New(env, GetCacheStats));
+
+    // Export the SchemaValidator namespace with static methods
+    Napi::Object schemaValidator = Napi::Object::New(env);
+    schemaValidator.Set("Cleanup", Napi::Function::New(env, [](const Napi::CallbackInfo& info) {
+      Cleanup();
+      return info.Env().Undefined();
+    }));
+
+    exports.Set("SchemaValidator", schemaValidator);
+
     return exports;
   }
 
@@ -1181,6 +1193,32 @@ namespace SchemaValidator {
     }
 
     return valid;
+  }
+
+  // Cleanup method to clear caches and free resources
+  void Cleanup() {
+    try {
+      // Lock the cache mutex to safely clear resources
+      std::lock_guard<std::mutex> lock(cacheMutex);
+
+      // Properly clear the schema cache using the instance method
+      schemaCache.clear();
+
+      // Log cleanup for debugging - only in debug builds
+#ifdef DEBUG
+      std::cout << "[SchemaValidator] Cleanup completed successfully" << std::endl;
+#endif
+    } catch (const std::exception& e) {
+      // Log error but don't throw from cleanup
+#ifdef DEBUG
+      std::cout << "[SchemaValidator] Cleanup error: " << e.what() << std::endl;
+#endif
+    } catch (...) {
+      // Ensure cleanup doesn't throw
+#ifdef DEBUG
+      std::cout << "[SchemaValidator] Unknown error during cleanup" << std::endl;
+#endif
+    }
   }
 
 } // namespace SchemaValidator
