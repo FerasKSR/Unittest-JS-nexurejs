@@ -1,116 +1,245 @@
-# NexureJS Scripts
+# NexureJS Build and Development Scripts
 
-This folder contains optimized and minified script utilities for NexureJS development, building, and maintenance.
+This directory contains the infrastructure scripts for NexureJS, including build tools, benchmarking, profiling, and release management.
 
-## Key Features
+## Unified Build Script
 
-- **Optimized Performance**: All scripts have been optimized for faster execution
-- **Memory Efficiency**: Scripts use efficient memory management and caching
-- **Unified Interface**: Common script operations are available through a central runner
-- **Minification Support**: Scripts can be minified for production use
+The `build.js` script is an all-in-one build tool that handles:
 
-## Main Scripts
+- TypeScript compilation
+- Native module building for current platform
+- Package creation for supported platforms
+- Script generation for cross-platform builds
+- Docker configuration for Linux builds
+- GitHub Actions workflow generation
+- Build directory cleaning
+- Import paths fixing (previously separate fix-imports scripts)
+- ESLint fixes and unused variable fixes
+- Cross-platform package generation
+- Native module installation and management
 
-### Script Runner
+## Command Line Options
 
-The `run-scripts.js` provides a unified interface to run various operations:
-
-```bash
-# Get help
-node scripts/run-scripts.js help
-
-# Run with specific commands
-node scripts/run-scripts.js minify
-node scripts/run-scripts.js benchmark http
-node scripts/run-scripts.js lint --fix
-node scripts/run-scripts.js build --watch
-node scripts/run-scripts.js clean --all
-```
-
-### Script Minifier
-
-The `minify-scripts.js` optimizes and minifies scripts for production:
+The unified script supports various command-line options:
 
 ```bash
-# Run minification
-node scripts/minify-scripts.js
+# Full build process
+node scripts/build.js
 
-# Dry run (shows what would be done)
-node scripts/minify-scripts.js --dry-run
+# Clean only
+node scripts/build.js --clean-only
 
-# Verbose output
-node scripts/minify-scripts.js --verbose
-```
+# Fix import paths only
+node scripts/build.js --fix-imports-only
 
-### Lint Fixer
+# Fix ESLint issues
+node scripts/build.js --fix-lint-only
 
-The `fix-lint-issues.js` automatically fixes common linting issues:
+# Fix unused variables
+node scripts/build.js --fix-unused-vars-only
 
-```bash
-# Auto-fix linting issues
-node scripts/fix-lint-issues.js
+# Fix all code issues
+node scripts/build.js --fix-all
 
-# Show what would be fixed without making changes
-node scripts/fix-lint-issues.js --dry-run
+# Force rebuild of native modules
+node scripts/build.js --force
 
-# Show detailed output
-node scripts/fix-lint-issues.js --verbose
+# Package native modules
+node scripts/build.js --pack-only
+
+# Install native modules
+node scripts/build.js --install-only
+
+# Install in lite mode (JavaScript only)
+node scripts/build.js --install-only --lite
+
+# Generate unified build script
+node scripts/build.js --create-unified-script
+
+# Show help
+node scripts/build.js --help
 ```
 
 ## NPM Scripts
 
-These scripts are also available through npm:
+The following npm scripts are available:
 
 ```bash
-# Run the script runner
-npm run scripts -- help
+# === Build Scripts ===
+# Full build
+npm run build
 
-# Minify scripts
-npm run scripts:minify
+# TypeScript build only
+npm run build:ts
 
-# Clean build artifacts
-npm run scripts:clean
+# Clean build directories
+npm run clean
 
-# Build TypeScript files
-npm run scripts:build
+# Fix import paths
+npm run fix:imports
+
+# Fix ESLint issues
+npm run fix:lint
+
+# Fix unused variables
+npm run fix:unused
+
+# Fix all code issues
+npm run fix:all
+
+# Build native modules with force flag
+npm run build:native
+
+# Package native modules
+npm run build:native:pack
+
+# Install native modules
+npm run install:native
+
+# Install in lite mode (JavaScript only)
+npm run install:lite
+
+# Create a standalone build script for your platform
+npm run build:script
+
+# === Benchmark Scripts ===
+# Run all benchmarks
+npm run benchmark
+
+# Run benchmarks and open dashboard
+npm run benchmark:dashboard
+
+# Run benchmarks as part of CI
+npm run ci:benchmark
+
+# === Profiling Scripts ===
+# Run all profilers
+npm run profile
+
+# Run CPU profiling only
+npm run profile:cpu
+
+# Run memory profiling only
+npm run profile:memory
+
+# Run stream profiling only
+npm run profile:stream
+
+# Open profiling dashboard
+npm run profile:dashboard
+
+# === Release Scripts ===
+# Create a new release
+npm run release
+
+# Create a patch release
+npm run release:patch
+
+# Create a minor release
+npm run release:minor
+
+# Create a major release
+npm run release:major
+
+# Prepare a pre-release
+npm run release:pre
 ```
 
-## Performance Improvements
+## Release Management
 
-The script optimizations include:
+The `release.js` script handles the release process:
 
-1. **File Caching**: Avoids redundant file reads for better performance
-2. **Single-Pass Processing**: Reduces the number of iterations through files
-3. **Proper Error Handling**: Graceful error recovery and detailed error messages
-4. **Memory Management**: Efficient data structures and garbage collection
-5. **Minification**: Reduced file sizes for faster execution
-6. **Shared Code**: Common utilities and functions are shared between scripts
+- Version bumping
+- Changelog generation
+- Git tagging
+- NPM publishing
+- GitHub release creation
 
-## Development
+To create a new release:
 
-When working on these scripts:
+```bash
+node scripts/release.js --type=patch|minor|major
+```
 
-1. Use ES modules for better tree-shaking and optimization
-2. Follow the established patterns for error handling and logging
-3. Add proper JSDoc comments for documentation
-4. Ensure backwards compatibility with existing scripts
-5. Test both normal and error cases
+## Benchmarking
 
-## Minification Process
+NexureJS includes a comprehensive benchmarking system in `benchmarks/benchmarks.ts`. This file contains benchmarks for:
 
-The minification process:
+- Basic JavaScript operations
+- HTTP request parsing
+- Router performance
+- JSON handling
+- URL parsing
+- Schema validation
+- WebSocket operations
+- Compression algorithms
 
-1. Preserves comments that include license/copyright notices
-2. Keeps class and function names intact for debugging
-3. Removes unused code and variables
-4. Optimizes code for faster execution
-5. Provides both minified and original versions
+Run benchmarks to measure performance:
+
+```bash
+# Run all benchmarks
+npm run benchmark
+
+# Open benchmark dashboard
+npm run benchmark:dashboard
+```
+
+Benchmark results are saved to the `benchmark-results` directory as JSON files with timestamps, which can be loaded into the dashboard for visualization.
+
+## Profiling
+
+The profiling tools in the `profiling/` directory help identify performance bottlenecks:
+
+- `profiler.js` - Contains CPU and memory profiling tools
+- `data-generators.js` - Generates test data for profiling
+- `run.js` - CLI interface for running profiling tests
+
+Run profiling tools to analyze performance:
+
+```bash
+# Run all profilers
+npm run profile
+
+# Run specific profiling tests
+npm run profile:cpu
+npm run profile:memory
+npm run profile:stream
+```
+
+## Installation Options
+
+The build system provides flexible installation options:
+
+- **Full Installation**: Includes native modules for maximum performance
+- **Lite Mode**: JavaScript-only implementation for broader compatibility
+- **Automatic Fallback**: When native modules can't be built, it falls back to JavaScript implementations
+- **Prebuilt Binaries**: Downloads prebuilt modules when available for your platform
+
+During installation, the script will:
+
+1. Attempt to download prebuilt binaries for your platform
+2. If unavailable, build native modules from source
+3. Verify the modules work correctly
+4. Fall back to JavaScript implementations if needed
+
+## Platform Support
+
+The build system supports these platforms:
+
+- macOS (arm64, x64)
+- Linux (x64)
+- Windows (x64)
+
+For cross-platform builds, the system will generate platform-specific build scripts that can be run on their respective platforms.
+
+## Docker Support
+
+If Docker is installed, the build system can create Docker-based builds for Linux platforms.
+
+## CI/CD Integration
+
+The build system generates GitHub Actions workflows for automated builds across all supported platforms.
 
 ## Script Architecture
 
-The scripts follow a modular architecture:
-
-- **Core Runner**: Provides the central interface (`run-scripts.js`)
-- **Task Modules**: Handle specific operations (lint, build, benchmark)
-- **Utility Functions**: Shared across scripts for common operations
-- **Configuration**: Centralized settings for consistent behavior
+All functionality that was previously spread across multiple scripts has been consolidated into unified scripts for easier maintenance and a more consistent developer experience.
