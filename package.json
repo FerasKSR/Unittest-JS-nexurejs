@@ -28,7 +28,7 @@
     "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch=\"**/test/integration/**/*.test.ts\"",
     "test:compatibility": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch=\"**/test/compatibility/**/*.test.ts\"",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
-    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --coverageReporters=text --coverageReporters=json --coverageReporters=lcov",
     "test:run": "node scripts/run-tests.js",
     "test:perf": "node test/performance/http-server.js",
     "lint": "eslint . --ext .ts",

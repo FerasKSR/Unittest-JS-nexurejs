@@ -21,12 +21,16 @@ export default {
   ],
   collectCoverage: true,
   coverageDirectory: './coverage',
-  coverageReporters: ['text'],
+  coverageReporters: ['text', 'lcov', 'json'],
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
   coverageProvider: 'babel',
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
-    '!src/types/**/*'
-  ]
+    '!src/types/**/*',
+    '!src/**/*.test.ts'
+  ],
+  testEnvironmentOptions: {
+    url: 'http://localhost'
+  }
 };

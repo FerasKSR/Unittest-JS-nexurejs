@@ -4,14 +4,36 @@
  */
 
 import { jest, beforeAll, afterAll } from '@jest/globals';
+import { HttpParser, RadixRouter, JsonProcessor } from '../src/native/index.js';
 
 // Set test environment variables
 process.env.NODE_ENV = 'test';
 
 // Global beforeAll hook - runs once before all tests
-beforeAll(() => {
+beforeAll(async () => {
   console.log('Starting NexureJS test suite...');
-  // Add any global setup here (database connections, etc.)
+
+  // Initialize native modules if available
+  try {
+    const httpParser = new HttpParser();
+    console.log('Native HttpParser initialized');
+  } catch (error) {
+    console.warn('Native HttpParser not available, tests might only cover JS fallback');
+  }
+
+  try {
+    const radixRouter = new RadixRouter();
+    console.log('Native RadixRouter initialized');
+  } catch (error) {
+    console.warn('Native RadixRouter not available, tests might only cover JS fallback');
+  }
+
+  try {
+    const jsonProcessor = new JsonProcessor();
+    console.log('Native JsonProcessor initialized');
+  } catch (error) {
+    console.warn('Native JsonProcessor not available, tests might only cover JS fallback');
+  }
 });
 
 // Global afterAll hook - runs once after all tests
@@ -44,3 +66,13 @@ global.mockResponse = () => {
   res.headersSent = false;
   return res;
 };
+
+// Add type definitions for global test utilities
+declare global {
+  namespace NodeJS {
+    interface Global {
+      mockRequest: (options?: any) => any;
+      mockResponse: () => any;
+    }
+  }
+}
