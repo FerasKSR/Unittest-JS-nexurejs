@@ -11,17 +11,13 @@ import { performance } from 'node:perf_hooks';
 import { Server as HttpServer } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-import { JsHttpParser } from '../http/http-parser';
-import { HttpMethod } from '../http/http-method';
-import { Logger } from '../utils/logger';
 import type {
   HttpParseResult,
   NativeHttpParser,
   NativeObjectPool,
   ObjectPoolOptions,
   PoolInfo
-} from '../types/native';
-import { RadixRouter as JsRadixRouter } from '../routing/router';
+} from '../types/native.js';
 
 // Get dirName equivalent in ESM/CJS compatible way
 let dirName: string;
@@ -279,7 +275,7 @@ export function loadNativeBinding(): any {
   // Skip if disabled
   if (!nativeOptions.enabled) {
     if (nativeOptions.verbose) {
-      console.log('Native modules disabled by configuration');
+      Logger.debug('Native modules disabled by configuration');
     }
     nativeModuleStatus.error = 'Disabled by configuration';
     return null;
@@ -338,8 +334,8 @@ export function loadNativeBinding(): any {
         nativeModuleStatus.objectPool = Boolean(nativeBinding.ObjectPool);
 
         if (nativeOptions.verbose) {
-          console.log(`Native module loaded successfully from ${bindingPath}`);
-          console.log(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
+          Logger.debug(`Native module loaded successfully from ${bindingPath}`);
+          Logger.debug(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
         }
 
         // Successfully loaded
@@ -354,17 +350,17 @@ export function loadNativeBinding(): any {
     throw loadError || new Error('Failed to load native module from any location');
   } catch (err: any) {
     if (nativeOptions.verbose || process.env.NODE_ENV !== 'production') {
-      console.warn(`Failed to load native module: ${err.message}`);
+      Logger.warn(`Failed to load native module: ${err.message}`);
 
       if (err.code === 'MODULE_NOT_FOUND') {
-        console.warn('Native module not built. Run "npm run build:native:test" to build it.');
+        Logger.warn('Native module not built. Run "npm run build:native:test" to build it.');
       } else if (err.code === 'ENOENT') {
-        console.warn('Native module file not found. Check build configuration.');
+        Logger.warn('Native module file not found. Check build configuration.');
       } else {
-        console.warn(`Error type: ${err.code || 'Unknown'}`);
+        Logger.warn(`Error type: ${err.code || 'Unknown'}`);
       }
 
-      console.warn('Using JavaScript fallbacks instead');
+      Logger.warn('Using JavaScript fallbacks instead');
     }
 
     nativeModuleStatus.error = err.message;
@@ -397,7 +393,7 @@ export class HttpParser implements NativeHttpParser {
         this.parser = new nativeModule.HttpParser();
       } catch (err: any) {
         if (nativeOptions.verbose) {
-          console.warn(`Failed to create native HTTP parser: ${err.message}`);
+          Logger.warn(`Failed to create native HTTP parser: ${err.message}`);
         }
         this.useNative = false;
       }
@@ -536,7 +532,7 @@ export class RadixRouter {
         this.router = new nativeModule.RadixRouter({ maxCacheSize });
       } catch (err: any) {
         if (nativeOptions.verbose) {
-          console.warn(`Failed to create native radix router: ${err.message}`);
+          Logger.warn(`Failed to create native radix router: ${err.message}`);
         }
         this.useNative = false;
       }
@@ -669,7 +665,7 @@ export class JsonProcessor {
         this.processor = new nativeModule.JsonProcessor();
       } catch (err: any) {
         if (nativeOptions.verbose) {
-          console.warn(`Failed to create native JSON processor: ${err.message}`);
+          Logger.warn(`Failed to create native JSON processor: ${err.message}`);
         }
         this.useNative = false;
       }

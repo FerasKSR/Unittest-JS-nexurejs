@@ -9,29 +9,42 @@ import { join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { createRequire } from 'node:module';
-import { Logger, LogLevel } from '../utils/logger';
+
+// Simple logging implementation instead of using Logger to avoid circular dependencies
+const log = {
+  debug: (message: string, ...args: any[]): void => {
+    if (process.env.NEXURE_NATIVE_DEBUG === 'true') {
+      Logger.debug(`[NativeLoader] ${message}`, ...args);
+    }
+  },
+  info: (message: string, ...args: any[]): void => {
+    if (process.env.NEXURE_NATIVE_DEBUG === 'true') {
+      Logger.info(`[NativeLoader] ${message}`, ...args);
+    }
+  },
+  warn: (message: string, ...args: any[]): void => {
+    Logger.warn(`[NativeLoader] ${message}`, ...args);
+  },
+  error: (message: string, ...args: any[]): void => {
+    Logger.error(`[NativeLoader] ${message}`, ...args);
+  }
+};
 
 // Handle both ESM and CommonJS environments for require
 let customRequire: NodeRequire;
 
-if (typeof __dirname !== 'undefined') {
-  // CommonJS environment
-  customRequire = require;
-} else {
+try {
   // ESM environment with compatibility for CJS build
-  try {
-    // @ts-ignore - Conditionally use import.meta.url
-    const metaUrl = typeof import.meta !== 'undefined' ? import.meta.url : '';
-    if (metaUrl) {
-      customRequire = createRequire(metaUrl);
-    } else {
-      // Fallback if import.meta is not available (during CJS build)
-      customRequire = require;
-    }
-  } catch (_err) {
-    // Final fallback
+  const metaUrl = typeof import.meta !== 'undefined' ? import.meta.url : '';
+  if (metaUrl) {
+    customRequire = createRequire(metaUrl);
+  } else {
+    // Fallback if import.meta is not available (during CJS build)
     customRequire = require;
   }
+} catch (_err) {
+  // Final fallback
+  customRequire = require;
 }
 
 // Define binding types
@@ -54,11 +67,12 @@ export interface NativeBindingModule {
 // Module cache to prevent redundant loading attempts
 const moduleCache: Record<string, any> = {};
 
-// Create a logger
-const nativeLoaderLogger = new Logger({
-  enabled: process.env.NEXURE_NATIVE_DEBUG === 'true',
-  level: LogLevel.DEBUG
-});
+// Check if native modules are disabled
+export function isNativeDisabled(): boolean {
+  return (
+    process.env.NEXUREJS_NATIVE_DISABLED === 'true' || process.env.NEXUREJS_LITE_MODE === 'true'
+  );
+}
 
 /**
  * Try to load a native binding module
@@ -66,6 +80,12 @@ const nativeLoaderLogger = new Logger({
  * @returns The loaded module or null if not found
  */
 export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule | null {
+  // Skip if native modules are disabled
+  if (isNativeDisabled()) {
+    log.debug(`Native module loading skipped because it is disabled by environment variable`);
+    return null;
+  }
+
   // Check if module is already cached
   if (moduleCache[bindingPath] !== undefined) {
     return moduleCache[bindingPath];
@@ -78,7 +98,7 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
 
     // Check if the file exists
     if (!existsSync(nativeBindingPath)) {
-      nativeLoaderLogger.debug(`Native binding module not found at: ${nativeBindingPath}`);
+      log.debug(`Native binding module not found at: ${nativeBindingPath}`);
       moduleCache[bindingPath] = null;
       return null;
     }
@@ -87,7 +107,7 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
     const nativeBinding = customRequire(nativeBindingPath);
 
     const endTime = performance.now();
-    nativeLoaderLogger.debug(
+    log.debug(
       `Native binding loaded successfully in ${(endTime - startTime).toFixed(2)}ms: ${bindingPath}`
     );
 
@@ -95,7 +115,7 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
     moduleCache[bindingPath] = nativeBinding;
     return nativeBinding;
   } catch (error: any) {
-    nativeLoaderLogger.warn(`Failed to load native binding: ${bindingPath}`, error.message);
+    log.warn(`Failed to load native binding: ${bindingPath}`, error.message);
 
     // Cache the failure
     moduleCache[bindingPath] = null;
@@ -109,6 +129,12 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
  * @returns Loaded native modules or null if not available
  */
 export function loadNativeBinding(modulePath?: string): NativeBindingModule | null {
+  // Skip if native modules are disabled
+  if (isNativeDisabled()) {
+    log.debug(`Native module loading skipped because it is disabled by environment variable`);
+    return null;
+  }
+
   const paths = [
     // If a specific path is provided, try it first
     modulePath,
@@ -134,7 +160,7 @@ export function loadNativeBinding(modulePath?: string): NativeBindingModule | nu
   }
 
   // If we get here, no modules could be loaded
-  nativeLoaderLogger.warn('No native bindings could be loaded, using JavaScript fallbacks');
+  log.warn('No native bindings could be loaded, using JavaScript fallbacks');
   return null;
 }
 
@@ -144,6 +170,11 @@ export function loadNativeBinding(modulePath?: string): NativeBindingModule | nu
  * @returns True if the binding is available
  */
 export function isBindingAvailable(bindingType: BindingType): boolean {
+  // Skip if native modules are disabled
+  if (isNativeDisabled()) {
+    return false;
+  }
+
   const nativeModule = loadNativeBinding();
 
   if (!nativeModule) {
@@ -180,7 +211,7 @@ export function clearModuleCache(): void {
   Object.keys(moduleCache).forEach(key => {
     delete moduleCache[key];
   });
-  nativeLoaderLogger.debug('Native module cache cleared');
+  log.debug('Native module cache cleared');
 }
 
 /**
