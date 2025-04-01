@@ -24,6 +24,7 @@ bool isCleanupExecuted = false;
 struct Component {
     std::string name;
     std::function<void()> cleanup;
+    bool cleanupCalled;
 };
 std::vector<Component> components;
 std::mutex componentsMutex;
@@ -66,10 +67,11 @@ void RegisterComponent(const std::string& name, std::function<void()> cleanup) {
 
     if (it == components.end()) {
         // Add new component
-        components.push_back({name, cleanup});
+        components.push_back({name, cleanup, false});
     } else {
         // Update existing component
         it->cleanup = cleanup;
+        it->cleanupCalled = false;
     }
 }
 
@@ -98,7 +100,18 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   RegisterComponent("RadixRouter", []() { /* Cleanup code if needed */ });
   RegisterComponent("JsonProcessor", []() { /* Cleanup code if needed */ });
   RegisterComponent("UrlParser", []() { /* Cleanup code if needed */ });
-  RegisterComponent("SchemaValidator", []() { SchemaValidator::Cleanup(); });
+  RegisterComponent("SchemaValidator", []() {
+    // We'll handle this specially to avoid double free
+    static bool alreadyCalled = false;
+    if (!alreadyCalled) {
+      alreadyCalled = true;
+      try {
+        SchemaValidator::Cleanup();
+      } catch (...) {
+        // Ignore errors in cleanup
+      }
+    }
+  });
   RegisterComponent("Compression", []() { /* Cleanup code if needed */ });
   RegisterComponent("WebSocket", []() { /* Cleanup code for WebSocket */ });
 
@@ -121,10 +134,11 @@ void Cleanup(void* arg) {
         {
             std::lock_guard<std::mutex> lock(componentsMutex);
 
-            for (const auto& component : components) {
+            for (auto& component : components) {
                 try {
-                    if (component.cleanup) {
+                    if (component.cleanup && !component.cleanupCalled) {
                         component.cleanup();
+                        component.cleanupCalled = true;
                     }
                 } catch (...) {
                     // Ignore exceptions during cleanup

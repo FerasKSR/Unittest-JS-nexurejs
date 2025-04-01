@@ -14,19 +14,19 @@ import { createRequire } from 'node:module';
 const log = {
   debug: (message: string, ...args: any[]): void => {
     if (process.env.NEXURE_NATIVE_DEBUG === 'true') {
-      Logger.debug(`[NativeLoader] ${message}`, ...args);
+      console.debug(`[NativeLoader] ${message}`, ...args);
     }
   },
   info: (message: string, ...args: any[]): void => {
     if (process.env.NEXURE_NATIVE_DEBUG === 'true') {
-      Logger.info(`[NativeLoader] ${message}`, ...args);
+      console.info(`[NativeLoader] ${message}`, ...args);
     }
   },
   warn: (message: string, ...args: any[]): void => {
-    Logger.warn(`[NativeLoader] ${message}`, ...args);
+    console.warn(`[NativeLoader] ${message}`, ...args);
   },
   error: (message: string, ...args: any[]): void => {
-    Logger.error(`[NativeLoader] ${message}`, ...args);
+    console.error(`[NativeLoader] ${message}`, ...args);
   }
 };
 
@@ -64,14 +64,69 @@ export interface NativeBindingModule {
   [key: string]: any;
 }
 
+// This is a hack to prevent crashes if there are memory issues
+// when loading and unloading the module. We'll keep a global reference
+// to prevent the module from being garbage collected.
+let globalModuleRef: any = null;
+
 // Module cache to prevent redundant loading attempts
 const moduleCache: Record<string, any> = {};
 
 // Check if native modules are disabled
 export function isNativeDisabled(): boolean {
   return (
-    process.env.NEXUREJS_NATIVE_DISABLED === 'true' || process.env.NEXUREJS_LITE_MODE === 'true'
+    process.env.NEXUREJS_NATIVE_DISABLED === 'true' ||
+    process.env.NEXUREJS_LITE_MODE === 'true'
   );
+}
+
+/**
+ * Safe loading of native modules with proper error handling
+ * and crash prevention
+ */
+function safeLoadNativeModule(modulePath: string): any {
+  // Signal to Node.js not to exit on uncaught exceptions
+  // This is to handle any potential segfaults or errors
+  // during module loading
+  const existingHandler = process.listeners('uncaughtException').pop();
+
+  try {
+    // Add a temporary handler to catch any errors during module loading
+    process.once('uncaughtException', (err) => {
+      log.error(`Uncaught exception while loading native module: ${err.message}`);
+      log.error(err.stack || 'No stack trace available');
+
+      // Re-add the existing handler if any
+      if (existingHandler) {
+        process.on('uncaughtException', existingHandler);
+      }
+
+      return false; // Return a value to indicate failure
+    });
+
+    // Try to load the module
+    const module = customRequire(modulePath);
+
+    // Store in global ref to prevent garbage collection
+    // This is important to prevent crashes during cleanup
+    globalModuleRef = module;
+
+    // Re-add the existing handler if any
+    if (existingHandler) {
+      process.on('uncaughtException', existingHandler);
+    }
+
+    return module;
+  } catch (err: any) {
+    log.warn(`Error loading native module: ${err.message}`);
+
+    // Re-add the existing handler if any
+    if (existingHandler) {
+      process.on('uncaughtException', existingHandler);
+    }
+
+    return null;
+  }
 }
 
 /**
@@ -93,27 +148,31 @@ export function tryLoadNativeBinding(bindingPath: string): NativeBindingModule |
 
   try {
     const startTime = performance.now();
-    // Try to load the module
-    const nativeBindingPath = join(process.cwd(), bindingPath);
 
     // Check if the file exists
-    if (!existsSync(nativeBindingPath)) {
-      log.debug(`Native binding module not found at: ${nativeBindingPath}`);
+    if (!existsSync(bindingPath)) {
+      log.debug(`Native binding module not found at: ${bindingPath}`);
       moduleCache[bindingPath] = null;
       return null;
     }
 
-    // Try to load the module
-    const nativeBinding = customRequire(nativeBindingPath);
+    // Try to load the module safely
+    const nativeBinding = safeLoadNativeModule(bindingPath);
 
-    const endTime = performance.now();
-    log.debug(
-      `Native binding loaded successfully in ${(endTime - startTime).toFixed(2)}ms: ${bindingPath}`
-    );
+    if (nativeBinding) {
+      const endTime = performance.now();
+      log.debug(
+        `Native binding loaded successfully in ${(endTime - startTime).toFixed(2)}ms: ${bindingPath}`
+      );
 
-    // Cache the loaded module
-    moduleCache[bindingPath] = nativeBinding;
-    return nativeBinding;
+      // Cache the loaded module
+      moduleCache[bindingPath] = nativeBinding;
+      return nativeBinding;
+    } else {
+      log.warn(`Failed to load native binding: ${bindingPath}`);
+      moduleCache[bindingPath] = null;
+      return null;
+    }
   } catch (error: any) {
     log.warn(`Failed to load native binding: ${bindingPath}`, error.message);
 
@@ -144,7 +203,9 @@ export function loadNativeBinding(modulePath?: string): NativeBindingModule | nu
     './nexurejs_native.node',
     '../build/Release/nexurejs_native.node',
     '../build/Debug/nexurejs_native.node',
-    '../nexurejs_native.node'
+    '../nexurejs_native.node',
+    join(process.cwd(), 'build/Release/nexurejs_native.node'),
+    join(process.cwd(), 'build/Debug/nexurejs_native.node')
   ].filter(Boolean) as string[];
 
   // Try each path until one works
@@ -183,21 +244,21 @@ export function isBindingAvailable(bindingType: BindingType): boolean {
 
   switch (bindingType) {
     case BindingType.WEBSOCKET:
-      return Boolean(nativeModule.NativeWebSocketServer);
+      return Boolean(nativeModule.WebSocketServer || nativeModule.NativeWebSocketServer);
     case BindingType.JSON:
-      return Boolean(nativeModule.JSONParser);
+      return Boolean(nativeModule.JsonProcessor);
     case BindingType.HTTP:
-      return Boolean(nativeModule.HTTPParser);
+      return Boolean(nativeModule.HttpParser);
     case BindingType.URL:
-      return Boolean(nativeModule.URLParser);
+      return Boolean(nativeModule.parseQueryString && nativeModule.format);
     case BindingType.CRYPTO:
       return Boolean(nativeModule.Crypto);
     case BindingType.COMPRESSION:
-      return Boolean(nativeModule.Compression);
+      return Boolean(nativeModule.compress && nativeModule.decompress);
     case BindingType.ROUTER:
       return Boolean(nativeModule.RadixRouter);
     case BindingType.SCHEMA:
-      return Boolean(nativeModule.SchemaValidator);
+      return Boolean(nativeModule.validate && nativeModule.validatePartial);
     default:
       return false;
   }

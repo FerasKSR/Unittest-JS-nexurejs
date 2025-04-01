@@ -11,6 +11,7 @@ import { performance } from 'node:perf_hooks';
 import { Server as HttpServer } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
+import { loadNativeBinding as safeLoadNativeBinding } from './loader.js';
 import type {
   HttpParseResult,
   NativeHttpParser,
@@ -263,108 +264,76 @@ export function getNativeModuleStatus(): NativeModuleStatus {
 }
 
 /**
- * Load the native module
- * @returns The native module or null if not available
+ * Load native binding module
  */
 export function loadNativeBinding(): any {
-  // Return cached result if already attempted
-  if (nativeBindingAttempted) return nativeBinding;
-
-  nativeBindingAttempted = true;
+  // Skip if already loaded
+  if (nativeBindingAttempted) {
+    return nativeBinding;
+  }
 
   // Skip if disabled
   if (!nativeOptions.enabled) {
     if (nativeOptions.verbose) {
-      Logger.debug('Native modules disabled by configuration');
+      console.log('Native modules are disabled in configuration options');
     }
-    nativeModuleStatus.error = 'Disabled by configuration';
+    nativeBindingAttempted = true;
     return null;
   }
 
+  // Mark as attempted
+  nativeBindingAttempted = true;
+
   try {
-    // Try to load the native module from multiple possible locations
-    const possiblePaths = [
-      // Custom path from options
-      nativeOptions.modulePath,
-      // Local build path
-      join(dirName, '..', '..', 'build', 'Release', 'nexurejs_native.node'),
-      // Prebuilt binary paths based on platform
-      join(
-        dirName,
-        '..',
-        '..',
-        'prebuilds',
-        `${process.platform}-${process.arch}`,
-        'nexurejs_native.node'
-      )
-    ].filter(Boolean) as string[];
-
-    // Try to add the platform-specific package if it exists
-    try {
-      const platformSpecificPackage = `nexurejs-native-${process.platform}-${process.arch}`;
-      // This will throw if the package doesn't exist
-      customRequire.resolve(platformSpecificPackage);
-      possiblePaths.push(platformSpecificPackage);
-    } catch (_e) {
-      // Package not found, continue with other paths
-    }
-
-    let loadError: Error | null = null;
-
-    // Try each path until one works
-    for (const bindingPath of possiblePaths) {
-      try {
-        // For direct file paths, check if they exist first
-        if (bindingPath.endsWith('.node') && !existsSync(bindingPath)) {
-          continue;
+    // Custom path provided in options
+    if (nativeOptions.modulePath) {
+      if (existsSync(nativeOptions.modulePath)) {
+        try {
+          // Use the safer loader
+          nativeBinding = safeLoadNativeBinding(nativeOptions.modulePath);
+          if (nativeBinding) {
+            nativeModuleStatus.loaded = true;
+          }
+        } catch (err: any) {
+          nativeModuleStatus.error = err.message;
+          if (nativeOptions.verbose) {
+            console.error(`Failed to load native binding from ${nativeOptions.modulePath}:`, err);
+          }
         }
-
-        // Load the native module
-        nativeBinding = customRequire(bindingPath);
-
-        // Update status
+      } else if (nativeOptions.verbose) {
+        console.error(`Native module path not found: ${nativeOptions.modulePath}`);
+      }
+    } else {
+      // Auto-detect module
+      nativeBinding = safeLoadNativeBinding();
+      if (nativeBinding) {
         nativeModuleStatus.loaded = true;
-        nativeModuleStatus.httpParser = Boolean(nativeBinding.HttpParser);
-        nativeModuleStatus.radixRouter = Boolean(nativeBinding.RadixRouter);
-        nativeModuleStatus.jsonProcessor = Boolean(nativeBinding.JsonProcessor);
-        nativeModuleStatus.urlParser = Boolean(nativeBinding.UrlParser);
-        nativeModuleStatus.schemaValidator = Boolean(nativeBinding.SchemaValidator);
-        nativeModuleStatus.compression = Boolean(nativeBinding.Compression);
-        nativeModuleStatus.webSocket = Boolean(nativeBinding.NativeWebSocketServer);
-        nativeModuleStatus.objectPool = Boolean(nativeBinding.ObjectPool);
-
-        if (nativeOptions.verbose) {
-          Logger.debug(`Native module loaded successfully from ${bindingPath}`);
-          Logger.debug(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
-        }
-
-        // Successfully loaded
-        return nativeBinding;
-      } catch (err: any) {
-        // Store the error but continue trying other paths
-        loadError = err;
       }
     }
 
-    // If we get here, all paths failed
-    throw loadError || new Error('Failed to load native module from any location');
+    // Initialize component status if module loaded
+    if (nativeBinding) {
+      nativeModuleStatus.httpParser = Boolean(nativeBinding.HttpParser);
+      nativeModuleStatus.radixRouter = Boolean(nativeBinding.RadixRouter);
+      nativeModuleStatus.jsonProcessor = Boolean(nativeBinding.JsonProcessor);
+      nativeModuleStatus.urlParser = Boolean(nativeBinding.parse && nativeBinding.parseQueryString);
+      nativeModuleStatus.schemaValidator = Boolean(nativeBinding.validate && nativeBinding.compileSchema);
+      nativeModuleStatus.compression = Boolean(nativeBinding.compress && nativeBinding.decompress);
+      nativeModuleStatus.webSocket = Boolean(nativeBinding.NativeWebSocketServer);
+      nativeModuleStatus.objectPool = Boolean(nativeBinding.ObjectPool);
+
+      if (nativeOptions.verbose) {
+        console.log('Native modules loaded successfully');
+        console.log('Available components:', JSON.stringify(nativeModuleStatus, null, 2));
+      }
+    } else if (nativeOptions.verbose) {
+      console.log('Native modules not available, using JavaScript fallbacks');
+    }
   } catch (err: any) {
-    if (nativeOptions.verbose || process.env.NODE_ENV !== 'production') {
-      Logger.warn(`Failed to load native module: ${err.message}`);
-
-      if (err.code === 'MODULE_NOT_FOUND') {
-        Logger.warn('Native module not built. Run "npm run build:native:test" to build it.');
-      } else if (err.code === 'ENOENT') {
-        Logger.warn('Native module file not found. Check build configuration.');
-      } else {
-        Logger.warn(`Error type: ${err.code || 'Unknown'}`);
-      }
-
-      Logger.warn('Using JavaScript fallbacks instead');
-    }
-
     nativeModuleStatus.error = err.message;
-    nativeBinding = null;
+    if (nativeOptions.verbose) {
+      console.error('Error loading native modules:', err);
+    }
   }
 
   return nativeBinding;
