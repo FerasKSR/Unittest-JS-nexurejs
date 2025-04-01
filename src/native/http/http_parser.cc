@@ -38,25 +38,25 @@ HttpParser::HttpParser(const Napi::CallbackInfo& info)
 
   // Initialize header names map with common headers for quick comparison
   headerNames_ = {
-    {"host", "Host"},
-    {"content-type", "Content-Type"},
-    {"content-length", "Content-Length"},
-    {"user-agent", "User-Agent"},
-    {"accept", "Accept"},
-    {"connection", "Connection"},
-    {"cookie", "Cookie"},
-    {"authorization", "Authorization"},
-    {"accept-encoding", "Accept-Encoding"},
-    {"accept-language", "Accept-Language"},
-    {"cache-control", "Cache-Control"},
-    {"origin", "Origin"},
-    {"referer", "Referer"},
-    {"if-none-match", "If-None-Match"},
-    {"if-modified-since", "If-Modified-Since"},
-    {"x-requested-with", "X-Requested-With"},
-    {"x-forwarded-for", "X-Forwarded-For"},
-    {"x-forwarded-proto", "X-Forwarded-Proto"},
-    {"x-forwarded-host", "X-Forwarded-Host"}
+    {std::string(HEADER_HOST), "Host"},
+    {std::string(HEADER_CONTENT_TYPE), "Content-Type"},
+    {std::string(HEADER_CONTENT_LENGTH), "Content-Length"},
+    {std::string(HEADER_USER_AGENT), "User-Agent"},
+    {std::string(HEADER_ACCEPT), "Accept"},
+    {std::string(HEADER_CONNECTION), "Connection"},
+    {std::string(HEADER_COOKIE), "Cookie"},
+    {std::string(HEADER_AUTHORIZATION), "Authorization"},
+    {std::string(HEADER_ACCEPT_ENCODING), "Accept-Encoding"},
+    {std::string(HEADER_ACCEPT_LANGUAGE), "Accept-Language"},
+    {std::string(HEADER_CACHE_CONTROL), "Cache-Control"},
+    {std::string(HEADER_ORIGIN), "Origin"},
+    {std::string(HEADER_REFERER), "Referer"},
+    {std::string(HEADER_IF_NONE_MATCH), "If-None-Match"},
+    {std::string(HEADER_IF_MODIFIED_SINCE), "If-Modified-Since"},
+    {std::string(HEADER_X_REQUESTED_WITH), "X-Requested-With"},
+    {std::string(HEADER_X_FORWARDED_FOR), "X-Forwarded-For"},
+    {std::string(HEADER_X_FORWARDED_PROTO), "X-Forwarded-Proto"},
+    {std::string(HEADER_X_FORWARDED_HOST), "X-Forwarded-Host"}
   };
 
   // Initialize lowercase map for case-insensitive comparison
@@ -184,21 +184,21 @@ Napi::Value HttpParser::ParseRequest(const Napi::CallbackInfo& info) {
     result.Set("headers", headers);
 
     // Check for upgrade
-    if (headers.Has("connection")) {
-      std::string_view connection = GetHeaderValueView("connection");
+    if (headers.Has(std::string(HEADER_CONNECTION))) {
+      std::string_view connection = GetHeaderValueView(std::string(HEADER_CONNECTION));
       upgrade_ = (connection == "upgrade" || connection == "Upgrade");
     }
     result.Set("upgrade", Napi::Boolean::New(env, upgrade_));
 
     // Check for content-length
-    if (headers.Has("content-length")) {
-      std::string_view contentLengthStr = GetHeaderValueView("content-length");
+    if (headers.Has(std::string(HEADER_CONTENT_LENGTH))) {
+      std::string_view contentLengthStr = GetHeaderValueView(std::string(HEADER_CONTENT_LENGTH));
       contentLength_ = std::stoi(std::string(contentLengthStr));
     }
 
     // Check for chunked encoding
-    if (headers.Has("transfer-encoding")) {
-      std::string_view transferEncoding = GetHeaderValueView("transfer-encoding");
+    if (headers.Has(std::string(HEADER_TRANSFER_ENCODING))) {
+      std::string_view transferEncoding = GetHeaderValueView(std::string(HEADER_TRANSFER_ENCODING));
       chunkedEncoding_ = (transferEncoding == "chunked" || transferEncoding == "Chunked");
     }
 
@@ -307,7 +307,7 @@ bool HttpParser::ParseRequestLine(Napi::Env env, Napi::Object result) {
   // Find the end of the request line
   const char* endOfLine = FindSubstring(currentBuffer_ + bufferOffset_,
                                      bufferLength_ - bufferOffset_,
-                                     "\r\n", 2);
+                                     CRLF.data(), CRLF.length());
   if (!endOfLine) {
     return false;
   }
@@ -315,7 +315,7 @@ bool HttpParser::ParseRequestLine(Napi::Env env, Napi::Object result) {
   size_t lineLength = endOfLine - (currentBuffer_ + bufferOffset_);
 
   // Find the method portion
-  const char* methodEnd = FindSubstring(currentBuffer_ + bufferOffset_, lineLength, " ", 1);
+  const char* methodEnd = FindSubstring(currentBuffer_ + bufferOffset_, lineLength, SPACE.data(), SPACE.length());
 
   if (!methodEnd) {
     return false;
@@ -331,7 +331,7 @@ bool HttpParser::ParseRequestLine(Napi::Env env, Napi::Object result) {
   size_t urlOffset = (methodEnd - currentBuffer_) + 1;
 
   // Find the URL portion
-  const char* urlEnd = FindSubstring(currentBuffer_ + urlOffset, lineLength - (urlOffset - bufferOffset_), " ", 1);
+  const char* urlEnd = FindSubstring(currentBuffer_ + urlOffset, lineLength - (urlOffset - bufferOffset_), SPACE.data(), SPACE.length());
 
   if (!urlEnd) {
     return false;
@@ -372,7 +372,7 @@ bool HttpParser::ParseRequestLine(Napi::Env env, Napi::Object result) {
 // Parse HTTP headers with zero-copy approach and optimized normalization
 bool HttpParser::ParseHeaders(Napi::Env env, Napi::Object headers) {
   // Find the end of headers (double CRLF)
-  const char* endOfHeaders = FindSubstring(currentBuffer_ + bufferOffset_, bufferLength_ - bufferOffset_, "\r\n\r\n", 4);
+  const char* endOfHeaders = FindSubstring(currentBuffer_ + bufferOffset_, bufferLength_ - bufferOffset_, DOUBLE_CRLF.data(), DOUBLE_CRLF.length());
   if (!endOfHeaders) {
     return false;
   }
@@ -383,57 +383,42 @@ bool HttpParser::ParseHeaders(Napi::Env env, Napi::Object headers) {
 
   // Parse each header line
   size_t lineStart = bufferOffset_;
-  while (lineStart < bufferOffset_ + headersLength) {
-    // Find the end of this line
-    const char* endOfLine = FindSubstring(currentBuffer_ + lineStart, bufferOffset_ + headersLength - lineStart, "\r\n", 2);
+  while (lineStart < headerEndOffset_ - 4) {
+    const char* endOfLine = FindSubstring(currentBuffer_ + lineStart,
+                                       headerEndOffset_ - lineStart,
+                                       CRLF.data(), CRLF.length());
     if (!endOfLine) {
       break;
     }
 
     size_t lineLength = endOfLine - (currentBuffer_ + lineStart);
-
-    // Find the colon
-    const char* colon = FindSubstring(currentBuffer_ + lineStart, lineLength, ":", 1);
-    if (colon) {
-      // Extract key and value
-      std::string_view keyView(currentBuffer_ + lineStart, colon - (currentBuffer_ + lineStart));
-      std::string_view valueView(colon + 1, endOfLine - (colon + 1));
-
-      // Trim leading spaces from value
-      while (!valueView.empty() && valueView[0] == ' ') {
-        valueView.remove_prefix(1);
-      }
-
-      // Convert key to string and normalize to lowercase for consistent lookup
-      std::string keyLower = ToLowercase(keyView);
-
-      // Get normalized header name from cache or use the lowercase version
-      std::string normalizedName;
-      auto it = headerNames_.find(keyLower);
-      if (it != headerNames_.end()) {
-        normalizedName = it->second;
-      } else {
-        // If not in the cache, use the original casing
-        normalizedName = std::string(keyView);
-        // Also add to the cache for future lookups
-        headerNames_[keyLower] = normalizedName;
-      }
-
-      // Add to headers object with consistent casing
-      headers.Set(keyLower, Napi::String::New(env, std::string(valueView)));
-
-      // Also store in our internal map for reference
-      headers_[keyLower] = std::string(valueView);
+    const char* colonPos = FindSubstring(currentBuffer_ + lineStart,
+                                      lineLength,
+                                      COLON_SPACE.data(), COLON_SPACE.length());
+    if (!colonPos) {
+      lineStart = (endOfLine - currentBuffer_) + 2;
+      continue;
     }
 
-    // Move to the next line
-    lineStart = (endOfLine - currentBuffer_) + 2; // +2 for the \r\n
+    // Create string views for name and value
+    std::string_view nameView(currentBuffer_ + lineStart, colonPos - (currentBuffer_ + lineStart));
+    std::string_view valueView(colonPos + 2, endOfLine - (colonPos + 2));
+
+    // Convert header name to lowercase for consistent lookup
+    std::string headerName = ToLowercase(nameView);
+
+    // Store header in object
+    headers.Set(headerName, Napi::String::New(env, std::string(valueView)));
+
+    // Store in our map for later lookup
+    headers_[headerName] = std::string(valueView);
+
+    lineStart = (endOfLine - currentBuffer_) + 2;
   }
 
   // Update offset to after headers
   bufferOffset_ = headerEndOffset_;
   bodyOffset_ = headerEndOffset_;
-  headerComplete_ = true;
 
   return true;
 }
@@ -557,43 +542,35 @@ std::string HttpParser::UrlDecode(const std::string_view& input) {
 
 // Header name normalization with caching
 std::string HttpParser::NormalizeHeaderName(const std::string& name) {
-  // First convert to lowercase for lookup using our optimized method
-  std::string lowerName = ToLowercase(name);
-
-  // Check if we have a cached normalized name
-  auto it = headerNames_.find(lowerName);
+  auto it = headerNames_.find(name);
   if (it != headerNames_.end()) {
     return it->second;
   }
 
-  // Not in cache - use a standard header casing approach
-  // (e.g., content-type -> Content-Type)
-  std::string normalized = lowerName;
-  bool capitalizeNext = true;
+  std::string normalized;
+  normalized.reserve(name.length());
 
-  for (char& c : normalized) {
-    if (capitalizeNext && std::islower(c)) {
-      c = std::toupper(c);
-      capitalizeNext = false;
+  bool capitalize = true;
+  for (char c : name) {
+    if (capitalize && std::isalpha(c)) {
+      normalized += std::toupper(c);
+      capitalize = false;
     } else if (c == '-') {
-      capitalizeNext = true;
+      normalized += c;
+      capitalize = true;
     } else {
-      capitalizeNext = false;
+      normalized += c;
     }
   }
-
-  // Cache the result for future lookups
-  headerNames_[lowerName] = normalized;
 
   return normalized;
 }
 
-// Add a new method to get header value as a string_view
+// Get header value by name
 std::string_view HttpParser::GetHeaderValueView(const std::string& name) const {
-  for (const auto& header : headers_) {
-    if (CaseInsensitiveCompare(header.first, name)) {
-      return std::string_view(header.second);
-    }
+  auto it = headers_.find(ToLowercase(name));
+  if (it != headers_.end()) {
+    return it->second;
   }
   return std::string_view();
 }

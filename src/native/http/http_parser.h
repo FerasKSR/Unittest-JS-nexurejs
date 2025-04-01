@@ -14,6 +14,44 @@ namespace nexurejs {
   void AddCleanupReference(Napi::FunctionReference* ref);
 }
 
+// HTTP protocol constants
+constexpr size_t MAX_HEADER_SIZE = 8192; // 8KB
+constexpr size_t MAX_URL_LENGTH = 8192; // 8KB
+constexpr size_t MAX_METHOD_LENGTH = 32;
+constexpr size_t MAX_VERSION_LENGTH = 8;
+constexpr size_t MAX_HEADER_COUNT = 100;
+constexpr size_t MAX_HEADER_NAME_LENGTH = 256;
+constexpr size_t MAX_HEADER_VALUE_LENGTH = 8192; // 8KB
+
+// Common HTTP header names
+const std::string_view HEADER_CONTENT_LENGTH = "content-length";
+const std::string_view HEADER_CONTENT_TYPE = "content-type";
+const std::string_view HEADER_CONNECTION = "connection";
+const std::string_view HEADER_TRANSFER_ENCODING = "transfer-encoding";
+const std::string_view HEADER_HOST = "host";
+const std::string_view HEADER_ACCEPT = "accept";
+const std::string_view HEADER_USER_AGENT = "user-agent";
+const std::string_view HEADER_COOKIE = "cookie";
+const std::string_view HEADER_AUTHORIZATION = "authorization";
+const std::string_view HEADER_ACCEPT_ENCODING = "accept-encoding";
+const std::string_view HEADER_ACCEPT_LANGUAGE = "accept-language";
+const std::string_view HEADER_CACHE_CONTROL = "cache-control";
+const std::string_view HEADER_ORIGIN = "origin";
+const std::string_view HEADER_REFERER = "referer";
+const std::string_view HEADER_IF_NONE_MATCH = "if-none-match";
+const std::string_view HEADER_IF_MODIFIED_SINCE = "if-modified-since";
+const std::string_view HEADER_X_REQUESTED_WITH = "x-requested-with";
+const std::string_view HEADER_X_FORWARDED_FOR = "x-forwarded-for";
+const std::string_view HEADER_X_FORWARDED_PROTO = "x-forwarded-proto";
+const std::string_view HEADER_X_FORWARDED_HOST = "x-forwarded-host";
+
+// HTTP protocol constants
+const std::string_view CRLF = "\r\n";
+const std::string_view COLON_SPACE = ": ";
+const std::string_view DOUBLE_CRLF = "\r\n\r\n";
+const std::string_view SPACE = " ";
+const std::string_view HTTP_VERSION_PREFIX = "HTTP/";
+
 class HttpParser : public Napi::ObjectWrap<HttpParser> {
 public:
   static Napi::Object Init(Napi::Env env, Napi::Object exports);
