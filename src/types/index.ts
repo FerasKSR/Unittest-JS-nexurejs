@@ -306,15 +306,12 @@ export class NativeSchemaValidator {
 export interface ZeroCopyResult {
   method: string;
   url: string;
-  httpVersion: string;
-  statusCode: number;
-  statusMessage: string;
   headers: Record<string, string>;
-  headersRaw: string[];
-  body: Buffer;
-  headersEnd: number;
-  rawHeaders: Buffer;
-  bodyComplete?: boolean;
+  body: Buffer | null;
+  versionMajor: number;
+  versionMinor: number;
+  complete: boolean;
+  upgrade: boolean;
 }
 
 export class ZeroCopyHttpParser {
@@ -332,14 +329,12 @@ export function parseHttpRequest(_buffer: Buffer): ZeroCopyResult {
   return {
     method: '',
     url: '',
-    httpVersion: '',
-    statusCode: 200,
-    statusMessage: '',
     headers: {},
-    headersRaw: [],
-    body: Buffer.from(''),
-    headersEnd: 0,
-    rawHeaders: Buffer.from('')
+    body: null,
+    versionMajor: 1,
+    versionMinor: 1,
+    complete: false,
+    upgrade: false
   };
 }
 
@@ -655,4 +650,17 @@ export interface RouterMatch {
    * Route middlewares
    */
   middlewares: MiddlewareHandler[];
+}
+
+export function getEmptyResult(): ZeroCopyResult {
+  return {
+    method: '',
+    url: '',
+    headers: {},
+    body: null,
+    versionMajor: 1,
+    versionMinor: 1,
+    complete: false,
+    upgrade: false
+  };
 }
