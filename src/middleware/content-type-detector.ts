@@ -7,8 +7,7 @@
 
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { PassThrough, Transform } from 'node:stream';
-import { getContentType } from '../utils/http-utils';
-import { createTextTransformer, createJsonTransformer } from '../utils/stream-optimizer';
+import { getContentType, createJsonTransformer, createTextTransformer } from '../types/index.js';
 
 interface ContentTypeOptions {
   /** Whether to automatically transform content based on type */
@@ -97,7 +96,7 @@ function setupJsonTransformers(
       return data;
     },
     processError: (err: Error) => {
-      console.warn('JSON parse error:', err.message);
+      Logger.warn('JSON parse error:', err.message);
     }
   });
 

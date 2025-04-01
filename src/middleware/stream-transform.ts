@@ -7,23 +7,18 @@
  */
 
 import { IncomingMessage } from 'node:http';
-import { Readable, Transform, PassThrough } from 'node:stream';
+import { Readable, Transform as NodeTransform, PassThrough } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { createGzip, createGunzip, ZlibOptions } from 'node:zlib';
+import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
 import {
-  createCipheriv,
-  createDecipheriv,
-  randomBytes,
-  CipherGCMTypes,
-  CipherCCMTypes
-} from 'node:crypto';
-import {
+  TimeoutHandler,
+  hasBody,
   createOptimizedTransform,
+  globalTimeoutManager,
   createTextTransformer,
   createJsonTransformer
-} from '../utils/stream-optimizer';
-import { globalTimeoutManager, TimeoutHandler } from '../utils/adaptive-timeout';
-import { hasBody } from '../utils/http-utils';
+} from '../types/index.js';
 
 /**
  * Configuration options for stream processing
@@ -90,7 +85,7 @@ const DEFAULT_STREAM_OPTIONS: Required<StreamProcessingOptions> = {
  * @returns Middleware function
  */
 export function createStreamTransformMiddleware(
-  createTransformStream: (req: IncomingMessage) => Transform,
+  createTransformStream: (req: IncomingMessage) => NodeTransform,
   options?: StreamProcessingOptions
 ): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   const opts = { ...DEFAULT_STREAM_OPTIONS, ...options };
@@ -135,7 +130,7 @@ export function createStreamTransformMiddleware(
     // Set appropriate chunk size for memory optimization
     if (transformStream.readableHighWaterMark !== opts.chunkSize) {
       // Use constructor to create a transform with the desired highWaterMark instead
-      const newTransform = new Transform({
+      const newTransform = new NodeTransform({
         readableHighWaterMark: opts.chunkSize,
         writableHighWaterMark: opts.chunkSize
       });
@@ -253,10 +248,10 @@ export interface CompressionOptions extends StreamProcessingOptions {
  * @returns Middleware function
  */
 export function createCompressionMiddleware(
-  options?: CompressionOptions
+  options: CompressionOptions = {}
 ): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
-  const level = options?.level ?? 6;
-  const zlibOptions = options?.zlibOptions ?? {};
+  const level = options.level ?? 6;
+  const zlibOptions = options.zlibOptions ?? {};
 
   return createStreamTransformMiddleware(() => createGzip({ ...zlibOptions, level }), options);
 }
@@ -301,20 +296,16 @@ export interface EncryptionOptions extends StreamProcessingOptions {
 export function createEncryptionMiddleware(
   key: Buffer = randomBytes(32),
   iv: Buffer = randomBytes(16),
-  options?: EncryptionOptions
+  options: EncryptionOptions = {}
 ): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
-  const algorithm = options?.algorithm ?? 'aes-256-gcm';
-  const authTagLength = options?.authTagLength ?? 16;
+  const { algorithm = 'aes-256-gcm', authTagLength = 16, ...streamOptions } = options;
 
   return createStreamTransformMiddleware(() => {
     if (algorithm.endsWith('-gcm')) {
-      return createCipheriv(algorithm as CipherGCMTypes, key, iv, { authTagLength });
-    } else if (algorithm.endsWith('-ccm')) {
-      return createCipheriv(algorithm as CipherCCMTypes, key, iv, { authTagLength });
-    } else {
-      return createCipheriv(algorithm, key, iv);
+      return createCipheriv(algorithm, key, iv, { authTagLength } as any);
     }
-  }, options);
+    return createCipheriv(algorithm, key, iv);
+  }, streamOptions);
 }
 
 /**
@@ -327,20 +318,16 @@ export function createEncryptionMiddleware(
 export function createDecryptionMiddleware(
   key: Buffer,
   iv: Buffer,
-  options?: EncryptionOptions
+  options: EncryptionOptions = {}
 ): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
-  const algorithm = options?.algorithm ?? 'aes-256-gcm';
-  const authTagLength = options?.authTagLength ?? 16;
+  const { algorithm = 'aes-256-gcm', authTagLength = 16, ...streamOptions } = options;
 
   return createStreamTransformMiddleware(() => {
     if (algorithm.endsWith('-gcm')) {
-      return createDecipheriv(algorithm as CipherGCMTypes, key, iv, { authTagLength });
-    } else if (algorithm.endsWith('-ccm')) {
-      return createDecipheriv(algorithm as CipherCCMTypes, key, iv, { authTagLength });
-    } else {
-      return createDecipheriv(algorithm, key, iv);
+      return createDecipheriv(algorithm, key, iv, { authTagLength } as any);
     }
-  }, options);
+    return createDecipheriv(algorithm, key, iv);
+  }, streamOptions);
 }
 
 /**
@@ -393,7 +380,7 @@ export function createJsonTransformMiddleware(
     const isLargeJson =
       contentLength > (opts.maxBufferSize || DEFAULT_STREAM_OPTIONS.maxBufferSize);
 
-    return new Transform({
+    return new NodeTransform({
       objectMode: true,
       highWaterMark: opts.chunkSize || DEFAULT_STREAM_OPTIONS.chunkSize,
       transform(chunk, _encoding, callback): void {
@@ -532,7 +519,7 @@ export function createCsvTransformMiddleware(
     let headers: string[] = [];
     let isFirstRow = true;
 
-    return new Transform({
+    return new NodeTransform({
       objectMode: true,
       transform(chunk, _encoding, callback): void {
         try {
@@ -658,7 +645,7 @@ export function createCsvTransformMiddleware(
  * Aggregated stream transformation middleware for supporting multiple transform types
  */
 export class StreamProcessor {
-  private transformers: Array<(req: IncomingMessage) => Transform> = [];
+  private transformers: Array<(req: IncomingMessage) => NodeTransform> = [];
   private options: StreamProcessingOptions;
 
   /**
@@ -674,7 +661,7 @@ export class StreamProcessor {
    * @param createTransformer Function that creates a transform stream
    * @returns This instance for chaining
    */
-  addTransformer(createTransformer: (req: IncomingMessage) => Transform): this {
+  addTransformer(createTransformer: (req: IncomingMessage) => NodeTransform): this {
     this.transformers.push(createTransformer);
     return this;
   }
@@ -695,11 +682,11 @@ export class StreamProcessor {
       }
 
       // Apply each transformer in sequence
-      let finalTransform: Transform = this.transformers[0]!(req);
+      let finalTransform: NodeTransform = this.transformers[0]!(req);
 
       for (let i = 1; i < this.transformers.length; i++) {
         const nextTransform = this.transformers[i]!(req);
-        finalTransform = finalTransform.pipe(nextTransform) as Transform;
+        finalTransform = finalTransform.pipe(nextTransform) as NodeTransform;
       }
 
       return finalTransform;
@@ -715,40 +702,40 @@ export class StreamProcessor {
  */
 export function createTextProcessingMiddleware(
   processFunction: (text: string) => string,
-  options?: StreamProcessingOptions
+  options: StreamProcessingOptions = {}
 ): (req: IncomingMessage, _res: any, next: () => Promise<void>) => Promise<void> {
   return createStreamTransformMiddleware(() => {
     let buffer = '';
-    const chunkSize = options?.chunkSize || DEFAULT_STREAM_OPTIONS.chunkSize;
+    const chunkSize = options.chunkSize || DEFAULT_STREAM_OPTIONS.chunkSize;
 
-    return new Transform({
+    return new NodeTransform({
       transform(chunk, _encoding, callback): void {
         try {
           buffer += chunk.toString();
 
-          // Process in chunks to avoid excessive memory usage
-          while (buffer.length > chunkSize) {
-            const processChunk = buffer.slice(0, chunkSize);
-            buffer = buffer.slice(chunkSize);
-
-            const processed = processFunction(processChunk);
-            this.push(processed);
+          // Process chunks in isolation if they are large enough
+          if (buffer.length >= chunkSize) {
+            const processed = processFunction(buffer);
+            buffer = '';
+            callback(null, processed);
+          } else {
+            callback();
           }
-
-          callback();
         } catch (err) {
-          callback(err instanceof Error ? err : new Error(String(err)));
+          callback(err as Error);
         }
       },
+
       flush(callback): void {
         try {
           if (buffer.length > 0) {
             const processed = processFunction(buffer);
-            this.push(processed);
+            callback(null, processed);
+          } else {
+            callback();
           }
-          callback();
         } catch (err) {
-          callback(err instanceof Error ? err : new Error(String(err)));
+          callback(err as Error);
         }
       }
     });
@@ -926,7 +913,7 @@ export function streamTransform(
  * @param {Function} options.processText - Function to process text data
  * @returns {Transform} A transform stream for processing text
  */
-export function createTextProcessor(options: any = {}): Transform {
+export function createTextProcessor(options: any = {}): NodeTransform {
   return createTextTransformer(options);
 }
 
@@ -938,6 +925,6 @@ export function createTextProcessor(options: any = {}): Transform {
  * @param {boolean} options.streamArrayItems - Process array items incrementally
  * @returns {Transform} A transform stream for processing JSON
  */
-export function createJsonProcessor(options: any = {}): Transform {
+export function createJsonProcessor(options: any = {}): NodeTransform {
   return createJsonTransformer(options);
 }

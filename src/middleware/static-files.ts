@@ -15,8 +15,7 @@ import { createReadStream, Stats, promises as fs } from 'node:fs';
 import { extname, join, normalize, resolve, isAbsolute } from 'node:path';
 import { Readable } from 'node:stream';
 import { parse as _parseUrl } from 'node:url';
-import { MiddlewareHandler } from './middleware';
-import { Logger } from '../utils/logger';
+import { MiddlewareHandler } from './middleware.js';
 
 // Default MIME types for common file extensions
 const DEFAULT_MIME_TYPES: Record<string, string> = {
