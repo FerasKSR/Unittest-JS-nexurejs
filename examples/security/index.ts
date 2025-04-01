@@ -1,3 +1,18 @@
+/**
+ * Security Example
+ *
+ * This example demonstrates how to implement robust security measures in NexureJS:
+ * - Security headers implementation
+ * - CSRF protection
+ * - Rate limiting
+ * - Input validation
+ * - Proper error handling
+ *
+ * For complete API documentation, see:
+ * - API Reference: ../../docs/API_REFERENCE.md
+ * - Examples Guide: ../../docs/EXAMPLES.md
+ */
+
 import 'reflect-metadata';
 import {
   Nexure,

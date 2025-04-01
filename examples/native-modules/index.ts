@@ -13,7 +13,7 @@ import {
   getNativeModuleStatus,
   resetAllPerformanceMetrics,
   getAllPerformanceMetrics
-} from '../../src/native/index.js';
+} from '../../src/native';
 import { IncomingMessage, ServerResponse } from 'node:http';
 
 // Create a dummy route handler function

@@ -1,3 +1,19 @@
+/**
+ * Middleware Example
+ *
+ * This example demonstrates advanced middleware patterns in NexureJS:
+ * - Global middleware for request logging
+ * - Class-based middleware for authentication
+ * - Controller-level middleware application
+ * - Route-specific middleware application
+ * - Authentication and authorization flow
+ * - Middleware composition
+ *
+ * For complete API documentation, see:
+ * - API Reference: ../../docs/API_REFERENCE.md
+ * - Examples Guide: ../../docs/EXAMPLES.md
+ */
+
 import 'reflect-metadata';
 import {
   Nexure,
