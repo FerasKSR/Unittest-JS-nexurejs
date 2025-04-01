@@ -2,4 +2,4 @@
  * Routing module exports
  */
 
-export { Router } from './router';
+export * from './router.js';

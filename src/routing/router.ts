@@ -11,12 +11,29 @@
 
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { URL } from 'node:url';
-import { HttpMethod } from '../http/http-method';
-import { MiddlewareHandler, composeMiddleware } from '../middleware/middleware';
-import { Container } from '../di/container';
-import { getRouteMetadata } from '../decorators/route-decorators';
-import { parseBody } from '../http/body-parser';
-import { HttpException } from '../http/http-exception';
+import { MiddlewareHandler, getRouteMetadata, composeMiddleware, parseBody } from '../types/index.js';
+import { Container } from '../di/container.js';
+
+/**
+ * HTTP method types for routing
+ */
+export type HttpMethod =
+  | 'GET'
+  | 'POST'
+  | 'PUT'
+  | 'DELETE'
+  | 'PATCH'
+  | 'HEAD'
+  | 'OPTIONS'
+  | 'CONNECT'
+  | 'TRACE'
+  | '*';
+
+// Constants
+export const STATIC = 0;
+export const PARAM = 1;
+export const MATCH_ALL = 2;
+export const WILDCARD = 3;
 
 // Define route handler and related types
 export type RouteHandler = (_req: IncomingMessage, _res: ServerResponse) => Promise<void>;
@@ -33,11 +50,6 @@ export interface RouteMatch {
   route: Route;
   params: Record<string, string>;
 }
-
-// Node types in radix tree
-const STATIC = 0;
-const PARAM = 1;
-const WILDCARD = 2;
 
 /**
  * Memory-efficient node class with optimization for static nodes
