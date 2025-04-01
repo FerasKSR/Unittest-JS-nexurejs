@@ -1,301 +1,348 @@
 /**
- * Buffer Pool with Adaptive Sizing
+ * Buffer Pool
  *
- * This implementation provides buffer recycling with adaptive buffer size
- * management for optimal memory usage patterns.
+ * An efficient buffer pool implementation that reuses buffers to reduce garbage collection.
+ * This consolidated implementation removes redundancy and optimizes memory usage.
  */
 
+import { Buffer } from 'node:buffer';
+
 /**
- * Buffer Pool Configuration
+ * Buffer pool configuration
  */
 export interface BufferPoolConfig {
-  /** Initial number of buffers to pre-allocate */
-  initialSize?: number;
-  /** Maximum number of buffers to keep in the pool */
-  maxSize?: number;
-  /** Default size for buffers (16KB) */
-  bufferSize?: number;
-  /** Factor to grow the pool by when needed */
-  growthFactor?: number;
-  /** Enable adaptive buffer sizing */
-  adaptive?: boolean;
-  /** Interval for adaptation in ms */
-  adaptiveInterval?: number;
-  /** Minimum buffer size (1KB) */
-  minBufferSize?: number;
-  /** Maximum buffer size (1MB) */
-  maxBufferSize?: number;
-}
+  /**
+   * Default buffer size for new buffers
+   * @default 8192 (8KB)
+   */
+  defaultSize?: number;
 
-interface BufferPoolStats {
-  created: number;
-  acquired: number;
-  released: number;
-  dropped: number;
-  totalAllocated: number;
-  hits: number;
-  misses: number;
-  adapts: number;
+  /**
+   * Maximum number of buffers to keep in the pool
+   * @default 1000
+   */
+  maxPoolSize?: number;
+
+  /**
+   * Maximum size of a single buffer to cache
+   * @default 10485760 (10MB)
+   */
+  maxBufferSize?: number;
+
+  /**
+   * Interval in milliseconds to clean up unused buffers
+   * @default 30000 (30 seconds)
+   */
+  cleanupInterval?: number;
+
+  /**
+   * Whether to track allocations (useful for debugging)
+   * @default false
+   */
+  trackAllocations?: boolean;
 }
 
 /**
- * Buffer Pool for efficient buffer reuse to reduce allocation overhead
+ * Buffer allocation statistics
+ */
+export interface BufferStats {
+  /**
+   * Total number of buffers allocated
+   */
+  totalAllocated: number;
+
+  /**
+   * Total number of buffers released
+   */
+  totalReleased: number;
+
+  /**
+   * Current number of buffers in use
+   */
+  currentInUse: number;
+
+  /**
+   * Current pool size
+   */
+  poolSize: number;
+
+  /**
+   * Maximum pool size
+   */
+  maxPoolSize: number;
+
+  /**
+   * Total memory in the pool (bytes)
+   */
+  poolMemory: number;
+
+  /**
+   * Number of buffers reused from the pool
+   */
+  reused: number;
+
+  /**
+   * Details about buffer sizes in the pool
+   */
+  sizeDistribution: Record<number, number>;
+}
+
+/**
+ * Pool entry interface
+ */
+interface PoolEntry {
+  buffer: Buffer;
+  lastUsed: number;
+  size: number;
+}
+
+/**
+ * An efficient buffer pool implementation
  */
 export class BufferPool {
-  private config: Required<BufferPoolConfig>;
-  private pools: Map<number, Buffer[]>;
-  private stats: BufferPoolStats;
-  private sizeUsage: Map<number, number>;
-  private adaptiveInterval: NodeJS.Timeout | null = null;
+  private buffers: PoolEntry[] = [];
+  private stats = {
+    totalAllocated: 0,
+    totalReleased: 0,
+    currentInUse: 0,
+    reused: 0
+  };
+  private cleanupTimer: NodeJS.Timeout | null = null;
+  private defaultSize: number;
+  private maxPoolSize: number;
+  private maxBufferSize: number;
+  private trackAllocations: boolean;
 
   /**
    * Create a new buffer pool
+   * @param config Pool configuration
    */
   constructor(config: BufferPoolConfig = {}) {
-    this.config = {
-      initialSize: config.initialSize || 10,
-      maxSize: config.maxSize || 1000,
-      bufferSize: config.bufferSize || 16 * 1024, // 16KB default
-      growthFactor: config.growthFactor || 1.5,
-      adaptive: config.adaptive || false,
-      adaptiveInterval: config.adaptiveInterval || 5000, // 5 seconds
-      minBufferSize: config.minBufferSize || 1 * 1024, // 1KB
-      maxBufferSize: config.maxBufferSize || 1 * 1024 * 1024 // 1MB
-    };
+    this.defaultSize = config.defaultSize || 8192;
+    this.maxPoolSize = config.maxPoolSize || 1000;
+    this.maxBufferSize = config.maxBufferSize || 10 * 1024 * 1024;
+    this.trackAllocations = config.trackAllocations || false;
 
-    // Initialize buffer pools for different sizes
-    this.pools = new Map();
-
-    // Add default size pool
-    this.pools.set(this.config.bufferSize, []);
-
-    // Pre-allocate initial buffers
-    this.preallocate(this.config.initialSize, this.config.bufferSize);
-
-    // Statistics
-    this.stats = {
-      created: this.config.initialSize,
-      acquired: 0,
-      released: 0,
-      dropped: 0,
-      totalAllocated: this.config.initialSize * this.config.bufferSize,
-      hits: 0,
-      misses: 0,
-      adapts: 0
-    };
-
-    // Size usage tracking for adaptive sizing
-    this.sizeUsage = new Map();
-
-    // Start adaptive sizing if enabled
-    if (this.config.adaptive) {
-      this.startAdaptiveSizing();
+    // Schedule cleanup if interval is provided
+    if (config.cleanupInterval) {
+      this.startCleanupInterval(config.cleanupInterval);
     }
   }
 
   /**
-   * Pre-allocate buffers in the pool
-   * @param count Number of buffers to allocate
-   * @param size Size of each buffer
-   * @private
+   * Get a buffer from the pool or create a new one
+   * @param size Size of the buffer to acquire
+   * @returns A buffer of the requested size
    */
-  private preallocate(count: number, size: number): void {
-    const pool = this.getOrCreatePool(size);
-    for (let i = 0; i < count; i++) {
-      pool.push(Buffer.allocUnsafe(size));
-    }
-  }
-
-  /**
-   * Get or create a pool for a specific buffer size
-   * @param size Buffer size
-   * @returns Pool for the requested size
-   * @private
-   */
-  private getOrCreatePool(size: number): Buffer[] {
-    // Round size to nearest power of 2 to limit fragmentation
-    const normalizedSize = this.normalizeSize(size);
-
-    if (!this.pools.has(normalizedSize)) {
-      this.pools.set(normalizedSize, []);
+  acquire(size = this.defaultSize): Buffer {
+    if (this.trackAllocations) {
+      this.stats.totalAllocated++;
+      this.stats.currentInUse++;
     }
 
-    return this.pools.get(normalizedSize)!;
-  }
+    // Find the closest size in the pool
+    const index = this.findClosestBuffer(size);
 
-  /**
-   * Normalize size to reduce pool fragmentation
-   * @param size Requested size
-   * @returns Normalized size
-   * @private
-   */
-  private normalizeSize(size: number): number {
-    // Ensure size is within configured bounds
-    size = Math.max(size, this.config.minBufferSize);
-    size = Math.min(size, this.config.maxBufferSize);
+    if (index !== -1) {
+      const entry = this.buffers.splice(index, 1)[0]!;
 
-    // Round to powers of 2 to limit fragmentation
-    const power = Math.ceil(Math.log2(size));
-    return Math.pow(2, power);
-  }
+      if (this.trackAllocations) {
+        this.stats.reused++;
+      }
 
-  /**
-   * Acquire a buffer from the pool or create a new one
-   * @param size Desired buffer size
-   * @returns A buffer of at least the requested size
-   */
-  acquire(size: number): Buffer {
-    const normalizedSize = this.normalizeSize(size);
-    const pool = this.getOrCreatePool(normalizedSize);
-
-    // Track acquisition for this size
-    this.trackSizeUsage(normalizedSize);
-
-    // Get buffer from pool or create new one
-    let buffer: Buffer;
-    if (pool.length > 0) {
-      buffer = pool.pop()!;
-      this.stats.hits++;
-    } else {
-      buffer = Buffer.allocUnsafe(normalizedSize);
-      this.stats.created++;
-      this.stats.totalAllocated += normalizedSize;
-      this.stats.misses++;
+      return entry.buffer;
     }
 
-    this.stats.acquired++;
-    return buffer;
+    // Create a new buffer if none found
+    return Buffer.allocUnsafe(size);
   }
 
   /**
    * Release a buffer back to the pool
    * @param buffer Buffer to release
+   * @returns True if the buffer was added to the pool
    */
-  release(buffer: Buffer): void {
+  release(buffer: Buffer): boolean {
     if (!Buffer.isBuffer(buffer)) {
-      return;
+      return false;
     }
 
-    const size = buffer.length;
-    const normalizedSize = this.normalizeSize(size);
-    const pool = this.getOrCreatePool(normalizedSize);
-
-    // Check if pool is full
-    if (pool.length >= this.config.maxSize) {
-      this.stats.dropped++;
-      return;
+    if (this.trackAllocations) {
+      this.stats.totalReleased++;
+      this.stats.currentInUse = Math.max(0, this.stats.currentInUse - 1);
     }
 
-    // Clear buffer data for security
-    buffer.fill(0);
-
-    // Add back to pool
-    pool.push(buffer);
-    this.stats.released++;
-  }
-
-  /**
-   * Track buffer size usage for adaptive sizing
-   * @param size Buffer size requested
-   * @private
-   */
-  private trackSizeUsage(size: number): void {
-    if (!this.config.adaptive) return;
-
-    if (!this.sizeUsage.has(size)) {
-      this.sizeUsage.set(size, 0);
+    // Don't pool too large buffers
+    if (buffer.length > this.maxBufferSize) {
+      return false;
     }
 
-    this.sizeUsage.set(size, this.sizeUsage.get(size)! + 1);
-  }
+    // Don't add more buffers if at capacity
+    if (this.buffers.length >= this.maxPoolSize) {
+      // Try to find a larger buffer to replace
+      const largestIndex = this.findLargestBuffer();
 
-  /**
-   * Start adaptive sizing interval
-   * @private
-   */
-  private startAdaptiveSizing(): void {
-    this.adaptiveInterval = setInterval(() => {
-      this.adaptPools();
-    }, this.config.adaptiveInterval);
-
-    // Prevent interval from keeping process alive
-    this.adaptiveInterval.unref();
-  }
-
-  /**
-   * Stop adaptive sizing
-   */
-  stopAdaptiveSizing(): void {
-    if (this.adaptiveInterval) {
-      clearInterval(this.adaptiveInterval);
-      this.adaptiveInterval = null;
-    }
-  }
-
-  /**
-   * Adapt pools based on usage patterns
-   * @private
-   */
-  private adaptPools(): void {
-    if (this.sizeUsage.size === 0) return;
-
-    // Find most frequently used sizes
-    const sortedSizes = [...this.sizeUsage.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(entry => entry[0]);
-
-    // Pre-allocate for most common sizes
-    for (const size of sortedSizes) {
-      const pool = this.getOrCreatePool(size);
-
-      // If pool is low, pre-allocate more buffers
-      const usageCount = this.sizeUsage.get(size) || 0;
-      const targetSize = Math.min(Math.max(5, Math.ceil(usageCount / 10)), this.config.maxSize / 4);
-
-      if (pool.length < targetSize) {
-        const toAdd = targetSize - pool.length;
-        this.preallocate(toAdd, size);
-        this.stats.created += toAdd;
-        this.stats.totalAllocated += toAdd * size;
-        this.stats.adapts++;
+      if (largestIndex !== -1 && this.buffers[largestIndex]!.buffer.length > buffer.length) {
+        // Replace the larger buffer with the smaller one
+        this.buffers.splice(largestIndex, 1);
+      } else {
+        return false;
       }
     }
 
-    // Clear usage stats for next interval
-    this.sizeUsage.clear();
+    // Add to pool
+    this.buffers.push({
+      buffer,
+      lastUsed: Date.now(),
+      size: buffer.length
+    });
+
+    return true;
   }
 
   /**
-   * Get pool statistics
-   * @returns Pool statistics
+   * Reset the buffer pool
    */
-  getStats(): BufferPoolStats & { pools: { size: number; count: number }[] } {
-    const poolStats = Array.from(this.pools.entries()).map(([size, pool]) => ({
-      size,
-      count: pool.length
-    }));
+  reset(): void {
+    this.buffers = [];
+
+    if (this.trackAllocations) {
+      this.stats = {
+        totalAllocated: 0,
+        totalReleased: 0,
+        currentInUse: 0,
+        reused: 0
+      };
+    }
+
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+
+  /**
+   * Start automatic cleanup interval
+   * @param interval Milliseconds between cleanups
+   */
+  startCleanupInterval(interval: number): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+    }
+
+    this.cleanupTimer = setInterval(() => this.cleanup(), interval);
+
+    // Prevent keeping the process alive
+    this.cleanupTimer.unref();
+  }
+
+  /**
+   * Cleanup old buffers
+   */
+  cleanup(): void {
+    const now = Date.now();
+    const expireTime = now - 30000; // Remove buffers older than 30 seconds
+
+    // Remove older buffers, keeping at least some for immediate reuse
+    let removed = 0;
+
+    if (this.buffers.length > 10) {
+      this.buffers = this.buffers.filter(entry => {
+        if (entry.lastUsed < expireTime) {
+          removed++;
+          return false;
+        }
+        return true;
+      });
+    }
+  }
+
+  /**
+   * Get statistics about buffer usage
+   * @returns Buffer pool statistics
+   */
+  getStats(): BufferStats {
+    const sizeDistribution: Record<number, number> = {};
+    let poolMemory = 0;
+
+    this.buffers.forEach(entry => {
+      poolMemory += entry.size;
+      sizeDistribution[entry.size] = (sizeDistribution[entry.size] || 0) + 1;
+    });
 
     return {
-      ...this.stats,
-      pools: poolStats
+      totalAllocated: this.stats.totalAllocated,
+      totalReleased: this.stats.totalReleased,
+      currentInUse: this.stats.currentInUse,
+      poolSize: this.buffers.length,
+      maxPoolSize: this.maxPoolSize,
+      poolMemory,
+      reused: this.stats.reused,
+      sizeDistribution
     };
   }
 
   /**
-   * Clear all pools
+   * Find a buffer with a size closest to the requested size
+   * @param size Requested buffer size
+   * @returns Index of the closest buffer or -1 if none found
+   * @private
    */
-  clear(): void {
-    for (const [, pool] of this.pools) {
-      pool.length = 0;
+  private findClosestBuffer(size: number): number {
+    // Exact match first
+    for (let i = 0; i < this.buffers.length; i++) {
+      if (this.buffers[i]!.buffer.length === size) {
+        return i;
+      }
     }
-    this.pools.clear();
-    this.pools.set(this.config.bufferSize, []);
+
+    // Then find the closest larger buffer
+    let closestIndex = -1;
+    let closestSize = Infinity;
+
+    for (let i = 0; i < this.buffers.length; i++) {
+      const bufferSize = this.buffers[i]!.buffer.length;
+
+      if (bufferSize >= size && bufferSize < closestSize) {
+        closestIndex = i;
+        closestSize = bufferSize;
+      }
+    }
+
+    return closestIndex;
+  }
+
+  /**
+   * Find the largest buffer in the pool
+   * @returns Index of largest buffer or -1 if pool is empty
+   * @private
+   */
+  private findLargestBuffer(): number {
+    if (this.buffers.length === 0) {
+      return -1;
+    }
+
+    let largestIndex = 0;
+    let largestSize = this.buffers[0]!.buffer.length;
+
+    for (let i = 1; i < this.buffers.length; i++) {
+      const size = this.buffers[i]!.buffer.length;
+
+      if (size > largestSize) {
+        largestIndex = i;
+        largestSize = size;
+      }
+    }
+
+    return largestIndex;
   }
 }
 
-// Create a global buffer pool instance
+/**
+ * Global buffer pool instance
+ */
 export const globalPool = new BufferPool({
-  adaptive: true,
-  maxSize: 500
+  maxPoolSize: 1000,
+  trackAllocations: process.env.NODE_ENV === 'development',
+  cleanupInterval: 60000 // 1 minute
 });
