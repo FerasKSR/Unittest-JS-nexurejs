@@ -1,133 +1,91 @@
-export { Nexure, type NexureOptions } from './core/nexure';
-export { HttpsServerAdapter, type HttpsServerOptions } from './core/https-server';
-export { HttpMethod } from './http/http-method';
-export { HttpException } from './http/http-exception';
-export { parseBody } from './http/body-parser';
-export { Http2ServerAdapter, type Http2ServerOptions } from './http/http2-server';
-export { Router } from './routing/router';
-export {
-  type MiddlewareHandler,
-  Middleware,
-  createMiddleware,
-  composeMiddleware
-} from './middleware/middleware';
-export {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Patch,
-  Head,
-  Options,
-  All,
-  Use,
-  Status,
-  type RouteMetadata
-} from './decorators/route-decorators';
-export {
-  Injectable,
-  Inject,
-  InjectProperty,
-  type InjectionMetadata
-} from './decorators/injection-decorators';
-export { Container, Scope, type ProviderOptions } from './di/container';
-export { Logger, LogLevel, type LoggerOptions } from './utils/logger';
-export {
-  BindingType,
-  tryLoadNativeBinding,
-  hasNativeBinding,
-  getNativeBinding,
-  fastJsonParse,
-  fastJsonStringify,
-  initNativeBindings,
-  getUseNativeByDefault,
-  setUseNativeByDefault
-} from './utils/native-bindings';
-export {
-  PerformanceMonitor,
-  type PerformanceMetric,
-  type PerformanceMonitorOptions
-} from './utils/performance-monitor';
-export { Env, type EnvOptions } from './utils/env';
-export {
-  CacheManager,
-  MemoryCacheStore,
-  type CacheStore,
-  type CacheOptions
-} from './cache/cache-manager';
-export {
-  createCacheMiddleware,
-  createCacheControlMiddleware,
-  type HttpCacheOptions
-} from './cache/cache-middleware';
-export {
-  WorkerPool,
-  type WorkerTask,
-  type WorkerResult,
-  type WorkerPoolOptions
-} from './concurrency/worker-pool';
-
-export {
-  ClusterManager,
-  type ClusterManagerOptions,
-  type ClusterManagerEvents
-} from './concurrency/cluster-manager';
-export {
-  Validator,
-  type ValidationRule,
-  type ValidationError,
-  type ValidationResult,
-  type ValidationSchema,
-  type ValidatorFunction,
-  type SanitizerFunction
-} from './validation/validator';
-export {
-  validateBody,
-  validateQuery,
-  validateParams,
-  type ValidationOptions
-} from './validation/validation-middleware';
-export {
-  createSecurityHeadersMiddleware,
-  type SecurityHeadersOptions
-} from './security/security-headers';
-export {
-  CsrfTokenGenerator,
-  createCsrfMiddleware,
-  createCsrfTokenMiddleware,
-  type CsrfOptions
-} from './security/csrf';
-export {
-  createRateLimiterMiddleware,
-  createRedisStore,
-  type RateLimiterOptions,
-  type TokenBucketStore
-} from './security/rate-limiter';
-
-// Export routing module
-export * from './routing/index';
-export * from './http/index';
-
-// Export setup utility
-export { initializeFramework, type SetupOptions } from './setup';
-
-// Version
-export const VERSION = '0.2.0';
-
 /**
- * Create a new Nexure server
+ * Nexure.js API
  *
- * @param options Server options
- * @returns A configured Nexure server instance
+ * Main exports for the Nexure.js framework
  */
-export function createServer(options = {}): import('./core/nexure').Nexure {
-  // Import directly from the module to avoid circular dependency
-  // (This works in both ESM and CJS)
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { Nexure } = require('./core/nexure');
-  return new Nexure(options);
-}
 
-// Auto-initialize the framework with native modules enabled by default
-import './setup';
+// Application startup message
+console.log('🚀 Nexure.js started - High-performance Node.js framework');
+
+// Core exports
+export { Nexure } from './core/nexure.js';
+export { Router } from './routing/router.js';
+export { Container, Scope } from './di/container.js';
+
+// HTTP utilities
+export * from './http/constants.js';
+export * from './http/body-parser.js';
+export * from './http/http-utils.js';
+export * from './http/http-method.js';
+export * from './http/http-exception.js';
+
+// Validation
+export * from './validation/index.js';
+
+// Serialization
+export * from './serialization/index.js';
+
+// Core utilities
+export { logger, LogLevel } from './utils/logger.js';
+export { crypto } from './utils/crypto-service.js';
+export { globalPool as bufferPool } from './utils/buffer-pool.js';
+export {
+  readFileContents,
+  readTextFile,
+  writeFileContents,
+  writeTextFile,
+  ensureDirectory,
+  getFileMetadata,
+  fileExists,
+  copyFile,
+  streamFile,
+  getTempDirectory,
+  getTempFilePath,
+  saveStreamToFile,
+  deleteFile,
+  getMimeType,
+  type FileOptions,
+  type FileMetadata
+} from './utils/file-utils.js';
+
+// Error handling
+export {
+  HttpError,
+  BadRequestError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotFoundError,
+  MethodNotAllowedError,
+  NotAcceptableError,
+  ConflictError,
+  PayloadTooLargeError,
+  UnsupportedMediaTypeError,
+  UnprocessableEntityError,
+  TooManyRequestsError,
+  InternalServerError,
+  NotImplementedError,
+  ServiceUnavailableError,
+  createHttpError,
+  isHttpError,
+  toHttpError
+} from './errors/http-errors.js';
+
+// Middleware
+export * from './middleware/middleware.js';
+export {
+  createStreamMiddleware,
+  stream,
+  streamToBuffer,
+  BufferCollector,
+  type StreamOptions,
+  type StreamResult
+} from './middleware/stream-middleware.js';
+export {
+  errorHandler,
+  developmentErrorHandler,
+  createErrorHandler
+} from './middleware/error-handler.js';
+
+// Decorators
+export * from './decorators/route-decorators.js';
+export * from './decorators/injection-decorators.js';
