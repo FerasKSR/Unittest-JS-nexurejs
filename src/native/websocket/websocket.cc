@@ -186,7 +186,7 @@ private:
     std::unordered_map<std::string, std::unique_ptr<WebSocketRoom>> rooms_;
     std::mutex mutex_;
     bool isRunning_ = false;
-    std::atomic<size_t> maxConnections_ = 0; // 0 means unlimited
+    std::atomic<size_t> maxConnections_;
 
     // Helper methods
     WebSocketConnection* GetConnection(uint64_t id);
@@ -719,7 +719,7 @@ void WebSocketServer::SetMaxConnections(const Napi::CallbackInfo& info) {
         return;
     }
 
-    maxConnections_ = info[0].As<Napi::Number>().Uint32Value();
+    maxConnections_.store(info[0].As<Napi::Number>().Uint32Value());
 }
 
 // Implementation of WebSocketServer::SetAuthenticated
@@ -1367,6 +1367,9 @@ void WebSocketServer::Stop(const Napi::CallbackInfo& info) {
 WebSocketServer::WebSocketServer(const Napi::CallbackInfo& info)
     : Napi::ObjectWrap<WebSocketServer>(info) {
     Napi::Env env = info.Env();
+
+    // Initialize atomic in constructor
+    maxConnections_.store(0);
 
     // Check arguments
     if (info.Length() < 1 || !info[0].IsObject()) {
