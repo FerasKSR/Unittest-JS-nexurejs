@@ -44,13 +44,43 @@ export const HTTP_CONSTANTS = {
   DOUBLE_CRLF: Buffer.from('\r\n\r\n'),
   SPACE: Buffer.from(' '),
   COLON_SPACE: Buffer.from(': '),
-  toString(): typeof HTTP_CONSTANTS {
-    return this;
-  }
+  SEMICOLON_SPACE: Buffer.from('; '),
+  EQUALS: Buffer.from('='),
+  COMMA_SPACE: Buffer.from(', '),
+  FORWARD_SLASH: Buffer.from('/'),
+  QUESTION_MARK: Buffer.from('?'),
+  AMPERSAND: Buffer.from('&'),
+  HASH: Buffer.from('#'),
+  PLUS: Buffer.from('+'),
+  PERCENT: Buffer.from('%'),
+  DOUBLE_QUOTE: Buffer.from('"'),
+  SINGLE_QUOTE: Buffer.from("'"),
+  LEFT_PAREN: Buffer.from('('),
+  RIGHT_PAREN: Buffer.from(')'),
+  LEFT_BRACKET: Buffer.from('['),
+  RIGHT_BRACKET: Buffer.from(']'),
+  LEFT_BRACE: Buffer.from('{'),
+  RIGHT_BRACE: Buffer.from('}'),
+  BACKSLASH: Buffer.from('\\'),
+  TILDE: Buffer.from('~'),
+  BACKTICK: Buffer.from('`'),
+  AT_SIGN: Buffer.from('@'),
+  DOLLAR_SIGN: Buffer.from('$'),
+  CARET: Buffer.from('^'),
+  PIPE: Buffer.from('|'),
+  STAR: Buffer.from('*'),
+  UNDERSCORE: Buffer.from('_'),
+  DASH: Buffer.from('-'),
+  PERIOD: Buffer.from('.'),
+  METHODS: ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH']
 };
 
 export const HTTP_LIMITS = {
-  MAX_HEADER_SIZE: 8192
+  MAX_HEADER_SIZE: 8192,
+  MAX_BODY_SIZE: 1024 * 1024 * 10, // 10MB
+  MAX_HEADERS: 100,
+  MAX_HEADER_NAME_LENGTH: 256,
+  MAX_HEADER_VALUE_LENGTH: 4096
 };
 
 // HTTP status codes

@@ -22,12 +22,12 @@ export interface HttpParseResult {
 }
 
 /**
- * Base HTTP parser interface
+ * HTTP parser interface
  */
 export interface IHttpParser {
-  parse(_buffer: Buffer): HttpParseResult;
-  parseHeaders(_buffer: Buffer): Record<string, string>;
-  parseBody(_buffer: Buffer, _contentLength: number): Buffer;
+  parse(buffer: Buffer): HttpParseResult;
+  parseHeaders(buffer: Buffer): Record<string, string>;
+  parseBody(buffer: Buffer, contentLength: number): Buffer;
   reset(): void;
 }
 
@@ -43,110 +43,32 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parse(buffer: Buffer): HttpParseResult {
+    // Buffer checks are important for security even if TypeScript thinks they're unnecessary
+    // @ts-ignore Buffer check is still needed for runtime safety
+    if (!buffer || buffer.length === 0) {
+      throw new Error('Empty request');
+    }
+
+    if (buffer.length > HTTP_LIMITS.MAX_BODY_SIZE) {
+      throw new Error('Request too large');
+    }
+
     // Try zero-copy parser first
     try {
       const zeroCopyResult = parseHttpRequest(buffer);
+      if (!zeroCopyResult.complete) {
+        throw new Error('Incomplete request');
+      }
       return this.convertZeroCopyResult(zeroCopyResult);
     } catch (_error) {
       // Fall back to basic implementation if zero-copy fails
-      return this.parseBasic(buffer);
-    }
-  }
-
-  /**
-   * Convert zero-copy result to standard HttpParseResult
-   */
-  private convertZeroCopyResult(result: ZeroCopyResult): HttpParseResult {
-    // Extract version from httpVersion string (HTTP/1.1)
-    let versionMajor = 1;
-    let versionMinor = 1;
-
-    if (result.httpVersion) {
-      const versionMatch = result.httpVersion.match(/HTTP\/(\d+)\.(\d+)/i);
-      if (versionMatch && versionMatch[1] && versionMatch[2]) {
-        versionMajor = parseInt(versionMatch[1], 10);
-        versionMinor = parseInt(versionMatch[2], 10);
+      try {
+        return this.parseBasic(buffer);
+      } catch (basicError) {
+        // If both parsing methods fail, throw the error
+        throw basicError;
       }
     }
-
-    return {
-      method: result.method,
-      url: result.url,
-      versionMajor,
-      versionMinor,
-      headers: this.convertHeaders(result.headers),
-      body: result.body,
-      complete: result.bodyComplete ?? true,
-      upgrade: result.headers['upgrade'] === 'websocket'
-    };
-  }
-
-  /**
-   * Convert HeadersInit to Record<string, string>
-   */
-  private convertHeaders(
-    headers: Record<string, string | string[] | undefined>
-  ): Record<string, string> {
-    const result: Record<string, string> = {};
-    for (const [key, value] of Object.entries(headers)) {
-      if (value !== undefined) {
-        result[key] = Array.isArray(value) ? value[0]! : value;
-      }
-    }
-    return result;
-  }
-
-  /**
-   * Basic implementation for parsing HTTP request
-   */
-  private parseBasic(buffer: Buffer): HttpParseResult {
-    const str = buffer.toString('utf8');
-    const lines = str.split(HTTP_CONSTANTS.CRLF.toString());
-
-    // Parse request line
-    const requestLine = lines[0]!.split(HTTP_CONSTANTS.SPACE.toString());
-    if (requestLine.length !== 3) {
-      throw new Error('Invalid request line');
-    }
-
-    const [method, url, version] = requestLine;
-    const versionMatch = version!.match(/HTTP\/(\d+)\.(\d+)/);
-    if (!versionMatch) {
-      throw new Error('Invalid HTTP version');
-    }
-
-    // Parse headers
-    const headers: Record<string, string> = {};
-    let i = 1;
-    while (i < lines.length && lines[i] !== '') {
-      const line = lines[i];
-      const colonIndex = line!.indexOf(HTTP_CONSTANTS.COLON_SPACE.toString());
-      if (colonIndex === -1) {
-        throw new Error('Invalid header line');
-      }
-      const key = line!.slice(0, colonIndex).trim().toLowerCase();
-      const value = line!.slice(colonIndex + 2).trim();
-      headers[key] = value;
-      i++;
-    }
-
-    // Parse body
-    let body: Buffer | null = null;
-    if (i < lines.length - 1) {
-      const bodyStr = lines.slice(i + 1).join(HTTP_CONSTANTS.CRLF.toString());
-      body = Buffer.from(bodyStr);
-    }
-
-    return {
-      method: method!,
-      url: url!,
-      versionMajor: parseInt(versionMatch![1]!, 10),
-      versionMinor: parseInt(versionMatch![2]!, 10),
-      headers,
-      body,
-      complete: true,
-      upgrade: headers['upgrade'] === 'websocket'
-    };
   }
 
   /**
@@ -156,10 +78,23 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parseHeaders(buffer: Buffer): Record<string, string> {
+    // Buffer checks are important for security even if TypeScript thinks they're unnecessary
+    // @ts-ignore Buffer check is still needed for runtime safety
+    if (!buffer || buffer.length === 0) {
+      throw new Error('Empty headers');
+    }
+
+    if (buffer.length > HTTP_LIMITS.MAX_HEADER_SIZE) {
+      throw new Error('Headers too large');
+    }
+
     const parser = ZeroCopyHttpParser.getParser();
     try {
       const result = parser.parse(buffer);
       return this.convertHeaders(result.headers);
+    } catch (_error) {
+      // Fall back to basic implementation if zero-copy fails
+      return this.parseHeadersBasic(buffer);
     } finally {
       ZeroCopyHttpParser.releaseParser(parser);
     }
@@ -173,8 +108,18 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parseBody(buffer: Buffer, contentLength: number): Buffer {
-    if (contentLength > HTTP_LIMITS.MAX_HEADER_SIZE) {
-      throw new Error('Content length exceeds maximum allowed size');
+    // Buffer checks are important for security even if TypeScript thinks they're unnecessary
+    // @ts-ignore Buffer check is still needed for runtime safety
+    if (!buffer || buffer.length === 0) {
+      throw new Error('Empty body');
+    }
+
+    if (contentLength > HTTP_LIMITS.MAX_BODY_SIZE) {
+      throw new Error('Request body too large');
+    }
+
+    if (buffer.length < contentLength) {
+      throw new Error('Incomplete request body');
     }
 
     return buffer.slice(0, contentLength);
@@ -186,125 +131,233 @@ export class JsHttpParser implements IHttpParser {
   reset(): void {
     // No state to reset in this implementation
   }
+
+  /**
+   * Convert zero-copy result to standard format
+   * @param result Zero-copy parse result
+   * @returns Standard parse result
+   */
+  private convertZeroCopyResult(result: ZeroCopyResult): HttpParseResult {
+    return {
+      method: result.method,
+      url: result.url,
+      versionMajor: result.versionMajor,
+      versionMinor: result.versionMinor,
+      headers: this.convertHeaders(result.headers),
+      body: result.body,
+      complete: result.complete,
+      upgrade: result.upgrade
+    };
+  }
+
+  /**
+   * Convert headers to standard format
+   * @param headers Raw headers
+   * @returns Normalized headers
+   */
+  private convertHeaders(headers: Record<string, string>): Record<string, string> {
+    const normalized: Record<string, string> = {};
+    for (const [key, value] of Object.entries(headers)) {
+      normalized[key.toLowerCase()] = value;
+    }
+    return normalized;
+  }
+
+  /**
+   * Basic HTTP request parser implementation
+   * @param buffer Request buffer
+   * @returns Parsed request
+   * @throws Error if parsing fails
+   */
+  private parseBasic(buffer: Buffer): HttpParseResult {
+    const str = buffer.toString('utf8');
+    const lines = str.split('\r\n');
+
+    if (lines.length < 1) {
+      throw new Error('Invalid HTTP request: empty request');
+    }
+
+    // Parse request line
+    const requestLine = lines[0].trim();
+    if (!requestLine) {
+      throw new Error('Invalid HTTP request: empty request line');
+    }
+
+    const requestParts = requestLine.split(' ');
+    if (requestParts.length !== 3) {
+      throw new Error('Invalid HTTP request: malformed request line');
+    }
+
+    const [method, url, version] = requestParts;
+    if (!method || !url || !version) {
+      throw new Error('Invalid HTTP request: missing method, URL, or version');
+    }
+
+    // Validate method
+    if (!HTTP_CONSTANTS.METHODS.includes(method.toUpperCase())) {
+      throw new Error('Invalid HTTP request: unsupported method');
+    }
+
+    // Parse version
+    const versionMatch = version.match(/^HTTP\/(\d+)\.(\d+)$/i);
+    if (!versionMatch) {
+      throw new Error('Invalid HTTP request: malformed HTTP version');
+    }
+
+    const versionMajor = parseInt(versionMatch[1], 10);
+    const versionMinor = parseInt(versionMatch[2], 10);
+
+    if (versionMajor < 1 || versionMajor > 2) {
+      throw new Error('Invalid HTTP request: unsupported HTTP version');
+    }
+
+    // Find the index where headers end
+    let headersEndIndex = 1;
+    while (headersEndIndex < lines.length && lines[headersEndIndex].trim() !== '') {
+      headersEndIndex++;
+    }
+
+    // Parse headers from line 1 to headersEndIndex
+    const headers = this.parseHeadersFromLines(lines.slice(1, headersEndIndex));
+
+    // Parse body
+    let body: Buffer | null = null;
+    if (headersEndIndex < lines.length - 1) {
+      const bodyContent = lines.slice(headersEndIndex + 1).join('\r\n');
+      body = Buffer.from(bodyContent);
+
+      if (body.length > HTTP_LIMITS.MAX_BODY_SIZE) {
+        throw new Error('Invalid HTTP request: body too large');
+      }
+    }
+
+    return {
+      method,
+      url,
+      versionMajor,
+      versionMinor,
+      headers,
+      body,
+      complete: true,
+      upgrade: false
+    };
+  }
+
+  /**
+   * Parse HTTP headers from string lines
+   * @param headerLines Array of header lines
+   * @returns Parsed headers
+   * @throws Error if parsing fails
+   */
+  private parseHeadersFromLines(headerLines: string[]): Record<string, string> {
+    const headers: Record<string, string> = {};
+    let headerCount = 0;
+
+    for (const line of headerLines) {
+      const trimmedLine = line.trim();
+      if (trimmedLine === '') continue;
+
+      if (headerCount >= HTTP_LIMITS.MAX_HEADERS) {
+        throw new Error('Invalid HTTP request: too many headers');
+      }
+
+      const colonIndex = trimmedLine.indexOf(':');
+      if (colonIndex === -1) {
+        throw new Error('Invalid HTTP request: malformed header');
+      }
+
+      const key = trimmedLine.slice(0, colonIndex).trim().toLowerCase();
+      const value = trimmedLine.slice(colonIndex + 1).trim();
+
+      if (!key || !value) {
+        throw new Error('Invalid HTTP request: empty header name or value');
+      }
+
+      if (key.length > HTTP_LIMITS.MAX_HEADER_NAME_LENGTH) {
+        throw new Error('Invalid HTTP request: header name too long');
+      }
+
+      if (value.length > HTTP_LIMITS.MAX_HEADER_VALUE_LENGTH) {
+        throw new Error('Invalid HTTP request: header value too long');
+      }
+
+      headers[key] = value;
+      headerCount++;
+    }
+
+    return headers;
+  }
+
+  /**
+   * Basic HTTP headers parser implementation
+   * @param buffer Headers buffer
+   * @returns Parsed headers
+   * @throws Error if parsing fails
+   */
+  private parseHeadersBasic(buffer: Buffer): Record<string, string> {
+    const str = buffer.toString('utf8');
+    const lines = str.split('\r\n');
+    return this.parseHeadersFromLines(lines);
+  }
 }
 
 /**
- * HTTP Stream Parser for parsing HTTP requests in chunks
+ * HTTP stream parser for handling streaming requests
  */
 export class HttpStreamParser {
-  private parser: IHttpParser;
-  private buffer = Buffer.alloc(0);
-  private headersParsed = false;
-  private contentLength = 0;
-  private result: HttpParseResult | null = null;
+  private buffer: Buffer;
+  private parser: JsHttpParser;
+  private state: 'headers' | 'body';
+  private contentLength: number;
+  private bodyBytesRead: number;
 
-  constructor(parser: IHttpParser = new JsHttpParser()) {
-    this.parser = parser;
+  constructor() {
+    this.buffer = Buffer.alloc(0);
+    this.parser = new JsHttpParser();
+    this.state = 'headers';
+    this.contentLength = 0;
+    this.bodyBytesRead = 0;
   }
 
   /**
-   * Write a chunk of data to the parser
+   * Write data to the parser
    * @param chunk Data chunk
    * @returns Parse result if complete, null if more data needed
-   * @throws Error if parsing fails
    */
   write(chunk: Buffer): HttpParseResult | null {
-    if (!Buffer.isBuffer(chunk)) {
-      throw new Error('Chunk must be a Buffer');
-    }
-
-    // Append the new chunk to our buffer
     this.buffer = Buffer.concat([this.buffer, chunk]);
 
-    try {
-      // If we haven't parsed headers yet, check if we have a complete header section
-      if (!this.headersParsed) {
-        const headerEnd = this.buffer.indexOf(HTTP_CONSTANTS.DOUBLE_CRLF);
-        if (headerEnd === -1) {
-          // Headers not complete yet
-          return null;
-        }
-
-        // Parse the headers
-        const headerBuffer = this.buffer.slice(0, headerEnd + 4);
-        this.result = this.parser.parse(headerBuffer);
-        this.headersParsed = true;
-
-        // Get content length
-        this.contentLength = 0;
-        const contentLengthHeader = this.result.headers['content-length'];
-        if (contentLengthHeader) {
-          const parsedLength = parseInt(contentLengthHeader, 10);
-          if (isNaN(parsedLength) || parsedLength < 0) {
-            throw new Error('Invalid content length');
-          }
-          this.contentLength = parsedLength;
-        }
-
-        // Remove headers from buffer
-        this.buffer = this.buffer.slice(headerEnd + 4);
-
-        // If no content length or zero content length, we're done
-        if (this.contentLength === 0) {
-          const finalResult = this.result;
-          this.reset();
-          return finalResult;
-        }
+    if (this.state === 'headers') {
+      const headerEnd = this.buffer.indexOf('\r\n\r\n');
+      if (headerEnd === -1) {
+        return null; // Need more data
       }
 
-      // Check if we have the complete body
-      if (this.buffer.length >= this.contentLength) {
-        // Parse the body
-        const body = this.parser.parseBody(this.buffer, this.contentLength);
-        if (this.result) {
-          this.result.body = body;
-          this.result.complete = true;
-        }
-
-        const finalResult = this.result;
-        this.reset();
-        return finalResult;
-      }
-
-      return null;
-    } catch (error) {
-      this.reset();
-      throw error;
+      const headers = this.parser.parseHeaders(this.buffer.slice(0, headerEnd));
+      this.contentLength = parseInt(headers['content-length'] || '0', 10);
+      this.state = 'body';
+      this.buffer = this.buffer.slice(headerEnd + 4);
     }
+
+    // Process body data
+    this.bodyBytesRead += this.buffer.length;
+    if (this.bodyBytesRead >= this.contentLength) {
+      const result = this.parser.parse(this.buffer);
+      this.reset();
+      return result;
+    }
+
+    return null;
   }
 
   /**
-   * Reset the parser state
+   * Reset parser state
    */
   reset(): void {
-    this.parser.reset();
-    this.headersParsed = false;
-    this.contentLength = 0;
-    this.result = null;
     this.buffer = Buffer.alloc(0);
-  }
-
-  /**
-   * Get the current buffer
-   * @returns Current buffer
-   */
-  getBuffer(): Buffer {
-    return Buffer.from(this.buffer);
-  }
-
-  /**
-   * Get the current parse state
-   * @returns Parse state
-   */
-  getState(): {
-    headersParsed: boolean;
-    contentLength: number;
-    bufferLength: number;
-  } {
-    return {
-      headersParsed: this.headersParsed,
-      contentLength: this.contentLength,
-      bufferLength: this.buffer.length
-    };
+    this.state = 'headers';
+    this.contentLength = 0;
+    this.bodyBytesRead = 0;
+    this.parser.reset();
   }
 }
