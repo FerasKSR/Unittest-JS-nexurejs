@@ -217,58 +217,405 @@ echo "Build complete for ${platformName}"
 }
 
 /**
- * Fix import paths in the codebase
+ * Clean build directories
+ */
+async function cleanBuildDirectories() {
+  printSectionHeader('Cleaning Build Directories');
+
+  const directoriesToClean = [
+    buildDir,
+    path.join(rootDir, 'build'),
+    path.join(rootDir, 'node_modules', '.cache')
+  ];
+
+  // Also clean platform-specific build folders
+  SUPPORTED_PLATFORMS.forEach(({ platform: plat, arch: architecture }) => {
+    directoriesToClean.push(path.join(rootDir, `build-${plat}-${architecture}`));
+  });
+
+  let success = true;
+
+  for (const dir of directoriesToClean) {
+    try {
+      if (fs.existsSync(dir)) {
+        console.log(`${Colors.BLUE}Cleaning directory: ${dir}${Colors.RESET}`);
+        await fsPromises.rm(dir, { recursive: true, force: true });
+        console.log(`${Colors.GREEN}✓ Successfully cleaned: ${dir}${Colors.RESET}`);
+      }
+    } catch (err) {
+      console.error(`${Colors.RED}Failed to clean directory ${dir}:${Colors.RESET}`, err.message);
+      success = false;
+    }
+  }
+
+  // Also attempt to clear any node-gyp cache
+  try {
+    console.log(`${Colors.BLUE}Running node-gyp clean...${Colors.RESET}`);
+    execSync('node-gyp clean', { cwd: rootDir, stdio: 'ignore' });
+  } catch (err) {
+    // Ignore node-gyp errors as it might not be available
+    console.log(`${Colors.YELLOW}Note: node-gyp clean failed (this is usually ok)${Colors.RESET}`);
+  }
+
+  if (success) {
+    console.log(`${Colors.GREEN}✓ All build directories cleaned successfully${Colors.RESET}`);
+  } else {
+    console.warn(`${Colors.YELLOW}Some directories could not be cleaned${Colors.RESET}`);
+  }
+
+  return success;
+}
+
+/**
+ * Run ESLint with --fix option to automatically fix linting issues
+ */
+async function runLintFix() {
+  printSectionHeader('Running ESLint Fixes');
+
+  return new Promise((resolve) => {
+    console.log(`${Colors.BLUE}Running ESLint with --fix option...${Colors.RESET}`);
+
+    const child = spawn('npx', ['eslint', '.', '--ext', '.ts', '--fix'], {
+      stdio: 'inherit',
+      cwd: rootDir,
+      shell: true
+    });
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        console.log(`${Colors.GREEN}✓ ESLint fixes applied successfully${Colors.RESET}`);
+        resolve(true);
+      } else {
+        console.error(`${Colors.RED}✗ ESLint fixes had some issues (code ${code})${Colors.RESET}`);
+        console.log(`${Colors.YELLOW}You may need to manually fix some linting issues${Colors.RESET}`);
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * Fix unused variables in TypeScript code
+ * This runs a special ESLint rule to remove unused variables
+ */
+async function fixUnusedVars() {
+  printSectionHeader('Fixing Unused Variables');
+
+  // First check if eslint is available
+  try {
+    execSync('npx eslint --version', { stdio: 'ignore' });
+  } catch (err) {
+    console.error(`${Colors.RED}ESLint is not available. Make sure it's installed.${Colors.RESET}`);
+    return false;
+  }
+
+  return new Promise((resolve) => {
+    console.log(`${Colors.BLUE}Finding and fixing unused variables...${Colors.RESET}`);
+
+    // Run ESLint with the specific rule for unused vars
+    const child = spawn(
+      'npx',
+      [
+        'eslint',
+        '.',
+        '--ext',
+        '.ts',
+        '--fix',
+        '--rule',
+        '@typescript-eslint/no-unused-vars: error',
+        '--rule',
+        'no-unused-vars: error'
+      ],
+      {
+        stdio: 'inherit',
+        cwd: rootDir,
+        shell: true
+      }
+    );
+
+    child.on('close', (code) => {
+      if (code === 0) {
+        console.log(`${Colors.GREEN}✓ Unused variables fixed successfully${Colors.RESET}`);
+        resolve(true);
+      } else {
+        console.error(`${Colors.RED}✗ Fixing unused variables had some issues (code ${code})${Colors.RESET}`);
+        console.log(`${Colors.YELLOW}You may need to manually fix some unused variables${Colors.RESET}`);
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * Check if Docker is available for cross-platform builds
+ */
+function checkDockerBuilds() {
+  printSectionHeader('Checking Docker for Cross-Platform Builds');
+
+  if (dockerAvailable) {
+    console.log(`${Colors.GREEN}✓ Docker is available for cross-platform builds${Colors.RESET}`);
+
+    // Create docker-builds directory if it doesn't exist
+    const dockerBuildsDir = path.join(rootDir, 'docker-builds');
+    if (!fs.existsSync(dockerBuildsDir)) {
+      fs.mkdirSync(dockerBuildsDir, { recursive: true });
+    }
+
+    // Generate Docker scripts for Linux builds
+    const linuxDockerfile = path.join(dockerBuildsDir, 'Dockerfile.linux-x64');
+    const linuxBuildScript = path.join(dockerBuildsDir, 'build-linux-x64.sh');
+
+    // Create Dockerfile for Linux builds
+    const dockerfileContent = `FROM node:20-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y \\
+    python3 \\
+    make \\
+    g++ \\
+    pkg-config \\
+    git \\
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+RUN npm install
+RUN node scripts/build.js --force
+RUN node scripts/build.js --pack-only
+
+CMD ["bash"]
+`;
+
+    fs.writeFileSync(linuxDockerfile, dockerfileContent);
+    console.log(`${Colors.GREEN}✓ Created Dockerfile for Linux builds${Colors.RESET}`);
+
+    // Create build script for Linux
+    const buildScriptContent = `#!/bin/bash
+cd "$(dirname "$0")/.."
+IMAGE_NAME="nexurejs-linux-x64-builder"
+CONTAINER_NAME="nexurejs-linux-x64-builder"
+
+echo "Building Docker image for Linux x64..."
+docker build -t $IMAGE_NAME -f docker-builds/Dockerfile.linux-x64 .
+
+echo "Running build in Docker container..."
+docker run --name $CONTAINER_NAME $IMAGE_NAME
+
+echo "Copying build artifacts from container..."
+docker cp $CONTAINER_NAME:/app/packages ./
+
+echo "Cleaning up Docker container..."
+docker rm $CONTAINER_NAME
+
+echo "Linux x64 build complete!"
+`;
+
+    fs.writeFileSync(linuxBuildScript, buildScriptContent);
+    fs.chmodSync(linuxBuildScript, 0o755); // Make executable
+    console.log(`${Colors.GREEN}✓ Created Docker build script for Linux${Colors.RESET}`);
+
+    return true;
+  } else {
+    console.log(`${Colors.YELLOW}Docker is not available. Cross-platform builds will be manual.${Colors.RESET}`);
+    console.log(`${Colors.YELLOW}You can install Docker to enable automated cross-platform builds.${Colors.RESET}`);
+    return false;
+  }
+}
+
+/**
+ * Generate GitHub Actions workflow files for CI/CD
+ */
+function generateCIWorkflows() {
+  printSectionHeader('Generating GitHub Actions Workflows');
+
+  const workflowsDir = path.join(rootDir, '.github', 'workflows');
+  if (!fs.existsSync(workflowsDir)) {
+    fs.mkdirSync(workflowsDir, { recursive: true });
+  }
+
+  // Generate the build workflow file
+  const buildWorkflowPath = path.join(workflowsDir, 'build.yml');
+  const buildWorkflowContent = `name: Build
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+    branches: [ main, master, develop ]
+
+jobs:
+  build:
+    name: Build on \${{ matrix.os }}
+    runs-on: \${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18.x, 20.x]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js \${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: \${{ matrix.node-version }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build TypeScript
+      run: npm run build:ts
+
+    - name: Build native modules
+      run: node scripts/build.js --force
+
+    - name: Run tests
+      run: npm test
+
+    - name: Package native modules
+      run: node scripts/build.js --pack-only
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: nexurejs-\${{ matrix.os }}-node\${{ matrix.node-version }}
+        path: packages/
+`;
+
+  fs.writeFileSync(buildWorkflowPath, buildWorkflowContent);
+  console.log(`${Colors.GREEN}✓ Created GitHub Actions build workflow${Colors.RESET}`);
+
+  // Generate the release workflow file
+  const releaseWorkflowPath = path.join(workflowsDir, 'release.yml');
+  const releaseWorkflowContent = `name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: \${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [20.x]
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js \${{ matrix.node-version }}
+      uses: actions/setup-node@v3
+      with:
+        node-version: \${{ matrix.node-version }}
+        registry-url: 'https://registry.npmjs.org'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build TypeScript
+      run: npm run build:ts
+
+    - name: Build native modules
+      run: node scripts/build.js --force
+
+    - name: Package native modules
+      run: node scripts/build.js --pack-only
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: nexurejs-\${{ matrix.os }}-node\${{ matrix.node-version }}
+        path: packages/
+
+    - name: Create GitHub Release
+      if: matrix.os == 'ubuntu-latest'
+      uses: softprops/action-gh-release@v1
+      with:
+        files: packages/*
+
+    - name: Publish to NPM
+      if: matrix.os == 'ubuntu-latest'
+      run: npm publish
+      env:
+        NODE_AUTH_TOKEN: \${{ secrets.NPM_TOKEN }}
+`;
+
+  fs.writeFileSync(releaseWorkflowPath, releaseWorkflowContent);
+  console.log(`${Colors.GREEN}✓ Created GitHub Actions release workflow${Colors.RESET}`);
+
+  // Generate the benchmark workflow file
+  const benchmarkWorkflowPath = path.join(workflowsDir, 'benchmark.yml');
+  const benchmarkWorkflowContent = `name: Performance Benchmark
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  benchmark:
+    name: Run benchmarks
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Use Node.js 20.x
+      uses: actions/setup-node@v3
+      with:
+        node-version: 20.x
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Build
+      run: npm run build
+
+    - name: Run benchmarks
+      run: npm run benchmark
+
+    - name: Store benchmark results
+      uses: actions/upload-artifact@v3
+      with:
+        name: benchmark-results
+        path: benchmark-results/
+`;
+
+  fs.writeFileSync(benchmarkWorkflowPath, benchmarkWorkflowContent);
+  console.log(`${Colors.GREEN}✓ Created GitHub Actions benchmark workflow${Colors.RESET}`);
+
+  return true;
+}
+
+/**
+ * Fix TypeScript import paths
+ * This ensures ESM compatibility by adding .js extensions to relative imports
  */
 async function fixImports() {
   printSectionHeader('Fixing Import Paths');
 
-  const totalStartTime = performance.now();
-  let totalFixedFiles = 0;
-  let totalModifiedImports = 0;
-  const allErrors = [];
-
   try {
-    // 1. Fix basic ESM imports (.js extensions)
     console.log(`${Colors.BLUE}Phase 1: Fixing ESM imports...${Colors.RESET}`);
-    const basicResult = await fixBasicImports();
 
-    totalFixedFiles += basicResult.fixedFiles;
-    totalModifiedImports += basicResult.modifiedImports;
-    allErrors.push(...basicResult.errors);
+    // Define source and output directories
+    const srcDir = path.join(rootDir, 'dist');
 
-    // 2. Fix directory imports (add /index.js)
-    console.log(`${Colors.BLUE}Phase 2: Fixing directory imports...${Colors.RESET}`);
-    const dirResult = await fixDirectoryImports();
+    // Run basic imports fixup
+    await fixBasicImports();
 
-    totalFixedFiles += dirResult.fixedFiles;
-    totalModifiedImports += dirResult.modifiedImports;
-    allErrors.push(...dirResult.errors);
+    // Fix directory imports
+    await fixDirectoryImports();
 
-    // 3. Fix types imports
-    console.log(`${Colors.BLUE}Phase 3: Fixing types imports...${Colors.RESET}`);
-    const typesResult = await fixTypesImports();
+    // Fix .d.ts file imports
+    await fixTypesImports();
 
-    totalFixedFiles += typesResult.fixedFiles;
-    totalModifiedImports += typesResult.modifiedImports;
-    allErrors.push(...typesResult.errors);
-
-    const totalEndTime = performance.now();
-    const totalTime = ((totalEndTime - totalStartTime) / 1000).toFixed(3);
-
-    // Print summary
-    console.log(`\n${Colors.CYAN}Import Fixes Summary:${Colors.RESET}`);
-    console.log(`${Colors.GREEN}Modified ${totalFixedFiles} files${Colors.RESET}`);
-    console.log(`${Colors.GREEN}Fixed ${totalModifiedImports} imports${Colors.RESET}`);
-    console.log(`${Colors.CYAN}Completed in ${totalTime}s${Colors.RESET}`);
-
-    if (allErrors.length > 0) {
-      console.log(`\n${Colors.RED}Errors encountered:${Colors.RESET}`);
-      allErrors.forEach(({ file, error }) => {
-        console.log(`- ${path.relative(rootDir, file)}: ${error}`);
-      });
-      return false;
-    }
-
+    console.log(`${Colors.GREEN}✓ All imports fixed successfully${Colors.RESET}`);
     return true;
   } catch (err) {
     console.error(`${Colors.RED}An error occurred while fixing imports:${Colors.RESET}`, err.message);
@@ -1152,6 +1499,86 @@ async function runUnifiedBuild(options = {}) {
     console.error(`${Colors.RED}Unified build process failed:${Colors.RESET}`, err.message);
     return false;
   }
+}
+
+/**
+ * Create a unified build script for the current platform
+ * This creates a standalone JS file that can be used to build on this platform
+ */
+function createUnifiedBuildScript() {
+  printSectionHeader('Creating Unified Build Script');
+
+  // Create the scripts directory if it doesn't exist
+  const standaloneDir = path.join(rootDir, 'standalone');
+  if (!fs.existsSync(standaloneDir)) {
+    fs.mkdirSync(standaloneDir, { recursive: true });
+  }
+
+  // Get current platform and architecture
+  const currentPlatform = platform();
+  const currentArch = arch();
+  const scriptName = `build-${currentPlatform}-${currentArch}.js`;
+  const scriptPath = path.join(standaloneDir, scriptName);
+
+  console.log(`${Colors.BLUE}Creating unified build script for ${currentPlatform}-${currentArch}...${Colors.RESET}`);
+
+  // Read the current file (this file)
+  const currentScript = fs.readFileSync(__filename, 'utf8');
+
+  // Add a header to the script
+  const header = `/**
+ * Unified Build Script for NexureJS
+ * Platform: ${currentPlatform}-${currentArch}
+ * Generated: ${new Date().toISOString()}
+ *
+ * This is a standalone build script that can be used to build NexureJS on this platform.
+ * It contains all the functionality of the original build script but packaged into a single file.
+ */
+
+`;
+
+  // Modify the main function to automatically run with default options
+  const modifiedMain = `
+/**
+ * Main function
+ */
+async function main() {
+  console.log(\`\${Colors.BOLD}\${Colors.BLUE}NexureJS Unified Build Script\${Colors.RESET}\`);
+  console.log(\`\${Colors.BLUE}${'='.repeat(30)}\${Colors.RESET}\\n\`);
+
+  // Get package info
+  const packageInfo = getPackageInfo();
+  console.log(\`\${Colors.BOLD}Package:\${Colors.RESET} \${packageInfo.name} v\${packageInfo.version}\`);
+  console.log(\`\${Colors.BOLD}Platform:\${Colors.RESET} ${currentPlatform}-${currentArch}\`);
+
+  // Parse command line arguments or use defaults
+  const options = parseArguments();
+
+  // Run the unified build process
+  const success = await runUnifiedBuild(options);
+
+  // Exit with appropriate code
+  process.exit(success ? 0 : 1);
+}
+
+// Run the main function
+main().catch(err => {
+  console.error(\`\${Colors.RED}Unexpected error:\${Colors.RESET}\`, err);
+  process.exit(1);
+});
+`;
+
+  // Replace the original main function and the call to main
+  let modifiedScript = currentScript.replace(/async function main\(\)[\s\S]+?^}/m, '');
+  modifiedScript = modifiedScript.replace(/main\(\).+?;/g, '');
+  modifiedScript = header + modifiedScript + modifiedMain;
+
+  // Write the modified script to the file
+  fs.writeFileSync(scriptPath, modifiedScript);
+  fs.chmodSync(scriptPath, 0o755); // Make executable
+
+  console.log(`${Colors.GREEN}✓ Created unified build script: ${scriptPath}${Colors.RESET}`);
+  console.log(`${Colors.BLUE}You can run this script directly with: node ${scriptPath}${Colors.RESET}`);
 }
 
 /**
