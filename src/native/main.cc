@@ -102,15 +102,14 @@ Napi::Object Init(Napi::Env env, Napi::Object exports) {
   RegisterComponent("UrlParser", []() { /* Cleanup code if needed */ });
   RegisterComponent("SchemaValidator", []() {
     // We'll handle this specially to avoid double free
-    static bool alreadyCalled = false;
-    if (!alreadyCalled) {
-      alreadyCalled = true;
+    static std::once_flag cleanupFlag;
+    std::call_once(cleanupFlag, []() {
       try {
         SchemaValidator::Cleanup();
       } catch (...) {
         // Ignore errors in cleanup
       }
-    }
+    });
   });
   RegisterComponent("Compression", []() { /* Cleanup code if needed */ });
   RegisterComponent("WebSocket", []() { /* Cleanup code for WebSocket */ });

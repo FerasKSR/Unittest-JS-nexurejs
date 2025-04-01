@@ -12,6 +12,8 @@ import { Server as HttpServer } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
 import { loadNativeBinding as safeLoadNativeBinding } from './loader.js';
+import { JsHttpParser } from '../http/index.js';
+import { JsRadixRouter } from '../routing/js-router.js';
 import type {
   HttpParseResult,
   NativeHttpParser,
@@ -471,9 +473,9 @@ export class HttpParser implements NativeHttpParser {
  * Radix Router Interface
  */
 export interface RouteMatch {
-  handler: any;
-  params: Record<string, string>;
   found: boolean;
+  params: Record<string, string>;
+  handler?: any;
 }
 
 /**
@@ -509,7 +511,7 @@ export class RadixRouter {
 
     if (!this.useNative) {
       // Use JavaScript fallback
-      this.jsRouter = new JsRadixRouter('');
+      this.jsRouter = new JsRadixRouter();
     }
   }
 
@@ -542,15 +544,20 @@ export class RadixRouter {
     let result: RouteMatch;
 
     if (this.useNative && this.router) {
-      result = this.router.find(method, path);
+      const nativeResult = this.router.find(method, path);
+      result = {
+        found: nativeResult.found,
+        params: nativeResult.params,
+        ...(nativeResult.found ? { handler: nativeResult.handler } : {})
+      };
       RadixRouter.nativeFindTime += performance.now() - start;
       RadixRouter.nativeFindCount++;
     } else if (this.jsRouter) {
       const jsResult = this.jsRouter.findRoute(method as HttpMethod, path);
       result = {
-        handler: jsResult?.route.handler || null,
-        params: jsResult?.params || {},
-        found: Boolean(jsResult)
+        found: jsResult.found,
+        params: jsResult.params,
+        ...(jsResult.found ? { handler: jsResult.handler } : {})
       };
       RadixRouter.jsFindTime += performance.now() - start;
       RadixRouter.jsFindCount++;
@@ -562,21 +569,30 @@ export class RadixRouter {
   }
 
   /**
-   * Remove a route
+   * Remove a route from the router
    * @param method HTTP method
    * @param path Route path
-   * @returns Whether the route was removed
+   * @returns True if the route was removed, false if it didn't exist
    */
   remove(method: string, path: string): boolean {
     if (this.useNative && this.router) {
       return this.router.remove(method, path);
     } else if (this.jsRouter) {
-      // JavaScript implementation doesn't have a remove method
-      // This is a stub implementation
+      // Normalize path for JS implementation
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+      // Find the key format used in the JS implementation
+      const key = `${method}:${normalizedPath}`;
+
+      // Check if the route exists before attempting removal
+      const routes = (this.jsRouter as any).routes;
+      if (routes && routes instanceof Map && routes.has(key)) {
+        routes.delete(key);
+        return true;
+      }
       return false;
-    } else {
-      throw new Error('No router implementation available');
     }
+    return false;
   }
 
   /**

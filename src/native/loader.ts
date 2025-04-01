@@ -194,34 +194,31 @@ export function loadNativeBinding(modulePath?: string): NativeBindingModule | nu
     return null;
   }
 
+  // Get the absolute path of the current file's directory
+  const currentDir = __dirname || process.cwd();
+  const rootDir = join(currentDir, '..', '..');
+
   const paths = [
     // If a specific path is provided, try it first
     modulePath,
-    // Try loading from various possible locations
-    './build/Release/nexurejs_native.node',
-    './build/Debug/nexurejs_native.node',
-    './nexurejs_native.node',
-    '../build/Release/nexurejs_native.node',
-    '../build/Debug/nexurejs_native.node',
-    '../nexurejs_native.node',
+    // Try loading from various possible locations with absolute paths
+    join(rootDir, 'build/Release/nexurejs_native.node'),
+    join(rootDir, 'build', 'Release', 'nexurejs_native.node'),
     join(process.cwd(), 'build/Release/nexurejs_native.node'),
-    join(process.cwd(), 'build/Debug/nexurejs_native.node')
-  ].filter(Boolean) as string[];
+    join(process.cwd(), 'build', 'Release', 'nexurejs_native.node'),
+    // Add platform-specific paths
+    `nexurejs-native-${process.platform}-${process.arch}`,
+  ].filter(Boolean);
 
-  // Try each path until one works
+  // Try each path
   for (const path of paths) {
-    const module = tryLoadNativeBinding(path);
-    if (module) {
-      // Set debug level for native module (if available)
-      if (module.setDebugLevel) {
-        module.setDebugLevel(process.env.NEXURE_NATIVE_DEBUG === 'true' ? 1 : 0);
-      }
-      return module;
+    if (!path) continue;
+    const binding = tryLoadNativeBinding(path);
+    if (binding) {
+      return binding;
     }
   }
 
-  // If we get here, no modules could be loaded
-  log.warn('No native bindings could be loaded, using JavaScript fallbacks');
   return null;
 }
 
