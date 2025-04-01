@@ -7,9 +7,8 @@
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
 import { Http2SecureServer, constants, createSecureServer } from 'node:http2';
-import { Router } from '../routing/router';
-import { MiddlewareHandler } from '../middleware/middleware';
-import { Logger } from '../utils/logger';
+import { Router } from '../routing/router.js';
+import { MiddlewareHandler } from '../middleware/middleware.js';
 
 /**
  * HTTP/2 Server Options
