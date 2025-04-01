@@ -4,7 +4,7 @@
 
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
-import { ObjectPool } from '../native/index';
+import { ObjectPool } from '../native/index.js';
 
 /**
  * Request pool options
@@ -69,7 +69,7 @@ abstract class BaseObjectPool<T> {
           enabled: this.enabled
         });
       } catch (error) {
-        console.warn('Failed to initialize native object pool:', error);
+        Logger.warn('Failed to initialize native object pool:', error);
         this.objectPool = null;
       }
     }
@@ -332,7 +332,10 @@ export class ResponsePool extends BaseObjectPool<ServerResponse> {
     // Clear write buffers if possible
     if ((res as any)._writableState) {
       (res as any)._writableState.ended = false;
-      if ((res as any)._writableState.buffer && typeof (res as any)._writableState.buffer.clear === 'function') {
+      if (
+        (res as any)._writableState.buffer &&
+        typeof (res as any)._writableState.buffer.clear === 'function'
+      ) {
         (res as any)._writableState.buffer.clear();
       }
       (res as any)._writableState.length = 0;
@@ -367,7 +370,10 @@ export class ResponsePool extends BaseObjectPool<ServerResponse> {
 /**
  * Create a paired request and response pool with shared native resources
  */
-export function createPoolPair(options: RequestPoolOptions = {}): { requestPool: RequestPool; responsePool: ResponsePool } {
+export function createPoolPair(options: RequestPoolOptions = {}): {
+  requestPool: RequestPool;
+  responsePool: ResponsePool;
+} {
   const requestPool = new RequestPool(options);
   const responsePool = new ResponsePool(options);
 
