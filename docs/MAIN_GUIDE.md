@@ -3,15 +3,20 @@
 ## Table of Contents
 
 - [Introduction](#introduction)
+- [Installation](#installation)
 - [Getting Started](#getting-started)
 - [Core Components](#core-components)
   - [Routing](#routing)
   - [Middleware](#middleware)
-  - [Dependency Injection](#dependency-injection)
+  - [Request Handling](#request-handling)
+  - [Response Handling](#response-handling)
+- [Advanced Topics](#advanced-topics)
+  - [Native Modules](#native-modules)
+  - [Streaming](#streaming)
   - [WebSockets](#websockets)
-  - [Authentication](#authentication)
-- [Advanced Usage](#advanced-usage)
-- [Common Patterns](#common-patterns)
+  - [Performance Optimizations](#performance-optimizations)
+- [Documentation Index](#documentation-index)
+- [Examples](#examples)
 - [Troubleshooting](#troubleshooting)
 
 ## Introduction
@@ -21,40 +26,60 @@ NexureJS is a high-performance, modular Node.js framework designed with modern d
 ### Key Features
 
 - **High Performance**: Native C++ modules for performance-critical operations
-- **Modern TypeScript Support**: First-class TypeScript support
-- **Decorator-Based API**: Intuitive, decorator-based syntax
-- **Dependency Injection**: Powerful DI system
+- **Modern JavaScript & TypeScript Support**: First-class TypeScript support
+- **Intuitive API**: Simple, expressive API for routing and middleware
+- **Streaming Support**: Advanced streaming capabilities for efficient data processing
 - **WebSocket Support**: Built-in WebSocket capabilities
 - **Middleware System**: Flexible middleware architecture
 - **Modular Design**: Use only what you need
 
-## Getting Started
+## Installation
 
-### Installation
+### Prerequisites
+
+- Node.js 18.0.0 or later
+- npm or yarn
+
+### Basic Installation
 
 ```bash
 npm install nexurejs
 ```
 
-### Basic Application
+For TypeScript users, TypeScript typings are included in the package.
 
-```typescript
-import { Nexure } from 'nexurejs';
-import { Controller, Get } from 'nexurejs/decorators';
+### Native Modules
 
-@Controller('/hello')
-class HelloController {
-  @Get()
-  sayHello() {
-    return { message: 'Hello, NexureJS!' };
-  }
-}
+NexureJS includes native C++ modules for performance optimization. The installation will automatically attempt to download pre-built binaries for your platform. If no pre-built binary is available, it will fallback to a pure JavaScript implementation.
 
+To force using the JavaScript implementation:
+
+```bash
+npm install nexurejs --force-js
+```
+
+## Getting Started
+
+### Creating a Basic Server
+
+```javascript
+import { Nexure, HttpMethod } from 'nexurejs';
+
+// Create a new Nexure application instance
 const app = new Nexure();
-app.register(HelloController);
 
+// Define a route
+app.route({
+  path: '/',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    res.status(200).json({ message: 'Hello, NexureJS!' });
+  }
+});
+
+// Start the server
 app.listen(3000, () => {
-  console.log('Server running on port 3000');
+  console.log('Server running at http://localhost:3000');
 });
 ```
 
@@ -65,24 +90,77 @@ A typical NexureJS project structure looks like this:
 ```bash
 my-nexure-app/
 ├── src/
-│   ├── controllers/
-│   │   ├── user.controller.ts
-│   │   └── auth.controller.ts
-│   ├── services/
-│   │   ├── user.service.ts
-│   │   └── auth.service.ts
-│   ├── models/
-│   │   └── user.model.ts
+│   ├── routes/
+│   │   ├── user-routes.js
+│   │   └── auth-routes.js
 │   ├── middleware/
-│   │   ├── logger.middleware.ts
-│   │   └── auth.middleware.ts
+│   │   ├── logger.js
+│   │   └── auth.js
+│   ├── handlers/
+│   │   ├── user-handlers.js
+│   │   └── auth-handlers.js
 │   ├── utils/
-│   │   └── helpers.ts
-│   └── app.ts
+│   │   └── helpers.js
+│   └── app.js
 ├── tests/
 ├── package.json
-└── tsconfig.json
+└── README.md
 ```
+
+### Configuration Options
+
+NexureJS can be configured with various options:
+
+```javascript
+const app = new Nexure({
+  // Enable logging
+  logging: true,
+
+  // Enable pretty JSON responses
+  prettyJson: true,
+
+  // Global prefix for all routes
+  globalPrefix: '/api',
+
+  // WebSocket options
+  websocket: {
+    enabled: true,
+    config: {
+      // WebSocket server configuration
+    }
+  },
+
+  // Performance optimization options
+  performance: {
+    nativeModules: true,
+    forceNativeModules: false,
+    nativeModuleConfig: {
+      verbose: false,
+      maxCacheSize: 1000,
+      preloadModules: true
+    },
+    gcInterval: 0,
+    maxMemoryMB: 0
+  },
+
+  // Body parser options
+  bodyParser: {
+    streaming: false,
+    streamOptions: {
+      highWaterMark: 64 * 1024,
+      maxSize: 10 * 1024 * 1024
+    }
+  },
+
+  // Logger configuration
+  logger: {
+    level: 'info',
+    prettyPrint: false
+  }
+});
+```
+
+For a complete list of configuration options, see the [API Reference](./API_REFERENCE.md#nexure-class).
 
 ## Core Components
 
@@ -92,85 +170,79 @@ NexureJS provides a flexible routing system with support for route parameters, q
 
 #### Basic Routing
 
-```typescript
-import { Controller, Get, Post, Put, Delete, Param, Body } from 'nexurejs/decorators';
+```javascript
+import { Nexure, HttpMethod } from 'nexurejs';
 
-@Controller('/users')
-class UserController {
-  @Get()
-  getAllUsers() {
-    // Handle GET /users
-    return [{ id: 1, name: 'User 1' }, { id: 2, name: 'User 2' }];
-  }
+const app = new Nexure();
 
-  @Get('/:id')
-  getUserById(@Param('id') id: string) {
-    // Handle GET /users/:id
-    return { id, name: `User ${id}` };
+// Define routes
+app.route({
+  path: '/',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    res.status(200).json({ message: 'Welcome to NexureJS' });
   }
+});
 
-  @Post()
-  createUser(@Body() userData: any) {
-    // Handle POST /users
-    return { id: 3, ...userData };
+app.route({
+  path: '/users',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    res.status(200).json({ users: [] });
   }
+});
 
-  @Put('/:id')
-  updateUser(@Param('id') id: string, @Body() userData: any) {
-    // Handle PUT /users/:id
-    return { id, ...userData };
+app.route({
+  path: '/users/:id',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    const userId = req.params.id;
+    res.status(200).json({ id: userId, name: `User ${userId}` });
   }
+});
 
-  @Delete('/:id')
-  deleteUser(@Param('id') id: string) {
-    // Handle DELETE /users/:id
-    return { message: `User ${id} deleted` };
+app.route({
+  path: '/users',
+  method: HttpMethod.POST,
+  handler: async (req, res) => {
+    const userData = await req.json();
+    res.status(201).json({ id: 1, ...userData });
   }
-}
+});
 ```
 
 #### Route Parameters
 
-Route parameters can be accessed using the `@Param` decorator:
+Route parameters can be defined using the colon syntax in the path and are available in `req.params`:
 
-```typescript
-@Get('/:id')
-getUserById(@Param('id') id: string) {
-  return { id, name: `User ${id}` };
-}
+```javascript
+app.route({
+  path: '/users/:id/posts/:postId',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    const { id, postId } = req.params;
+    res.status(200).json({ userId: id, postId });
+  }
+});
 ```
 
 #### Query Parameters
 
-Query parameters can be accessed using the `@Query` decorator:
+Query parameters are automatically parsed and available in `req.query`:
 
-```typescript
-@Get()
-searchUsers(@Query('name') name: string, @Query('role') role: string) {
-  return { name, role };
-}
-```
-
-#### Request Body
-
-Request body can be accessed using the `@Body` decorator:
-
-```typescript
-@Post()
-createUser(@Body() userData: any) {
-  return { id: 3, ...userData };
-}
-```
-
-#### Headers
-
-Headers can be accessed using the `@Header` decorator:
-
-```typescript
-@Get()
-getWithAuth(@Header('authorization') auth: string) {
-  return { auth };
-}
+```javascript
+app.route({
+  path: '/search',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    const { q, limit, page } = req.query;
+    res.status(200).json({
+      query: q,
+      limit: parseInt(limit) || 10,
+      page: parseInt(page) || 1
+    });
+  }
+});
 ```
 
 ### Middleware
@@ -179,510 +251,314 @@ Middleware functions are functions that have access to the request object, the r
 
 #### Creating Middleware
 
-```typescript
-import { Middleware, MiddlewareHandler } from 'nexurejs/middleware';
+```javascript
+// Simple logger middleware
+const logger = (req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+};
 
-@Middleware()
-class LoggerMiddleware implements MiddlewareHandler {
-  async handle(req: any, res: any, next: () => Promise<void>): Promise<void> {
-    console.log(`${req.method} ${req.url}`);
-    await next();
-    console.log(`Response status: ${res.statusCode}`);
-  }
-}
+// Error handling middleware
+const errorHandler = (err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred'
+      : err.message
+  });
+};
 ```
 
 #### Using Middleware
 
-```typescript
-import { Nexure } from 'nexurejs';
-import { LoggerMiddleware } from './middleware/logger.middleware';
+```javascript
+// Global middleware (applied to all routes)
+app.use(logger);
 
-const app = new Nexure();
-app.use(new LoggerMiddleware());
-```
-
-#### Global Middleware
-
-Middleware can be applied globally:
-
-```typescript
-// Apply middleware to all routes
-app.use(new LoggerMiddleware());
-```
-
-#### Controller-Specific Middleware
-
-Middleware can be applied to specific controllers:
-
-```typescript
-@Controller('/users')
-@UseMiddleware(AuthMiddleware)
-class UserController {
-  // Controller methods
-}
-```
-
-#### Route-Specific Middleware
-
-Middleware can be applied to specific routes:
-
-```typescript
-@Post()
-@UseMiddleware(ValidationMiddleware)
-createUser(@Body() userData: any) {
-  return { id: 3, ...userData };
-}
-```
-
-### Dependency Injection
-
-NexureJS includes a powerful dependency injection system that helps manage dependencies between different parts of your application.
-
-#### Injectable Services
-
-```typescript
-import { Injectable } from 'nexurejs/decorators';
-
-@Injectable()
-class UserService {
-  getUsers() {
-    return [{ id: 1, name: 'User 1' }, { id: 2, name: 'User 2' }];
+// Route-specific middleware
+app.route({
+  path: '/admin',
+  method: HttpMethod.GET,
+  middleware: [authMiddleware, adminOnlyMiddleware],
+  handler: (req, res) => {
+    res.status(200).json({ message: 'Admin dashboard' });
   }
+});
 
-  getUserById(id: string) {
-    return { id, name: `User ${id}` };
-  }
-}
+// Error handling middleware (should be registered last)
+app.use(errorHandler);
 ```
 
-#### Using Services in Controllers
+### Request Handling
 
-```typescript
-import { Controller, Get, Param } from 'nexurejs/decorators';
-import { UserService } from './services/user.service';
+#### Body Parsing
 
-@Controller('/users')
-class UserController {
-  constructor(private userService: UserService) {}
+Parse request body using async methods:
 
-  @Get()
-  getAllUsers() {
-    return this.userService.getUsers();
+```javascript
+app.route({
+  path: '/users',
+  method: HttpMethod.POST,
+  handler: async (req, res) => {
+    try {
+      // Parse JSON body
+      const body = await req.json();
+
+      // Validate body
+      if (!body.name || !body.email) {
+        return res.status(400).json({ error: 'Name and email are required' });
+      }
+
+      // Process body
+      res.status(201).json({ id: 1, ...body });
+    } catch (err) {
+      res.status(400).json({ error: 'Invalid JSON' });
+    }
   }
-
-  @Get('/:id')
-  getUserById(@Param('id') id: string) {
-    return this.userService.getUserById(id);
-  }
-}
+});
 ```
 
-#### Service Scopes
+#### Streaming
 
-Services can have different scopes:
+Process request body as a stream for large uploads:
 
-```typescript
-import { Injectable, ServiceScope } from 'nexurejs/decorators';
+```javascript
+app.route({
+  path: '/upload',
+  method: HttpMethod.POST,
+  handler: async (req, res) => {
+    try {
+      const stream = req.stream();
+      const writeStream = fs.createWriteStream('/path/to/file');
 
-@Injectable({ scope: ServiceScope.SINGLETON })
-class ConfigService {
-  // Singleton: One instance for the entire application
-}
+      await pipeline(stream, writeStream);
 
-@Injectable({ scope: ServiceScope.REQUEST })
-class RequestService {
-  // Request-scoped: New instance for each request
-}
-
-@Injectable({ scope: ServiceScope.TRANSIENT })
-class TransientService {
-  // Transient: New instance each time it's injected
-}
+      res.status(200).json({ message: 'Upload complete' });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
 ```
+
+### Response Handling
+
+#### JSON Response
+
+Send JSON response:
+
+```javascript
+res.status(200).json({ message: 'Success', data: {} });
+```
+
+#### Text Response
+
+Send text response:
+
+```javascript
+res.status(200).text('Success');
+```
+
+#### HTML Response
+
+Send HTML response:
+
+```javascript
+res.status(200).html('<h1>Hello World</h1>');
+```
+
+#### Stream Response
+
+Respond with a stream:
+
+```javascript
+const fileStream = fs.createReadStream('/path/to/file');
+
+res.status(200)
+  .setHeader('Content-Type', 'application/octet-stream')
+  .stream(fileStream);
+```
+
+## Advanced Topics
+
+### Native Modules
+
+NexureJS includes native C++ modules for performance-critical operations, which are used automatically when available. You can control their usage:
+
+```javascript
+import { isNative, isNativeAvailable, forceJavaScriptFallback } from 'nexurejs';
+
+console.log(`Using native implementation: ${isNative}`);
+console.log(`Native implementation available: ${isNativeAvailable()}`);
+
+// Force JavaScript fallback
+forceJavaScriptFallback();
+
+// Configuration through Nexure constructor
+const app = new Nexure({
+  performance: {
+    nativeModules: true,
+    forceNativeModules: false,
+    nativeModuleConfig: {
+      verbose: true,
+      maxCacheSize: 1000
+    }
+  }
+});
+```
+
+### Streaming
+
+NexureJS provides advanced streaming capabilities for efficient processing of large data:
+
+```javascript
+app.route({
+  path: '/download',
+  method: HttpMethod.GET,
+  handler: async (req, res) => {
+    const fileStream = fs.createReadStream('/path/to/large/file');
+
+    // Transform the stream (e.g., to add compression)
+    const gzip = zlib.createGzip();
+
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Encoding', 'gzip');
+
+    await pipeline(fileStream, gzip, res.stream());
+  }
+});
+```
+
+For more advanced streaming examples, see the [Streaming Example](../examples/performance/streaming.js) and [API Reference](./API_REFERENCE.md#streaming).
 
 ### WebSockets
 
-NexureJS provides built-in WebSocket support with both native (C++) and JavaScript implementations.
+NexureJS includes built-in WebSocket support:
 
-#### Basic WebSocket Setup
-
-```typescript
+```javascript
 import { Nexure } from 'nexurejs';
 
 const app = new Nexure({
   websocket: {
-    enabled: true  // Default is true
-  }
-});
-```
-
-#### Creating a WebSocket Controller
-
-```typescript
-import {
-  WebSocketController,
-  OnConnect,
-  OnMessage,
-  OnJoinRoom,
-  OnLeaveRoom,
-  WebSocketContext
-} from 'nexurejs/decorators';
-
-@WebSocketController()
-class ChatController {
-  @OnConnect()
-  handleConnection(context: WebSocketContext) {
-    console.log('New connection');
-
-    // Send welcome message
-    context.connection.send({
-      type: 'welcome',
-      data: { message: 'Welcome to the chat!' }
-    });
-  }
-
-  @OnMessage()
-  handleMessage(context: WebSocketContext) {
-    console.log('Received message:', context.message);
-
-    // Echo the message back
-    context.connection.send({
-      type: 'echo',
-      data: context.message?.data
-    });
-  }
-
-  @OnJoinRoom()
-  handleJoinRoom(context: WebSocketContext) {
-    const { room } = context;
-    console.log(`User joined room: ${room}`);
-  }
-
-  @OnLeaveRoom()
-  handleLeaveRoom(context: WebSocketContext) {
-    const { room } = context;
-    console.log(`User left room: ${room}`);
-  }
-}
-
-// Register the controller
-app.register(ChatController);
-```
-
-#### Client-Side WebSocket Usage
-
-```javascript
-// Connect to the WebSocket server
-const socket = new WebSocket('ws://localhost:3000');
-
-// Handle connection open
-socket.onopen = () => {
-  console.log('Connected to server');
-
-  // Join a room
-  socket.send(JSON.stringify({
-    type: 'join',
-    room: 'general'
-  }));
-
-  // Send a message
-  socket.send(JSON.stringify({
-    type: 'message',
-    data: { text: 'Hello, everyone!' },
-    room: 'general'
-  }));
-};
-
-// Handle incoming messages
-socket.onmessage = (event) => {
-  const message = JSON.parse(event.data);
-  console.log('Received:', message);
-};
-
-// Handle disconnection
-socket.onclose = () => {
-  console.log('Disconnected from server');
-};
-```
-
-### Authentication
-
-NexureJS can be easily integrated with various authentication strategies, including JWT.
-
-#### JWT Authentication Middleware
-
-```typescript
-import { Middleware, MiddlewareHandler } from 'nexurejs/middleware';
-import jwt from 'jsonwebtoken';
-
-@Middleware()
-export class JwtAuthMiddleware implements MiddlewareHandler {
-  async handle(req: any, res: any, next: () => Promise<void>): Promise<void> {
-    try {
-      const token = req.headers.authorization?.split(' ')[1];
-
-      if (!token) {
-        res.status(401).send({ message: 'No token provided' });
-        return;
-      }
-
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'secret');
-      req.user = decoded;
-
-      await next();
-    } catch (error) {
-      res.status(401).send({ message: 'Invalid token' });
-    }
-  }
-}
-```
-
-#### Authentication Controller
-
-```typescript
-import { Controller, Post, Body } from 'nexurejs/decorators';
-import jwt from 'jsonwebtoken';
-
-@Controller('/auth')
-class AuthController {
-  @Post('/login')
-  login(@Body() credentials: { username: string; password: string }) {
-    // In a real app, validate credentials against a database
-    if (credentials.username === 'admin' && credentials.password === 'password') {
-      const token = jwt.sign(
-        { userId: 1, username: credentials.username },
-        process.env.JWT_SECRET || 'secret',
-        { expiresIn: '1h' }
-      );
-
-      return { token };
-    }
-
-    return { message: 'Invalid credentials' };
-  }
-}
-```
-
-#### Protected Routes
-
-```typescript
-import { Controller, Get, UseMiddleware } from 'nexurejs/decorators';
-import { JwtAuthMiddleware } from './middleware/jwt-auth.middleware';
-
-@Controller('/profile')
-@UseMiddleware(JwtAuthMiddleware)
-class ProfileController {
-  @Get()
-  getProfile(req: any) {
-    // req.user contains the decoded JWT payload
-    return { profile: req.user };
-  }
-}
-```
-
-## Advanced Usage
-
-### Error Handling
-
-NexureJS provides a built-in error handling system:
-
-```typescript
-import { Nexure } from 'nexurejs';
-import { Controller, Get } from 'nexurejs/decorators';
-
-@Controller('/error')
-class ErrorController {
-  @Get('/test')
-  testError() {
-    throw new Error('Test error');
-  }
-}
-
-const app = new Nexure();
-app.register(ErrorController);
-
-// Custom error handler
-app.setErrorHandler((error, req, res) => {
-  console.error('Error:', error.message);
-  res.status(500).send({ error: error.message });
-});
-```
-
-### Custom Decorators
-
-You can create custom decorators for common patterns:
-
-```typescript
-import { createParamDecorator } from 'nexurejs/decorators';
-
-// Create a custom decorator for extracting the user from the request
-export const CurrentUser = createParamDecorator((req) => req.user);
-
-// Using the custom decorator
-@Get('/me')
-getProfile(@CurrentUser() user: any) {
-  return { profile: user };
-}
-```
-
-### Configuration Management
-
-Managing configuration in different environments:
-
-```typescript
-import { Nexure } from 'nexurejs';
-import { Config } from 'nexurejs/utils';
-
-// Load configuration
-const config = new Config();
-config.load({
-  development: {
-    port: 3000,
-    database: {
-      host: 'localhost',
-      port: 5432,
-      user: 'postgres',
-      password: 'postgres'
-    }
-  },
-  production: {
-    port: process.env.PORT || 8080,
-    database: {
-      host: process.env.DB_HOST,
-      port: process.env.DB_PORT,
-      user: process.env.DB_USER,
-      password: process.env.DB_PASSWORD
+    enabled: true,
+    config: {
+      // WebSocket configuration
     }
   }
 });
 
-// Use configuration
-const app = new Nexure();
-app.listen(config.get('port'), () => {
-  console.log(`Server running on port ${config.get('port')}`);
+// Get the WebSocket server
+const wsServer = app.getWebSocketServer();
+
+// Handle WebSocket connections
+wsServer.on('connection', (connection) => {
+  console.log('New WebSocket connection');
+
+  // Send a message to the client
+  connection.send({ type: 'welcome', message: 'Hello!' });
+
+  // Add the connection to a room
+  connection.joinRoom('general');
 });
+
+// Handle WebSocket messages
+wsServer.on('message', (connection, message) => {
+  console.log('Received message:', message);
+
+  // Echo the message back
+  connection.send({ type: 'echo', data: message });
+});
+
+// Broadcast to all clients in a room
+wsServer.broadcastToRoom('general', {
+  type: 'announcement',
+  message: 'Hello everyone!'
+});
+
+// Start the server
+app.listen(3000);
 ```
 
-## Common Patterns
+### Performance Optimizations
 
-### Controller-Service-Repository Pattern
+NexureJS includes various performance optimizations:
 
-```typescript
-// Repository
-@Injectable()
-class UserRepository {
-  private users = [{ id: 1, name: 'User 1' }, { id: 2, name: 'User 2' }];
+1. **Buffer Pooling**: Reusing buffers to reduce garbage collection
+2. **Adaptive Buffer Sizing**: Dynamically adjusting buffer size based on workload
+3. **Streaming Body Processing**: Efficiently processing request bodies as streams
+4. **Native Modules**: Using C++ for performance-critical operations
 
-  findAll() {
-    return this.users;
-  }
+## Documentation Index
 
-  findById(id: number) {
-    return this.users.find(user => user.id === id);
-  }
-}
+NexureJS provides comprehensive documentation:
 
-// Service
-@Injectable()
-class UserService {
-  constructor(private userRepository: UserRepository) {}
+- [API Reference](./API_REFERENCE.md) - Complete reference of all APIs and features
+- [Examples Guide](./EXAMPLES.md) - Detailed guide to all example applications
+- [Main README](../README.md) - Project overview and basic usage
 
-  getUsers() {
-    return this.userRepository.findAll();
-  }
+## Examples
 
-  getUserById(id: number) {
-    return this.userRepository.findById(id);
-  }
-}
+The [examples directory](../examples/) contains various example applications that demonstrate how to use NexureJS features in real-world scenarios:
 
-// Controller
-@Controller('/users')
-class UserController {
-  constructor(private userService: UserService) {}
+- **Basic Examples**: Simple examples to get started with NexureJS
+- **API Development**: Examples showing how to build RESTful APIs
+- **Performance**: Demonstrations of performance optimizations
+- **Security**: Security best practices and implementations
+- **Advanced Features**: Examples showcasing more complex features
 
-  @Get()
-  getAllUsers() {
-    return this.userService.getUsers();
-  }
-
-  @Get('/:id')
-  getUserById(@Param('id') id: number) {
-    return this.userService.getUserById(id);
-  }
-}
-```
-
-### Request Validation
-
-```typescript
-import { Controller, Post, Body } from 'nexurejs/decorators';
-import { ValidateSchema } from 'nexurejs/middleware';
-
-// Define a validation schema
-const userSchema = {
-  type: 'object',
-  properties: {
-    name: { type: 'string', minLength: 3 },
-    email: { type: 'string', format: 'email' },
-    age: { type: 'number', minimum: 18 }
-  },
-  required: ['name', 'email', 'age']
-};
-
-@Controller('/users')
-class UserController {
-  @Post()
-  @ValidateSchema(userSchema)
-  createUser(@Body() userData: any) {
-    // userData is guaranteed to be valid
-    return { id: 3, ...userData };
-  }
-}
-```
+For detailed information on all examples, see the [Examples Guide](./EXAMPLES.md).
 
 ## Troubleshooting
 
-### Common Errors
+### Common Issues
 
-#### Controller Not Registered
+#### Native Modules Not Loading
 
-If your routes aren't working, make sure you've registered your controllers with the app:
+If native modules fail to load, NexureJS will automatically fall back to pure JavaScript implementations. To troubleshoot:
 
-```typescript
-app.register(UserController);
-```
-
-#### Dependency Injection Errors
-
-If you're having issues with dependency injection, check that:
-
-1. All services are decorated with `@Injectable()`
-2. Services are registered before they're used
-3. Circular dependencies are resolved using `forwardRef()`
-
-#### WebSocket Connection Issues
-
-If WebSocket connections aren't working:
-
-1. Ensure WebSockets are enabled in the app configuration
-2. Check that WebSocket controllers are registered
-3. Verify the client is connecting to the correct URL
-4. Check for CORS issues if connecting from a different domain
-
-### Debugging
-
-To enable debug logging:
-
-```typescript
-const app = new Nexure({
-  logging: true
-});
-```
-
-For more detailed logs, set the NODE_DEBUG environment variable:
+1. Check if your platform is supported
+2. Ensure you have the necessary build tools installed
+3. Try reinstalling the package
 
 ```bash
-NODE_DEBUG=nexure:* node app.js
+# Force rebuild of native modules
+npm rebuild nexurejs
+
+# Or install with verbose logging
+npm install nexurejs --verbose
 ```
+
+#### Streaming Issues
+
+If you encounter issues with streaming:
+
+1. Ensure you have enabled streaming in the options
+2. Check if you're correctly using the stream API
+3. Verify that you're handling stream errors
+
+```javascript
+// Enable streaming
+const app = new Nexure({
+  bodyParser: {
+    streaming: true,
+    streamOptions: {
+      highWaterMark: 64 * 1024, // 64KB chunks
+      maxSize: 100 * 1024 * 1024 // 100MB limit
+    }
+  }
+});
+
+// Handle stream errors
+try {
+  await pipeline(
+    req.stream(),
+    transform,
+    destination
+  );
+} catch (err) {
+  console.error('Streaming error:', err);
+}
+```
+
+For more detailed examples and troubleshooting, refer to our [Examples Guide](./EXAMPLES.md) and [API Reference](./API_REFERENCE.md).
