@@ -5,6 +5,42 @@ All notable changes to NexureJS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2025-04-01
+
+### Added
+
+- Implemented native module configuration and status functions for improved performance
+- Added comprehensive HTTP utilities with zero-copy parsing and improved error handling
+- Enhanced routing capabilities with optimized RadixRouter implementation
+- Introduced unified JSON processing with native and JS fallback implementations
+- Added support for both ESM and CommonJS environments
+- Implemented BufferPool with adaptive sizing and recycling capabilities
+- Added ObjectPool for efficient HTTP component management
+- Enhanced worker pool functionality with advanced scaling features
+- Introduced Stream Optimizer utilities for efficient stream processing
+- Added AdaptiveTimeoutManager for dynamic timeout adjustments
+- Implemented CryptoService with AES-256-GCM encryption and key rotation
+- Enhanced security headers middleware with comprehensive CSP options
+- Added rate limiting middleware with token bucket algorithm and Redis integration
+- Improved HTTP parser with enhanced buffer validation and security measures
+- Added comprehensive testing framework supporting unit, integration, compatibility, and performance tests
+- Implemented Jest configuration with TypeScript support
+- Added test runner script with support for various test types
+- Enhanced benchmarking capabilities with CPU and memory profiling tools
+- Enhanced documentation with performance benchmarks and native modules
+- Improved build process with unified build script generation
+- Added ESLint configuration for TypeScript with stricter rules
+- Streamlined project structure and configuration files
+- Added content type detection and transformation middleware
+- Implemented static file serving with optimized buffer pool
+- Enhanced validation middleware with comprehensive request validation
+- Added multipart form data parser for file uploads
+- Implemented stream transformation middleware
+- Added GitHub Actions workflows for benchmarking, building, testing, and releasing
+- Enhanced build process with improved TypeScript configuration
+- Added support for native modules and improved build scripts
+- Streamlined dependency management and project setup
+
 ## [0.2.0] - 2025-03-20
 
 ### Added
