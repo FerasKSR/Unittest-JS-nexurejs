@@ -31,14 +31,8 @@ jobs:
           # Install without native modules for CI
           NEXUREJS_CI_MODE: 1
 
-      - name: Lint
-        run: npm run lint
-
-      - name: Build
-        run: npm run build
-
-      - name: Run tests
-        run: npm run test:coverage
+      - name: Build and test
+        run: npm run ci:test
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3

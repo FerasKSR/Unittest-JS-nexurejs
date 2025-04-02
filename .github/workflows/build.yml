@@ -34,7 +34,7 @@ jobs:
       run: node scripts/build.js --force
 
     - name: Run tests
-      run: npm test
+      run: npm run ci:test
 
     - name: Package native modules
       run: node scripts/build.js --pack-only

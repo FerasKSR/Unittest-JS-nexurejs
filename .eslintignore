@@ -1,0 +1,6 @@
+node_modules
+dist
+benchmarks
+**/*.js
+**/*.cjs
+.eslintrc.js

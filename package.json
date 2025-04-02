@@ -31,7 +31,7 @@
     "test:perf": "node test/performance/http-server.js",
     "test:parallel": "node scripts/run-parallel-tests.js",
     "test:changed": "node --experimental-vm-modules node_modules/jest/bin/jest.js --onlyChanged",
-    "lint": "eslint . --ext .ts",
+    "lint": "eslint . --ext .ts --ignore-pattern \"benchmarks/**\"",
     "fix:lint": "node scripts/build.js --fix-lint-only",
     "fix:unused": "node scripts/build.js --fix-unused-vars-only",
     "fix:imports": "node scripts/build.js --fix-imports-only",
@@ -72,7 +72,8 @@
     "ci:release:minor": "node scripts/release.js minor --ci",
     "ci:release:major": "node scripts/release.js major --ci",
     "ci:release:pre": "node scripts/release.js pre --ci",
-    "ci:release:canary": "node scripts/release.js canary --ci"
+    "ci:release:canary": "node scripts/release.js canary --ci",
+    "ci:test": "npm run build:ts && npm run test:coverage"
   },
   "keywords": [
     "nodejs",
