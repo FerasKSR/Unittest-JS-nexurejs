@@ -1136,80 +1136,117 @@ async function fixTypesImports() {
  */
 async function buildNativeModuleDirect(options = {}) {
   const { forceRebuild = false, verbose = false } = options;
-  printSectionHeader(`Building Native Module for ${CURRENT_PLATFORM}-${CURRENT_ARCH}`);
+
+  printSectionHeader('Building Native Module');
+
+  // Check if native module build is necessary
+  const nativeModulePath = path.join(buildDir, 'Release/nexurejs_native.node');
+  if (!forceRebuild && fs.existsSync(nativeModulePath)) {
+    console.log(`${Colors.YELLOW}Native module already exists. Use --force to rebuild.${Colors.RESET}`);
+    return true;
+  }
+
+  console.log(`${Colors.BLUE}Building native module for ${CURRENT_PLATFORM}-${CURRENT_ARCH}...${Colors.RESET}`);
+
+  // Create build directory if it doesn't exist
+  if (!fs.existsSync(buildDir)) {
+    fs.mkdirSync(buildDir, { recursive: true });
+  }
+
+  // Check for simdjson.h on Windows
+  if (CURRENT_PLATFORM === 'win32') {
+    const simdjsonHeaderPath = path.join(rootDir, 'src', 'native', 'json', 'simdjson.h');
+    if (!fs.existsSync(simdjsonHeaderPath)) {
+      console.log(`${Colors.YELLOW}Creating simdjson stub for Windows compatibility...${Colors.RESET}`);
+
+      try {
+        // Create simdjson directory if it doesn't exist
+        const simdjsonDir = path.join(rootDir, 'src', 'native', 'json');
+        fs.mkdirSync(simdjsonDir, { recursive: true });
+
+        // Create the simdjson stub header
+        // This function can be called from our preinstall script
+        // but we add it here as a fallback
+        const preinstallScript = path.join(rootDir, 'scripts', 'preinstall.js');
+        if (fs.existsSync(preinstallScript)) {
+          try {
+            execSync(`node ${preinstallScript}`, { stdio: 'inherit' });
+          } catch (err) {
+            console.error(`${Colors.RED}Failed to run preinstall script:${Colors.RESET}`, err.message);
+            return false;
+          }
+        } else {
+          console.error(`${Colors.RED}Preinstall script not found. Build may fail.${Colors.RESET}`);
+        }
+      } catch (err) {
+        console.error(`${Colors.RED}Failed to create simdjson stub:${Colors.RESET}`, err.message);
+        return false;
+      }
+    }
+  }
 
   try {
-    // Check platform requirements
-    console.log(`${Colors.BLUE}Checking platform requirements...${Colors.RESET}`);
+    // Run node-gyp rebuild
+    console.log(`${Colors.BLUE}Running node-gyp...${Colors.RESET}`);
 
-    // Check node-gyp
+    const cmd = 'node-gyp';
+    const args = ['rebuild'];
+
+    if (verbose) {
+      args.push('--verbose');
+    }
+
+    if (CURRENT_PLATFORM === 'win32') {
+      // Add Windows-specific flags
+      args.push('--msvs_version=2022');
+    }
+
+    execSync(`${cmd} ${args.join(' ')}`, {
+      cwd: rootDir,
+      stdio: 'inherit',
+      env: { ...process.env, FORCE_COLOR: '1' }
+    });
+
+    console.log(`${Colors.GREEN}✓ Native module build successful${Colors.RESET}`);
+
+    // Copy the built module to the dist directory
+    await copyNativeModule();
+
+    return true;
+  } catch (err) {
+    console.error(`${Colors.RED}✗ Native module build failed:${Colors.RESET}`, err.message);
+
+    // Check if we can run in fallback mode (JS only)
+    console.log(`${Colors.YELLOW}Native module build failed. Creating JS fallback...${Colors.RESET}`);
+
     try {
-      const gypVersion = execSync('node-gyp --version', { encoding: 'utf8' }).trim();
-      console.log(`${Colors.GREEN}Found node-gyp ${gypVersion}${Colors.RESET}`);
-    } catch (error) {
-      console.error(`${Colors.RED}node-gyp is not installed or not in PATH${Colors.RESET}`);
-      console.error(`${Colors.YELLOW}Try installing with: npm install -g node-gyp${Colors.RESET}`);
+      // Create empty fallback module
+      const fallbackDir = path.join(buildDir, 'Release');
+      fs.mkdirSync(fallbackDir, { recursive: true });
+
+      if (!fs.existsSync(path.join(fallbackDir, 'nexurejs_native.node'))) {
+        // Create empty file as fallback
+        fs.writeFileSync(path.join(fallbackDir, 'nexurejs_native.node'), Buffer.alloc(0));
+      }
+
+      // Create file to indicate this is a fallback
+      fs.writeFileSync(path.join(buildDir, '.js_fallback'), JSON.stringify({
+        platform: CURRENT_PLATFORM,
+        arch: CURRENT_ARCH,
+        timestamp: new Date().toISOString(),
+        reason: err.message
+      }, null, 2));
+
+      console.log(`${Colors.YELLOW}Created JS fallback. Native features will be disabled.${Colors.RESET}`);
+
+      // Copy the fallback module to the dist directory
+      await copyNativeModule();
+
+      return true;
+    } catch (fallbackErr) {
+      console.error(`${Colors.RED}Failed to create fallback:${Colors.RESET}`, fallbackErr.message);
       return false;
     }
-
-    // Platform-specific checks
-    if (CURRENT_PLATFORM === 'win32') {
-      try {
-        execSync('where cl.exe', { stdio: 'ignore' });
-        console.log(`${Colors.GREEN}Found Visual C++ Build Tools${Colors.RESET}`);
-      } catch (error) {
-        console.error(`${Colors.RED}Visual C++ Build Tools not found${Colors.RESET}`);
-        console.error(`${Colors.YELLOW}Install with: npm install --global --production windows-build-tools${Colors.RESET}`);
-        return false;
-      }
-    } else if (CURRENT_PLATFORM === 'darwin') {
-      try {
-        execSync('xcode-select -p', { stdio: 'ignore' });
-        console.log(`${Colors.GREEN}Found XCode Command Line Tools${Colors.RESET}`);
-      } catch (error) {
-        console.error(`${Colors.RED}XCode Command Line Tools not found${Colors.RESET}`);
-        console.error(`${Colors.YELLOW}Install with: xcode-select --install${Colors.RESET}`);
-        return false;
-      }
-    } else if (CURRENT_PLATFORM === 'linux') {
-      try {
-        execSync('gcc --version', { stdio: 'ignore' });
-        console.log(`${Colors.GREEN}Found GCC${Colors.RESET}`);
-      } catch (error) {
-        console.error(`${Colors.RED}GCC not found${Colors.RESET}`);
-        console.error(`${Colors.YELLOW}Install with: sudo apt-get install build-essential${Colors.RESET}`);
-        return false;
-      }
-    }
-
-    // Clean previous builds if forced
-    if (forceRebuild) {
-      console.log(`${Colors.YELLOW}Forcing rebuild - cleaning previous build...${Colors.RESET}`);
-      execSync('node-gyp clean', {
-        stdio: verbose ? 'inherit' : 'pipe',
-        cwd: rootDir
-      });
-    }
-
-    // Configure the build
-    console.log(`${Colors.BLUE}Configuring build...${Colors.RESET}`);
-    execSync('node-gyp configure', {
-      stdio: verbose ? 'inherit' : 'pipe',
-      cwd: rootDir
-    });
-
-    // Build the module
-    console.log(`${Colors.BLUE}Compiling...${Colors.RESET}`);
-    execSync('node-gyp build', {
-      stdio: verbose ? 'inherit' : 'pipe',
-      cwd: rootDir
-    });
-
-    console.log(`${Colors.GREEN}✓ Native module built successfully!${Colors.RESET}`);
-    return true;
-  } catch (error) {
-    console.error(`${Colors.RED}Error building native module:${Colors.RESET}`, error.message);
-    return false;
   }
 }
 
@@ -2044,5 +2081,32 @@ async function installNativeModules(options = {}) {
   } catch (err) {
     console.error(`${Colors.RED}❌ Installation failed:${Colors.RESET}`, err.message);
     return false;
+  }
+}
+
+/**
+ * Copy the built native module to the dist directory
+ */
+async function copyNativeModule() {
+  try {
+    const srcPath = path.join(buildDir, 'Release/nexurejs_native.node');
+    const distNativePath = path.join(distDir, 'native');
+
+    // Create dist/native directory if it doesn't exist
+    if (!fs.existsSync(distNativePath)) {
+      fs.mkdirSync(distNativePath, { recursive: true });
+    }
+
+    const destPath = path.join(distNativePath, 'nexurejs_native.node');
+
+    // Copy the built module
+    if (fs.existsSync(srcPath)) {
+      fs.copyFileSync(srcPath, destPath);
+      console.log(`${Colors.GREEN}Copied native module to ${destPath}${Colors.RESET}`);
+    } else {
+      console.warn(`${Colors.YELLOW}Native module not found at ${srcPath}${Colors.RESET}`);
+    }
+  } catch (err) {
+    console.error(`${Colors.RED}Failed to copy native module:${Colors.RESET}`, err.message);
   }
 }

@@ -7,7 +7,18 @@
 #ifndef SIMDJSON_WRAPPER_H
 #define SIMDJSON_WRAPPER_H
 
-#include <simdjson.h>
+// First try to include from node_modules
+#if __has_include(<node_modules/simdjson/include/simdjson.h>)
+  #include <node_modules/simdjson/include/simdjson.h>
+// Try standard include path
+#elif __has_include(<simdjson.h>)
+  #include <simdjson.h>
+// Check for local path (for Windows compatibility)
+#elif __has_include("simdjson.h")
+  #include "simdjson.h"
+#else
+  #error "Could not find simdjson.h header"
+#endif
 
 #if defined(__GNUC__) || defined(__clang__)
 // Check if the specific GCC diagnostic is available
@@ -42,7 +53,11 @@ namespace simdjson {
 
   // Get simdjson implementation name
   inline std::string getImplementation() {
+#if defined(SIMDJSON_BUILTIN_IMPLEMENTATION)
     return simdjson::builtin_implementation()->name();
+#else
+    return "stub";
+#endif
   }
 }
 
