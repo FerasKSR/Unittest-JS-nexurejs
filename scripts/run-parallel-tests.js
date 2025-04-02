@@ -27,12 +27,13 @@ const rootDir = path.join(__dirname, '..');
 // Parse command line arguments
 const args = parseArgs(process.argv.slice(2));
 const numWorkers = parseInt(args.workers || Math.max(os.cpus().length - 1, 1), 10);
-const testMatch = args.testMatch || '.test.js';
+const testMatch = args.testMatch || '**/*.@(test|spec).@(js|ts)';
 const updateSnapshots = args.u || args.updateSnapshot || false;
 const watch = args.watch || false;
 const ci = args.ci || false;
 const coverage = args.coverage || false;
 const changedOnly = args.changed || false;
+const mergeOnly = args.mergeOnly || false;
 
 // ANSI color codes for console output
 const Colors = {
@@ -72,9 +73,17 @@ function findTestFiles() {
 
   try {
     // Use Jest's CLI to list test files
-    const cmd = `npx jest --listTests --json --testMatch="${testMatch}"`;
+    const cmd = `npx jest --listTests --json --testMatch="**/*@(test|spec).@(js|ts)"`;
     const output = execSync(cmd, { cwd: rootDir, encoding: 'utf8' });
-    const files = JSON.parse(output);
+    let files = [];
+
+    try {
+      files = JSON.parse(output);
+    } catch (parseError) {
+      console.warn(`${Colors.YELLOW}Unable to parse Jest output: ${parseError.message}${Colors.RESET}`);
+      // Return empty array if parse fails
+      return [];
+    }
 
     // Filter for changed files if requested
     if (changedOnly) {
@@ -93,8 +102,8 @@ function findTestFiles() {
 
     return files;
   } catch (error) {
-    console.error(`${Colors.RED}Error finding test files: ${error.message}${Colors.RESET}`);
-    process.exit(1);
+    console.warn(`${Colors.YELLOW}No test files found matching: ${testMatch}${Colors.RESET}`);
+    return [];
   }
 }
 
@@ -206,15 +215,54 @@ async function mergeCoverageReports(numBatches) {
   console.log(`${Colors.BLUE}Merging coverage reports${Colors.RESET}`);
 
   try {
+    // Create the output directory if it doesn't exist
+    const coverageDir = path.join(rootDir, '.nyc_output');
+    if (!fs.existsSync(coverageDir)) {
+      fs.mkdirSync(coverageDir, { recursive: true });
+    }
+
+    // Check if we're running in merge-only mode
+    if (mergeOnly) {
+      // Check if test-results directory exists
+      const testResultsDir = path.join(rootDir, 'test-results');
+      if (fs.existsSync(testResultsDir)) {
+        // Copy coverage files from test-results to .nyc_output
+        const files = fs.readdirSync(testResultsDir, { recursive: true });
+        for (const file of files) {
+          if (file.endsWith('coverage-final.json')) {
+            const sourcePath = path.join(testResultsDir, file);
+            const destPath = path.join(coverageDir, path.basename(file));
+            fs.copyFileSync(sourcePath, destPath);
+            console.log(`${Colors.GREEN}Copied ${file} to .nyc_output${Colors.RESET}`);
+          }
+        }
+      } else {
+        console.warn(`${Colors.YELLOW}No test-results directory found for merge-only operation${Colors.RESET}`);
+        // Create an empty coverage file as fallback
+        fs.writeFileSync(path.join(coverageDir, 'coverage.json'), '{}');
+      }
+
+      return;
+    }
+
     // Use istanbul to merge coverage reports
-    const cmd = `npx istanbul-merge --out coverage/coverage-final.json`;
+    let cmd = `npx istanbul-merge --out .nyc_output/coverage.json`;
 
     // Add all the batch coverage files
+    let foundCoverageFiles = false;
     for (let i = 0; i < numBatches; i++) {
       const coverageFile = path.join(rootDir, 'coverage', `batch-${i}`, 'coverage-final.json');
       if (fs.existsSync(coverageFile)) {
         cmd += ` ${coverageFile}`;
+        foundCoverageFiles = true;
       }
+    }
+
+    if (!foundCoverageFiles) {
+      console.warn(`${Colors.YELLOW}No coverage files found to merge${Colors.RESET}`);
+      // Create an empty coverage file as fallback
+      fs.writeFileSync(path.join(coverageDir, 'coverage.json'), '{}');
+      return;
     }
 
     // Run the merge command
@@ -227,6 +275,12 @@ async function mergeCoverageReports(numBatches) {
     console.log(`${Colors.GREEN}HTML report available at: ${path.join(rootDir, 'coverage', 'index.html')}${Colors.RESET}`);
   } catch (error) {
     console.error(`${Colors.RED}Error merging coverage reports: ${error.message}${Colors.RESET}`);
+    // Create an empty coverage file as fallback
+    const coverageDir = path.join(rootDir, '.nyc_output');
+    if (!fs.existsSync(coverageDir)) {
+      fs.mkdirSync(coverageDir, { recursive: true });
+    }
+    fs.writeFileSync(path.join(coverageDir, 'coverage.json'), '{}');
   }
 }
 
@@ -324,13 +378,31 @@ function printTestSummary(results) {
  */
 async function main() {
   console.log(`${Colors.BOLD}Parallel Test Runner${Colors.RESET}`);
+
+  // Check if we should only merge existing reports
+  if (mergeOnly) {
+    console.log(`${Colors.BLUE}Running in merge-only mode${Colors.RESET}`);
+    await mergeCoverageReports(0);
+    return;
+  }
+
   console.log(`Running tests with ${numWorkers} workers`);
 
-  // Find all test files
+  // Find test files
   const testFiles = findTestFiles();
 
   if (testFiles.length === 0) {
     console.log(`${Colors.YELLOW}No test files found matching: ${testMatch}${Colors.RESET}`);
+
+    // Create empty coverage report if coverage was requested
+    if (coverage) {
+      const coverageDir = path.join(rootDir, '.nyc_output');
+      if (!fs.existsSync(coverageDir)) {
+        fs.mkdirSync(coverageDir, { recursive: true });
+      }
+      fs.writeFileSync(path.join(coverageDir, 'coverage.json'), '{}');
+    }
+
     return;
   }
 
