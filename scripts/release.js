@@ -94,7 +94,7 @@ function updateVersion(newVersion) {
 }
 
 // Helper function to update the changelog
-async function updateChangelog(newVersion) {
+async function updateChangelog(newVersion, isCiMode = false) {
   console.log(`${colors.blue}Updating CHANGELOG.md...${colors.reset}`);
 
   const changelogPath = path.join(process.cwd(), 'docs', 'CHANGELOG.md');
@@ -111,11 +111,15 @@ async function updateChangelog(newVersion) {
 
   fs.writeFileSync(changelogPath, newChangelog, 'utf-8');
 
-  // Open the changelog for editing
-  console.log(`${colors.yellow}Please review and edit the CHANGELOG.md file in the docs folder.${colors.reset}`);
+  if (!isCiMode) {
+    // Open the changelog for editing in non-CI mode
+    console.log(`${colors.yellow}Please review and edit the CHANGELOG.md file in the docs folder.${colors.reset}`);
 
-  // Wait for user to confirm they've edited the changelog
-  await prompt(`${colors.bright}Press Enter when you've finished editing the CHANGELOG.md file...${colors.reset}`);
+    // Wait for user to confirm they've edited the changelog
+    await prompt(`${colors.bright}Press Enter when you've finished editing the CHANGELOG.md file...${colors.reset}`);
+  } else {
+    console.log(`${colors.green}Updated CHANGELOG.md in CI mode${colors.reset}`);
+  }
 }
 
 // Helper function to commit changes
@@ -477,148 +481,169 @@ async function main() {
     const currentVersion = getCurrentVersion();
     console.log(`${colors.blue}Current version: ${currentVersion}${colors.reset}`);
 
-    // Determine new version
-    let newVersion = process.argv.find(arg => !arg.startsWith('-') && !arg.includes('/') && arg !== 'scripts/release.js');
+    // Check if we're running in CI mode
+    const isCiMode = process.argv.includes('--ci');
 
-    if (!newVersion) {
-      // Interactive mode
-      console.log(`${colors.bright}Available version bumps:${colors.reset}`);
-      const [major, minor, patch] = currentVersion.split('.').map(Number);
-      console.log(`  ${colors.green}major${colors.reset}: ${major + 1}.0.0`);
-      console.log(`  ${colors.green}minor${colors.reset}: ${major}.${minor + 1}.0`);
-      console.log(`  ${colors.green}patch${colors.reset}: ${major}.${minor}.${patch + 1}`);
+    // Parse command line arguments for version type
+    let versionType = process.argv[2];
+    const isPre = process.argv.includes('--pre');
 
-      newVersion = await prompt(`${colors.bright}Enter version bump (major/minor/patch) or specific version:${colors.reset} `);
+    if (isCiMode && !versionType) {
+      throw new Error('Version type is required in CI mode. Use: major, minor, patch, or pre');
     }
 
-    // Handle version bump keywords
-    if (newVersion === 'major' || newVersion === 'minor' || newVersion === 'patch') {
-      const [major, minor, patch] = currentVersion.split('.').map(Number);
+    // Determine the version type
+    if (!versionType && !isCiMode) {
+      versionType = await prompt(`${colors.yellow}Enter version type (patch, minor, major, pre, or specific version): ${colors.reset}`);
+    }
 
-      if (newVersion === 'major') {
-        newVersion = `${major + 1}.0.0`;
-      } else if (newVersion === 'minor') {
-        newVersion = `${major}.${minor + 1}.0`;
-      } else if (newVersion === 'patch') {
-        newVersion = `${major}.${minor}.${patch + 1}`;
+    // Calculate the new version
+    let newVersion;
+    if (isPre || versionType === 'pre') {
+      // Handle pre-release version
+      const preId = await getPreReleaseId(currentVersion, isCiMode);
+      newVersion = await bumpPreReleaseVersion(currentVersion, preId, isCiMode);
+    } else if (isValidVersion(versionType)) {
+      // Handle specific version
+      newVersion = versionType;
+    } else {
+      // Handle semantic version bump
+      newVersion = await calculateNewVersion(currentVersion, versionType, isCiMode);
+    }
+
+    if (!isValidVersion(newVersion)) {
+      throw new Error(`Invalid version format: ${newVersion}`);
+    }
+
+    console.log(`${colors.green}New version will be: ${newVersion}${colors.reset}`);
+
+    if (!isCiMode) {
+      const confirmRelease = await prompt(`${colors.yellow}Proceed with release? (y/n): ${colors.reset}`);
+      if (confirmRelease.toLowerCase() !== 'y') {
+        console.log(`${colors.bright}Release aborted.${colors.reset}`);
+        process.exit(0);
       }
     }
 
-    // Validate version format
-    if (!isValidVersion(newVersion)) {
-      console.log(`${colors.red}Error: Invalid version format. Expected format: x.y.z${colors.reset}`);
-      process.exit(1);
-    }
-
-    // Confirm the release
-    console.log(`${colors.bright}You are about to release version ${colors.green}${newVersion}${colors.reset}`);
-    const confirm = await prompt(`${colors.bright}Do you want to proceed? (y/N)${colors.reset} `);
-
-    if (confirm.toLowerCase() !== 'y') {
-      console.log(`${colors.yellow}Release cancelled.${colors.reset}`);
+    if (isDryRun) {
+      console.log(`${colors.bright}Dry run completed. Would release version ${newVersion}${colors.reset}`);
       process.exit(0);
     }
 
-    // Run tests
-    console.log(`${colors.blue}Running tests...${colors.reset}`);
-    try {
-      if (!isDryRun) {
-        exec('npm test');
-      } else {
-        try {
-          exec('npm test', { silent: true });
-          console.log(`${colors.yellow}DRY RUN: Tests passed${colors.reset}`);
-        } catch (error) {
-          console.log(`${colors.yellow}DRY RUN: Tests would fail in a real release${colors.reset}`);
-          const skipTests = await prompt(`${colors.bright}Tests are failing. Skip tests for dry run? (y/N)${colors.reset} `);
-          if (skipTests.toLowerCase() !== 'y') {
-            console.log(`${colors.yellow}Dry run cancelled.${colors.reset}`);
-            process.exit(0);
-          }
-        }
-      }
-    } catch (error) {
-      console.log(`${colors.red}Error: Tests failed. Fix the tests before releasing.${colors.reset}`);
-
-      // In case of dry run, ask if we want to continue despite failing tests
-      if (isDryRun) {
-        const skipTests = await prompt(`${colors.bright}Skip tests for this dry run? (y/N)${colors.reset} `);
-        if (skipTests.toLowerCase() !== 'y') {
-          process.exit(1);
-        }
-      } else {
-        process.exit(1);
-      }
-    }
-
-    // Build the project
-    console.log(`${colors.blue}Building the project...${colors.reset}`);
-    try {
-      if (!isDryRun) {
-        exec('npm run build');
-      } else {
-        try {
-          exec('npm run build', { silent: true });
-          console.log(`${colors.yellow}DRY RUN: Build successful${colors.reset}`);
-        } catch (error) {
-          console.log(`${colors.yellow}DRY RUN: Build would fail in a real release${colors.reset}`);
-          const skipBuild = await prompt(`${colors.bright}Build is failing. Skip build for dry run? (y/N)${colors.reset} `);
-          if (skipBuild.toLowerCase() !== 'y') {
-            console.log(`${colors.yellow}Dry run cancelled.${colors.reset}`);
-            process.exit(0);
-          }
-        }
-      }
-    } catch (error) {
-      console.log(`${colors.red}Error: Build failed. Fix the build before releasing.${colors.reset}`);
-      process.exit(1);
-    }
-
     // Update version in package.json
-    if (!isDryRun) {
-      updateVersion(newVersion);
-    } else {
-      console.log(`${colors.yellow}DRY RUN: Would update version to ${newVersion}${colors.reset}`);
-    }
+    updateVersion(newVersion);
 
-    // Update changelog
-    if (!isDryRun) {
-      await updateChangelog(newVersion);
-    } else {
-      console.log(`${colors.yellow}DRY RUN: Would update docs/CHANGELOG.md for version ${newVersion}${colors.reset}`);
-    }
+    // Update the changelog
+    await updateChangelog(newVersion, isCiMode);
 
     // Commit changes
-    if (!isDryRun) {
-      commitChanges(newVersion);
-    } else {
-      console.log(`${colors.yellow}DRY RUN: Would commit changes with message "chore: release v${newVersion}"${colors.reset}`);
-    }
+    commitChanges(newVersion);
 
     // Create and push git tag
-    if (!isDryRun) {
-      createAndPushTag(newVersion);
+    createAndPushTag(newVersion);
+
+    console.log(`${colors.green}Release v${newVersion} completed!${colors.reset}`);
+
+    if (!isCiMode) {
+      const shouldPublish = await prompt(`${colors.yellow}Do you want to publish to npm? (y/n): ${colors.reset}`);
+      if (shouldPublish.toLowerCase() === 'y') {
+        await publishToNpm();
+      }
+
+      rl.close();
     } else {
-      console.log(`${colors.yellow}DRY RUN: Would create and push tag v${newVersion}${colors.reset}`);
+      // In CI mode, we'll let the GitHub Action handle npm publishing
+      console.log(`${colors.blue}CI mode: GitHub Action will handle npm publishing${colors.reset}`);
     }
-
-    // Create GitHub release and upload assets
-    await createGitHubRelease(newVersion);
-
-    // Publish to npm
-    await publishToNpm();
-
-    if (isDryRun) {
-      console.log(`\n${colors.green}${colors.bright}Dry run completed successfully for v${newVersion}!${colors.reset}`);
-    } else {
-      console.log(`\n${colors.green}${colors.bright}Successfully released NexureJS v${newVersion}!${colors.reset}`);
-    }
-
   } catch (error) {
-    console.error(`${colors.red}Error: ${error.message}${colors.reset}`);
+    console.error(`${colors.red}Error:${colors.reset}`, error.message);
     process.exit(1);
   } finally {
-    rl.close();
+    if (rl.close) rl.close();
+  }
+}
+
+/**
+ * Get prerelease identifier in CI mode or interactively
+ */
+async function getPreReleaseId(currentVersion, isCiMode = false) {
+  const match = currentVersion.match(/-(.*)\./);
+  const defaultId = match ? match[1] : 'alpha';
+
+  if (isCiMode) {
+    return defaultId;
+  }
+
+  return await prompt(`${colors.yellow}Enter pre-release identifier (default: ${defaultId}): ${colors.reset}`) || defaultId;
+}
+
+/**
+ * Calculate new version in CI mode or interactively
+ */
+async function calculateNewVersion(currentVersion, versionType, isCiMode = false) {
+  const [major, minor, patch] = currentVersion.split('.').map(Number);
+
+  if (isCiMode) {
+    switch (versionType) {
+      case 'major':
+        return `${major + 1}.0.0`;
+      case 'minor':
+        return `${major}.${minor + 1}.0`;
+      case 'patch':
+      default:
+        return `${major}.${minor}.${patch + 1}`;
+    }
+  }
+
+  switch (versionType) {
+    case 'major':
+      return `${major + 1}.0.0`;
+    case 'minor':
+      return `${major}.${minor + 1}.0`;
+    case 'patch':
+      return `${major}.${minor}.${patch + 1}`;
+    default:
+      return await prompt(`${colors.yellow}Enter specific version: ${colors.reset}`);
+  }
+}
+
+/**
+ * Bump prerelease version in CI mode or interactively
+ */
+async function bumpPreReleaseVersion(currentVersion, preId, isCiMode = false) {
+  // Check if current version is already a pre-release of the same type
+  const preRegex = new RegExp(`-(${preId})\.(\\d+)$`);
+  const match = currentVersion.match(preRegex);
+
+  if (match) {
+    // Increment the pre-release number
+    const preNum = parseInt(match[2], 10);
+    return currentVersion.replace(preRegex, `-${preId}.${preNum + 1}`);
+  } else {
+    // Create a new pre-release based on the current version
+    const [major, minor, patch] = currentVersion.split('.').map(Number);
+
+    let newVersion;
+    if (isCiMode) {
+      // In CI mode, default to patch bump for new pre-releases
+      newVersion = `${major}.${minor}.${patch + 1}-${preId}.1`;
+    } else {
+      const bumpType = await prompt(`${colors.yellow}What to bump for pre-release? (major/minor/patch): ${colors.reset}`);
+      switch (bumpType) {
+        case 'major':
+          newVersion = `${major + 1}.0.0-${preId}.1`;
+          break;
+        case 'minor':
+          newVersion = `${major}.${minor + 1}.0-${preId}.1`;
+          break;
+        case 'patch':
+        default:
+          newVersion = `${major}.${minor}.${patch + 1}-${preId}.1`;
+          break;
+      }
+    }
+
+    return newVersion;
   }
 }
 

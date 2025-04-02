@@ -1,0 +1,377 @@
+#!/usr/bin/env node
+
+/**
+ * Parallel Test Runner
+ *
+ * This script runs tests in parallel for better performance by:
+ * 1. Splitting tests into batches
+ * 2. Running each batch in a separate process
+ * 3. Collecting and merging results
+ * 4. Generating a unified report
+ *
+ * Usage:
+ *   node scripts/run-parallel-tests.js [--workers=4] [--testMatch=".test.js"]
+ */
+
+import { execSync, spawn } from 'child_process';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
+import os from 'os';
+
+// Get directory paths
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.join(__dirname, '..');
+
+// Parse command line arguments
+const args = parseArgs(process.argv.slice(2));
+const numWorkers = parseInt(args.workers || Math.max(os.cpus().length - 1, 1), 10);
+const testMatch = args.testMatch || '.test.js';
+const updateSnapshots = args.u || args.updateSnapshot || false;
+const watch = args.watch || false;
+const ci = args.ci || false;
+const coverage = args.coverage || false;
+const changedOnly = args.changed || false;
+
+// ANSI color codes for console output
+const Colors = {
+  RESET: '\x1b[0m',
+  RED: '\x1b[31m',
+  GREEN: '\x1b[32m',
+  YELLOW: '\x1b[33m',
+  BLUE: '\x1b[34m',
+  MAGENTA: '\x1b[35m',
+  CYAN: '\x1b[36m',
+  BOLD: '\x1b[1m',
+  DIM: '\x1b[2m'
+};
+
+/**
+ * Parse command line arguments
+ */
+function parseArgs(args) {
+  const result = {};
+  args.forEach(arg => {
+    if (arg.startsWith('--')) {
+      const [key, value] = arg.substring(2).split('=');
+      result[key] = value !== undefined ? value : true;
+    } else if (arg.startsWith('-')) {
+      const key = arg.substring(1);
+      result[key] = true;
+    }
+  });
+  return result;
+}
+
+/**
+ * Find all test files
+ */
+function findTestFiles() {
+  console.log(`${Colors.BLUE}Finding test files matching: ${testMatch}${Colors.RESET}`);
+
+  try {
+    // Use Jest's CLI to list test files
+    const cmd = `npx jest --listTests --json --testMatch="${testMatch}"`;
+    const output = execSync(cmd, { cwd: rootDir, encoding: 'utf8' });
+    const files = JSON.parse(output);
+
+    // Filter for changed files if requested
+    if (changedOnly) {
+      const changedCmd = `git diff --name-only HEAD`;
+      const changedOutput = execSync(changedCmd, { cwd: rootDir, encoding: 'utf8' });
+      const changedFiles = changedOutput.split('\n').filter(Boolean);
+
+      return files.filter(file => {
+        const relativePath = path.relative(rootDir, file);
+        return changedFiles.some(changed => {
+          return relativePath.includes(changed) ||
+                 changed.includes(path.basename(relativePath, path.extname(relativePath)));
+        });
+      });
+    }
+
+    return files;
+  } catch (error) {
+    console.error(`${Colors.RED}Error finding test files: ${error.message}${Colors.RESET}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Split tests into batches
+ */
+function splitTestFiles(files, numBatches) {
+  // Create empty batches
+  const batches = Array.from({ length: numBatches }, () => []);
+
+  // Distribute files among batches
+  files.forEach((file, index) => {
+    batches[index % numBatches].push(file);
+  });
+
+  // Remove empty batches
+  return batches.filter(batch => batch.length > 0);
+}
+
+/**
+ * Run a batch of tests
+ */
+function runTestBatch(batchId, testFiles) {
+  return new Promise((resolve, reject) => {
+    const outputDir = path.join(rootDir, 'coverage', `batch-${batchId}`);
+
+    // Ensure output directory exists
+    if (coverage && !fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Build Jest command arguments
+    const args = [
+      'jest',
+      ...testFiles,
+      '--colors',
+      `--testNamePattern=${args.testNamePattern || ''}`,
+      '--json',
+      `--outputFile=${path.join(outputDir, 'results.json')}`
+    ];
+
+    if (coverage) {
+      args.push(
+        '--coverage',
+        `--coverageDirectory=${outputDir}`,
+        '--coverageReporters=json'
+      );
+    }
+
+    if (updateSnapshots) {
+      args.push('--updateSnapshot');
+    }
+
+    if (ci) {
+      args.push('--ci');
+    }
+
+    // Log batch start
+    console.log(`${Colors.CYAN}Running batch ${batchId} (${testFiles.length} tests)${Colors.RESET}`);
+    testFiles.forEach(file => {
+      console.log(`${Colors.DIM}- ${path.relative(rootDir, file)}${Colors.RESET}`);
+    });
+
+    // Run Jest process
+    const testProcess = spawn('npx', args, {
+      cwd: rootDir,
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+
+    let output = '';
+
+    // Collect output
+    testProcess.stdout.on('data', data => {
+      const chunk = data.toString();
+      output += chunk;
+
+      // Print test progress in real-time
+      if (!chunk.includes('{') && !chunk.includes('}')) {
+        process.stdout.write(`${Colors.DIM}[Batch ${batchId}] ${Colors.RESET}${chunk}`);
+      }
+    });
+
+    testProcess.stderr.on('data', data => {
+      process.stderr.write(`${Colors.RED}[Batch ${batchId}] ${data.toString()}${Colors.RESET}`);
+    });
+
+    // Handle process completion
+    testProcess.on('close', code => {
+      if (code === 0) {
+        console.log(`${Colors.GREEN}Batch ${batchId} completed successfully${Colors.RESET}`);
+        resolve({ batchId, success: true, output });
+      } else {
+        console.log(`${Colors.RED}Batch ${batchId} failed with code ${code}${Colors.RESET}`);
+        resolve({ batchId, success: false, output });
+      }
+    });
+
+    testProcess.on('error', error => {
+      console.error(`${Colors.RED}Batch ${batchId} error: ${error.message}${Colors.RESET}`);
+      reject(error);
+    });
+  });
+}
+
+/**
+ * Merge coverage reports
+ */
+async function mergeCoverageReports(numBatches) {
+  console.log(`${Colors.BLUE}Merging coverage reports${Colors.RESET}`);
+
+  try {
+    // Use istanbul to merge coverage reports
+    const cmd = `npx istanbul-merge --out coverage/coverage-final.json`;
+
+    // Add all the batch coverage files
+    for (let i = 0; i < numBatches; i++) {
+      const coverageFile = path.join(rootDir, 'coverage', `batch-${i}`, 'coverage-final.json');
+      if (fs.existsSync(coverageFile)) {
+        cmd += ` ${coverageFile}`;
+      }
+    }
+
+    // Run the merge command
+    execSync(cmd, { cwd: rootDir, stdio: 'inherit' });
+
+    // Generate HTML report
+    execSync('npx istanbul report html', { cwd: rootDir, stdio: 'inherit' });
+
+    console.log(`${Colors.GREEN}Coverage reports merged successfully${Colors.RESET}`);
+    console.log(`${Colors.GREEN}HTML report available at: ${path.join(rootDir, 'coverage', 'index.html')}${Colors.RESET}`);
+  } catch (error) {
+    console.error(`${Colors.RED}Error merging coverage reports: ${error.message}${Colors.RESET}`);
+  }
+}
+
+/**
+ * Merge test results
+ */
+function mergeTestResults(numBatches) {
+  console.log(`${Colors.BLUE}Merging test results${Colors.RESET}`);
+
+  const mergedResults = {
+    numFailedTestSuites: 0,
+    numFailedTests: 0,
+    numPassedTestSuites: 0,
+    numPassedTests: 0,
+    numPendingTestSuites: 0,
+    numPendingTests: 0,
+    numRuntimeErrorTestSuites: 0,
+    numTotalTestSuites: 0,
+    numTotalTests: 0,
+    startTime: null,
+    success: true,
+    testResults: []
+  };
+
+  // Merge all batch results
+  for (let i = 0; i < numBatches; i++) {
+    const resultsFile = path.join(rootDir, 'coverage', `batch-${i}`, 'results.json');
+
+    if (fs.existsSync(resultsFile)) {
+      try {
+        const batchResults = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+
+        // Update aggregate counts
+        mergedResults.numFailedTestSuites += batchResults.numFailedTestSuites;
+        mergedResults.numFailedTests += batchResults.numFailedTests;
+        mergedResults.numPassedTestSuites += batchResults.numPassedTestSuites;
+        mergedResults.numPassedTests += batchResults.numPassedTests;
+        mergedResults.numPendingTestSuites += batchResults.numPendingTestSuites;
+        mergedResults.numPendingTests += batchResults.numPendingTests;
+        mergedResults.numRuntimeErrorTestSuites += batchResults.numRuntimeErrorTestSuites;
+        mergedResults.numTotalTestSuites += batchResults.numTotalTestSuites;
+        mergedResults.numTotalTests += batchResults.numTotalTests;
+
+        // Track earliest start time
+        if (!mergedResults.startTime || batchResults.startTime < mergedResults.startTime) {
+          mergedResults.startTime = batchResults.startTime;
+        }
+
+        // Merge test results
+        mergedResults.testResults.push(...batchResults.testResults);
+
+        // If any batch failed, the overall run failed
+        if (!batchResults.success) {
+          mergedResults.success = false;
+        }
+      } catch (error) {
+        console.error(`${Colors.RED}Error parsing results from batch ${i}: ${error.message}${Colors.RESET}`);
+      }
+    }
+  }
+
+  // Write merged results
+  fs.writeFileSync(
+    path.join(rootDir, 'coverage', 'merged-results.json'),
+    JSON.stringify(mergedResults, null, 2)
+  );
+
+  return mergedResults;
+}
+
+/**
+ * Print test summary
+ */
+function printTestSummary(results) {
+  console.log('\n');
+  console.log(`${Colors.BOLD}Test Summary:${Colors.RESET}`);
+  console.log(`${Colors.BOLD}-------------${Colors.RESET}`);
+  console.log(`Total test suites: ${results.numTotalTestSuites}`);
+  console.log(`Total tests: ${results.numTotalTests}`);
+  console.log(`Passed tests: ${Colors.GREEN}${results.numPassedTests}${Colors.RESET}`);
+  console.log(`Failed tests: ${results.numFailedTests > 0 ? Colors.RED : Colors.GREEN}${results.numFailedTests}${Colors.RESET}`);
+  console.log(`Pending tests: ${Colors.YELLOW}${results.numPendingTests}${Colors.RESET}`);
+  console.log('\n');
+
+  if (results.success) {
+    console.log(`${Colors.GREEN}${Colors.BOLD}All tests passed!${Colors.RESET}`);
+  } else {
+    console.log(`${Colors.RED}${Colors.BOLD}Some tests failed!${Colors.RESET}`);
+    process.exit(1);
+  }
+}
+
+/**
+ * Main function
+ */
+async function main() {
+  console.log(`${Colors.BOLD}Parallel Test Runner${Colors.RESET}`);
+  console.log(`Running tests with ${numWorkers} workers`);
+
+  // Find all test files
+  const testFiles = findTestFiles();
+
+  if (testFiles.length === 0) {
+    console.log(`${Colors.YELLOW}No test files found matching: ${testMatch}${Colors.RESET}`);
+    return;
+  }
+
+  console.log(`${Colors.BLUE}Found ${testFiles.length} test files${Colors.RESET}`);
+
+  // Split tests into batches
+  const batches = splitTestFiles(testFiles, numWorkers);
+
+  // Run tests in parallel
+  const startTime = Date.now();
+
+  console.log(`${Colors.BLUE}Running ${batches.length} batches in parallel${Colors.RESET}`);
+
+  try {
+    // Run all batches and wait for completion
+    const results = await Promise.all(
+      batches.map((batch, index) => runTestBatch(index, batch))
+    );
+
+    const endTime = Date.now();
+    const duration = (endTime - startTime) / 1000;
+
+    console.log(`${Colors.BLUE}All test batches completed in ${duration.toFixed(2)}s${Colors.RESET}`);
+
+    // Merge coverage reports if enabled
+    if (coverage) {
+      await mergeCoverageReports(batches.length);
+    }
+
+    // Merge and print test results
+    const mergedResults = mergeTestResults(batches.length);
+    printTestSummary(mergedResults);
+
+  } catch (error) {
+    console.error(`${Colors.RED}Error running tests: ${error.message}${Colors.RESET}`);
+    process.exit(1);
+  }
+}
+
+// Run the script
+main().catch(error => {
+  console.error(`${Colors.RED}Error: ${error.message}${Colors.RESET}`);
+  process.exit(1);
+});
