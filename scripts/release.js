@@ -128,12 +128,21 @@ function commitChanges(version) {
 // Helper function to create and push git tag
 function createAndPushTag(version) {
   console.log(`${colors.blue}Creating and pushing git tag...${colors.reset}`);
+  // Remove existing tag if it exists
+  try {
+    exec(`git tag -d v${version}`);
+  } catch (error) {
+    console.log(`${colors.yellow}Tag v${version} does not exist.${colors.reset}`);
+  }
+  // Create new tag
   exec(`git tag -a v${version} -m "Release v${version}"`);
+  // delete tag from remote if it exists
   try {
     exec(`git push --delete origin v${version}`);
   } catch (error) {
     console.log(`${colors.yellow}Tag v${version} does not exist.${colors.reset}`);
   }
+  // push tag to remote
   exec(`git push origin v${version}`);
 }
 
