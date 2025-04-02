@@ -16,28 +16,38 @@ jobs:
         node-version: [18.x, 20.x]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v3
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
         cache: 'npm'
 
     - name: Install dependencies
       run: npm ci
+      env:
+        NEXUREJS_CI_MODE: 1
 
     - name: Build TypeScript
       run: npm run build:ts
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
 
     - name: Build native modules
       run: node scripts/build.js --force
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
 
     - name: Run tests
-      run: npm run ci:test
+      run: npm test
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
 
     - name: Package native modules
       run: node scripts/build.js --pack-only
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4

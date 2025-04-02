@@ -512,6 +512,7 @@ jobs:
         run: npm run benchmark
         env:
           NODE_ENV: production
+          NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Store benchmark results
         uses: actions/upload-artifact@v4
