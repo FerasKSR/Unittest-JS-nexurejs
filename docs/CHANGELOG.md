@@ -5,6 +5,26 @@ All notable changes to NexureJS will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2025-04-02
+
+### Added
+
+- Added full integration for native HttpParser, RadixRouter, and JsonProcessor modules
+- Implemented automatic fallbacks to JavaScript implementations when native modules unavailable
+- Added method name mapping between native and JavaScript interfaces
+- HTTP Parser: 10.9x faster file upload processing with 12.38 MB less memory usage
+- RadixRouter: Added HTTP method-based routing with better parameter handling
+- JsonProcessor: Implemented memory-efficient batch processing for JSON operations
+- Added streaming capabilities to JsonProcessor with fallback support
+- Improved RadixRouter API with HTTP method support in route definitions
+- Enhanced HTTP parser with better header handling and memory management
+- Fixed TypeScript build errors in benchmark code
+- Resolved memory management issues in native module bindings
+- Addressed ESLint warnings across the codebase
+- Optimized performance showing 2.77x faster than Express, 1.13x faster than Fastify
+- Enhanced route parameter handling outperforming all other tested frameworks
+- Improved general HTTP parsing with better memory efficiency for large payloads
+
 ## [0.3.0] - 2025-04-01
 
 ### Added

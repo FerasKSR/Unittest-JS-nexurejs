@@ -1,6 +1,6 @@
 {
   "name": "nexurejs",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A high-performance, modular Node.js framework with modern developer experience",
   "main": "dist/cjs/index.js",
   "module": "dist/index.js",
