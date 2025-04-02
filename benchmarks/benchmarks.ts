@@ -52,15 +52,24 @@ let JsRadixRouter: any;
 const nativeModulesLoaded = (async () => {
   try {
     // Load HTTP parser
-    const httpModule = await import('../dist/src/http/http-parser.js');
+    const httpModule = await import('../dist/src/http/http-parser.js').catch(() => {
+      console.warn('HTTP parser module not found, using fallbacks');
+      return { JsHttpParser: null };
+    });
     JsHttpParser = httpModule.JsHttpParser;
 
     // Load native module implementations
-    const nativeModule = await import('../dist/native/index.js');
+    const nativeModule = await import('../dist/native/index.js').catch(() => {
+      console.warn('Native module not found, using fallbacks');
+      return { HttpParser: null, RadixRouter: null };
+    });
     NativeHttpParser = nativeModule.HttpParser;
 
     // Load routing implementations
-    const routingModule = await import('../dist/src/routing/js-router.js');
+    const routingModule = await import('../dist/src/routing/js-router.js').catch(() => {
+      console.warn('Routing module not found, using fallbacks');
+      return { JsRadixRouter: null };
+    });
     JsRadixRouter = routingModule.JsRadixRouter;
     NativeRadixRouter = nativeModule.RadixRouter;
 
@@ -2438,10 +2447,19 @@ async function runJsonProcessorBenchmarks(): Promise<void> {
     await nativeModulesLoaded;
 
     // Import native JsonProcessor
-    const nativeModule = await import('../dist/native/index.js');
+    const nativeModule = await import('../dist/native/index.js').catch(() => {
+      console.warn('Native module not found, using fallbacks for JsonProcessor');
+      return { JsonProcessor: null };
+    });
     const NativeJsonProcessor = nativeModule.JsonProcessor;
 
     console.log('\n=== JSON Processor Benchmarks ===');
+
+    // Skip if modules aren't available
+    if (!NativeJsonProcessor) {
+      console.log('\n=== JSON Processor Benchmarks: SKIPPED (modules not available) ===');
+      return;
+    }
 
     // Create processors
     const nativeProcessor = new NativeJsonProcessor();
