@@ -27,10 +27,17 @@ jobs:
         NEXUREJS_CI_MODE: 0  # Need native modules for benchmarks
 
     - name: Build
-      run: npm run build
+      run: npm run build:ts
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
+
+    - name: Build native modules
+      run: node scripts/build.js --force
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
 
     - name: Run benchmarks
-      run: npm run benchmark
+      run: node --max-old-space-size=4096 --loader ts-node/esm benchmarks/benchmarks.ts
       env:
         NODE_OPTIONS: "--max-old-space-size=4096"
         NODE_ENV: production
@@ -44,4 +51,6 @@ jobs:
 
     - name: Compare benchmark results
       run: node scripts/compare-benchmarks.js --threshold=7
+      env:
+        NODE_OPTIONS: "--max-old-space-size=4096"
       continue-on-error: true

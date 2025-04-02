@@ -31,13 +31,18 @@ jobs:
           # Install without native modules for CI
           NEXUREJS_CI_MODE: 1
 
+      - name: Build TypeScript
+        run: npm run build:ts
+        env:
+          NODE_OPTIONS: "--max-old-space-size=4096"
+
       - name: Build and test
         run: npm run ci:test
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v3
+        uses: codecov/codecov-action@v4
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           files: ./coverage/lcov.info,./coverage/coverage-final.json
