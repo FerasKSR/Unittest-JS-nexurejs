@@ -343,15 +343,23 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
 
-      - name: Compute node_modules cache key
+      - name: Compute node_modules cache key (Unix)
         id: npm-cache-key
+        if: runner.os != 'Windows'
         run: echo "key=node-modules-${{ hashFiles('package-lock.json') }}-${{ matrix.os }}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Compute node_modules cache key (Windows)
+        id: npm-cache-key-win
+        if: runner.os == 'Windows'
+        run: echo "key=node-modules-${{ hashFiles('package-lock.json') }}-${{ matrix.os }}" >> $env:GITHUB_OUTPUT
+        shell: pwsh
 
       - name: Cache node_modules
         uses: actions/cache@v4
         with:
           path: node_modules
-          key: ${{ steps.npm-cache-key.outputs.key }}
+          key: ${{ runner.os == 'Windows' && steps.npm-cache-key-win.outputs.key || steps.npm-cache-key.outputs.key }}
           restore-keys: |
             node-modules-${{ hashFiles('package-lock.json') }}-
             node-modules-
