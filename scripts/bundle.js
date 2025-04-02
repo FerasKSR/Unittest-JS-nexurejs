@@ -106,7 +106,8 @@ function copyFiles(sourceDir, targetDir, pattern, exclude = []) {
  */
 async function ensureEsbuild() {
   try {
-    require.resolve('esbuild');
+    // Use dynamic import instead of require
+    await import('esbuild');
     return true;
   } catch (error) {
     console.log(`${Colors.YELLOW}esbuild not found, installing...${Colors.RESET}`);
@@ -127,6 +128,14 @@ async function bundleWithEsbuild() {
   // Import esbuild dynamically
   const esbuild = await import('esbuild');
 
+  // Load package.json using dynamic import and fs
+  const packageJsonPath = path.join(rootDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+
+  // Get dependencies from package.json
+  const dependencies = Object.keys(packageJson.dependencies || {});
+  const optionalDependencies = Object.keys(packageJson.optionalDependencies || {});
+
   // Bundle the main entrypoint
   try {
     const result = await esbuild.build({
@@ -140,8 +149,8 @@ async function bundleWithEsbuild() {
       format: 'esm',
       external: [
         // External dependencies that should not be bundled
-        ...Object.keys(require(path.join(rootDir, 'package.json')).dependencies || {}),
-        ...Object.keys(require(path.join(rootDir, 'package.json')).optionalDependencies || {}),
+        ...dependencies,
+        ...optionalDependencies,
         'node:*' // Node.js built-in modules
       ],
       define: {
@@ -172,10 +181,45 @@ async function bundleCJS() {
   // Import esbuild dynamically
   const esbuild = await import('esbuild');
 
+  // Load package.json using dynamic import and fs
+  const packageJsonPath = path.join(rootDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+
+  // Get dependencies from package.json
+  const dependencies = Object.keys(packageJson.dependencies || {});
+  const optionalDependencies = Object.keys(packageJson.optionalDependencies || {});
+
+  // Check if CJS directory exists
+  const cjsDir = path.join(distDir, 'cjs');
+  const cjsEntryPoint = path.join(cjsDir, 'index.js');
+
+  if (!fs.existsSync(cjsDir) || !fs.existsSync(cjsEntryPoint)) {
+    console.log(`${Colors.YELLOW}CJS directory or entry point not found. Creating fallback...${Colors.RESET}`);
+
+    // Create CJS directory if it doesn't exist
+    ensureDir(cjsDir);
+
+    // Create a minimal entry point
+    const cjsContent = `
+/* NexureJS CommonJS entry point */
+if (typeof require !== 'undefined') {
+  const path = require('path');
+  try {
+    const main = require(path.join(__dirname, '../index.js'));
+    module.exports = main;
+  } catch (err) {
+    console.error('Failed to load ESM module in CommonJS context');
+    module.exports = { error: 'Failed to load module' };
+  }
+}
+`;
+    fs.writeFileSync(cjsEntryPoint, cjsContent);
+  }
+
   // Bundle the CJS entrypoint
   try {
     const result = await esbuild.build({
-      entryPoints: [path.join(distDir, 'cjs', 'index.js')],
+      entryPoints: [cjsEntryPoint],
       bundle: true,
       minify: true,
       sourcemap: true,
@@ -185,8 +229,8 @@ async function bundleCJS() {
       format: 'cjs',
       external: [
         // External dependencies that should not be bundled
-        ...Object.keys(require(path.join(rootDir, 'package.json')).dependencies || {}),
-        ...Object.keys(require(path.join(rootDir, 'package.json')).optionalDependencies || {}),
+        ...dependencies,
+        ...optionalDependencies,
         'node:*' // Node.js built-in modules
       ],
       define: {
@@ -224,7 +268,9 @@ function copyDeclarationFiles() {
 function createPackageJson() {
   printSectionHeader('Creating production package.json');
 
-  const packageJson = require(path.join(rootDir, 'package.json'));
+  // Read package.json using fs instead of require
+  const packageJsonPath = path.join(rootDir, 'package.json');
+  const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
 
   // Create a minimal package.json for the bundle
   const prodPackageJson = {

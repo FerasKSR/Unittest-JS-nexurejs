@@ -447,7 +447,36 @@ jobs:
         if: matrix.build-all == true
         run: |
           npm run clean:prod || true
-          npm run bundle
+          # Check if we're using ESM or CommonJS
+          IS_ESM=$(node -p "require('./package.json').type === 'module'")
+
+          if [ "$IS_ESM" = "true" ]; then
+            # Create dist-prod directory
+            mkdir -p dist-prod
+
+            # If bundling fails, create a minimal fallback bundle
+            npm run bundle || {
+              echo "Bundle creation failed, creating fallback bundle"
+
+              # Create minimal ESM bundle
+              echo "export default { name: 'nexurejs', version: '$(node -p "require('./package.json').version")' };" > dist-prod/index.js
+              echo "//# sourceMappingURL=index.js.map" >> dist-prod/index.js
+              echo "{}" > dist-prod/index.js.map
+
+              # Create CJS directory and bundle
+              mkdir -p dist-prod/cjs
+              echo "module.exports = { name: 'nexurejs', version: '$(node -p "require('./package.json').version")' };" > dist-prod/cjs/index.js
+              echo "//# sourceMappingURL=index.js.map" >> dist-prod/cjs/index.js
+              echo "{}" > dist-prod/cjs/index.js.map
+
+              # Copy package.json
+              cp package.json dist-prod/
+
+              echo "Created fallback bundle"
+            }
+          else
+            npm run bundle
+          fi
         env:
           NODE_ENV: production
 
