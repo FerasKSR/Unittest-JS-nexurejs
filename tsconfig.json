@@ -32,7 +32,7 @@
       "./node_modules/@types",
       "./src/types"
     ],
-    "outDir": "./dist",
+    "outDir": "./dist/build",
     "sourceMap": false
   },
   "ts-node": {

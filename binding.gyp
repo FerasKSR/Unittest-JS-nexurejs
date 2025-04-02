@@ -59,8 +59,8 @@
         "VCCLCompilerTool": {
           "ExceptionHandling": 1,
           "AdditionalOptions": [
-            "/w34100",  // Unreachable code
-            "/w34189"   // Local variable is initialized but not referenced
+            "/w34100",
+            "/w34189"
           ]
         }
       }
@@ -73,8 +73,8 @@
         "Release": {
           "msvs_settings": {
             "VCCLCompilerTool": {
-              "RuntimeLibrary": 0,  // static release
-              "Optimization": 3,    // /Ox, full optimization
+              "RuntimeLibrary": 0,
+              "Optimization": 3,
               "FavorSizeOrSpeed": 1,
               "InlineFunctionExpansion": 2,
               "WholeProgramOptimization": "true",

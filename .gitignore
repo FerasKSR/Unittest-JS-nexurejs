@@ -3,6 +3,7 @@ test-data/
 dist/
 docker-builds/
 packages/
+benchmark-temp.txt
 
 # Dependency directories
 node_modules/
