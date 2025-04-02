@@ -34,6 +34,7 @@ const rootDir = path.join(__dirname, '..');
 const buildDir = path.join(rootDir, 'build');
 const distDir = path.join(rootDir, 'dist');
 const packagesDir = path.join(rootDir, 'packages');
+const srcDir = path.join(rootDir, 'dist'); // Define srcDir globally to avoid errors
 
 // ANSI color codes for console output
 const Colors = {
@@ -602,9 +603,6 @@ async function fixImports() {
 
   try {
     console.log(`${Colors.BLUE}Phase 1: Fixing ESM imports...${Colors.RESET}`);
-
-    // Define source and output directories
-    const srcDir = path.join(rootDir, 'dist');
 
     // Run basic imports fixup
     await fixBasicImports();
