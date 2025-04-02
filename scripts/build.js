@@ -478,7 +478,7 @@ jobs:
       run: node scripts/build.js --pack-only
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: nexurejs-\${{ matrix.os }}-node\${{ matrix.node-version }}
         path: packages/
@@ -581,7 +581,7 @@ jobs:
       run: npm run benchmark
 
     - name: Store benchmark results
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: benchmark-results
         path: benchmark-results/
