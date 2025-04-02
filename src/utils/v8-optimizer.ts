@@ -32,6 +32,8 @@ export interface OptimizationStats {
  * V8 Optimizer class
  */
 export class V8Optimizer {
+  private static instance: V8Optimizer | undefined;
+
   private options: {
     enableParallelScavenge: boolean;
     enableConcurrentMarking: boolean;
@@ -39,13 +41,25 @@ export class V8Optimizer {
   };
 
   /**
-   * Create a new V8 optimizer
+   * Get the singleton instance of V8Optimizer
+   * @param options Options for the optimizer
+   * @returns V8 optimizer instance
+   */
+  public static getInstance(options: { [key: string]: boolean } = {}): V8Optimizer {
+    if (!V8Optimizer.instance) {
+      V8Optimizer.instance = new V8Optimizer(options);
+    }
+    return V8Optimizer.instance;
+  }
+
+  /**
+   * Create a new V8 optimizer - private constructor for singleton pattern
    * @param options Options for the optimizer
    */
-  constructor(options: { [key: string]: boolean } = {}) {
+  private constructor(options: { [key: string]: boolean } = {}) {
     this.options = {
-      enableParallelScavenge: options.enableParallelScavenge ?? true,
-      enableConcurrentMarking: options.enableConcurrentMarking ?? true,
+      enableParallelScavenge: options.enableParallelScavenge || true,
+      enableConcurrentMarking: options.enableConcurrentMarking || true,
       ...options
     };
 
@@ -58,7 +72,7 @@ export class V8Optimizer {
   private setV8Flags(): void {
     // In a real implementation, this would set V8 flags
     // For now, just log the options
-    console.log('V8 optimizer options:', this.options);
+    Logger.debug('V8 optimizer options:', this.options);
   }
 
   /**
@@ -66,7 +80,7 @@ export class V8Optimizer {
    * @param fn Function to optimize
    * @returns Optimized function
    */
-  optimizeFunction<T extends Function>(fn: T): T {
+  optimizeFunction<T extends (...args: any[]) => any>(fn: T): T {
     // In a real implementation, this would use V8 hints
     // For now, just return the original function
     return fn;
@@ -89,7 +103,10 @@ export class V8Optimizer {
    * @param elementType Type of elements ('number', 'string', 'object')
    * @returns Fast array
    */
-  createFastArray(capacity: number, elementType: 'number' | 'string' | 'object' = 'number'): any[] {
+  createFastArray(
+    capacity: number,
+    _elementType: 'number' | 'string' | 'object' = 'number'
+  ): any[] {
     // In a real implementation, this would create arrays optimized for specific types
     // For now, just return a new array with the specified capacity
     return new Array(capacity);
@@ -111,7 +128,7 @@ export class V8Optimizer {
    * @param fn Function to create a monomorphic call site for
    * @returns Function with monomorphic call site
    */
-  createMonomorphicCallSite<T extends Function>(fn: T): T {
+  createMonomorphicCallSite<T extends (...args: any[]) => any>(fn: T): T {
     // In a real implementation, this would create a monomorphic call site
     // For now, just return the original function
     return fn;
@@ -141,17 +158,8 @@ export class V8Optimizer {
   }
 }
 
-/**
- * Create a global instance of the V8 optimizer
- * @param options Options for the optimizer
- * @returns V8 optimizer instance
- */
-export function createV8Optimizer(options: { [key: string]: boolean } = {}): V8Optimizer {
-  return new V8Optimizer(options);
-}
-
-// Create a global instance of the V8 optimizer
-export const v8Optimizer = createV8Optimizer({
+// Export a singleton instance of the V8 optimizer with default options
+export const v8Optimizer = V8Optimizer.getInstance({
   enableParallelScavenge: true,
   enableConcurrentMarking: true
 });

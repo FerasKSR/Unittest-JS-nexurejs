@@ -1,3 +1,9 @@
+build-scripts/
+test-data/
+dist/
+docker-builds/
+packages/
+
 # Dependency directories
 node_modules/
 jspm_packages/

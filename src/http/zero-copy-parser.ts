@@ -41,11 +41,19 @@ function _getBufferForString(str: string): Buffer {
   let buffer = stringBufferPool.get(str);
   if (!buffer) {
     buffer = Buffer.from(str);
-    if (stringBufferPool.size < 1000) { // Limit pool size
+    if (stringBufferPool.size < 1000) {
+      // Limit pool size
       stringBufferPool.set(str, buffer);
     }
   }
   return buffer;
+}
+
+// Interface for raw buffer information from native parser
+export interface RawBufferInfo {
+  buffer: Buffer;
+  headerEnd: number;
+  bodyStart: number;
 }
 
 // Parser result interface
@@ -58,6 +66,7 @@ export interface HttpParseResult {
   body: Buffer | null;
   bodyComplete: boolean;
   bytesRead: number;
+  rawBufferInfo?: RawBufferInfo; // Add raw buffer info for zero-copy operations
 }
 
 /**
@@ -98,7 +107,8 @@ export class ZeroCopyHttpParser {
 
   // Return parser to the pool
   static releaseParser(parser: ZeroCopyHttpParser): void {
-    if (this.parserPool.length < 1000) { // Limit pool size
+    if (this.parserPool.length < 1000) {
+      // Limit pool size
       this.parserPool.push(parser);
     }
   }
@@ -120,21 +130,31 @@ export class ZeroCopyHttpParser {
     this.result.body = null;
     this.result.bodyComplete = false;
     this.result.bytesRead = 0;
+    this.result.rawBufferInfo = undefined;
   }
 
   // Parse HTTP data
-  parse(data: Buffer): HttpParseResult {
+  parse(data: Buffer, rawInfo?: RawBufferInfo): HttpParseResult {
     this.buffer = data;
     this.position = 0;
 
-    // Process request line if we're just starting
-    if (this.state === 'REQUEST_LINE') {
-      this.parseRequestLine();
-    }
+    // If we have raw buffer info from the native parser, use it
+    if (rawInfo) {
+      this.result.rawBufferInfo = rawInfo;
+      this.position = rawInfo.headerEnd;
+      this.bodyStart = rawInfo.bodyStart;
+      this.result.headersComplete = true;
+      this.state = 'BODY';
+    } else {
+      // Process request line if we're just starting
+      if (this.state === 'REQUEST_LINE') {
+        this.parseRequestLine();
+      }
 
-    // Process headers if we're on headers or just finished request line
-    if (this.state === 'HEADERS') {
-      this.parseHeaders();
+      // Process headers if we're on headers or just finished request line
+      if (this.state === 'HEADERS') {
+        this.parseHeaders();
+      }
     }
 
     // Process body if headers are complete
@@ -227,7 +247,10 @@ export class ZeroCopyHttpParser {
       if (colonPos === -1) continue; // Invalid header
 
       const headerName = line.subarray(0, colonPos).toString().toLowerCase();
-      const headerValue = line.subarray(colonPos + 2).toString().trim();
+      const headerValue = line
+        .subarray(colonPos + 2)
+        .toString()
+        .trim();
 
       // Store in headers object
       this.result.headers[headerName] = headerValue;
@@ -268,9 +291,34 @@ export class ZeroCopyHttpParser {
   }
 }
 
-// Factory function to parse HTTP requests
-export function parseHttpRequest(data: Buffer): HttpParseResult {
+/**
+ * Parse an HTTP request with optimized zero-copy implementation
+ */
+export function parseHttpRequest(data: Buffer, nativeParseResult?: any): HttpParseResult {
   const parser = ZeroCopyHttpParser.getParser();
+
+  // If we have a native parse result with raw buffer info, use it
+  let rawInfo: RawBufferInfo | undefined;
+
+  if (nativeParseResult && nativeParseResult._rawBufferInfo) {
+    rawInfo = {
+      buffer: nativeParseResult._rawBufferInfo.buffer,
+      headerEnd: nativeParseResult._rawBufferInfo.headerEnd,
+      bodyStart: nativeParseResult._rawBufferInfo.bodyStart
+    };
+
+    // Pre-populate headers from native parser
+    const result = parser.parse(data, rawInfo);
+    result.headers = nativeParseResult.headers;
+    result.method = nativeParseResult.method;
+    result.url = nativeParseResult.url;
+    result.httpVersion = nativeParseResult.httpVersion || '1.1';
+
+    ZeroCopyHttpParser.releaseParser(parser);
+    return result;
+  }
+
+  // Standard parsing without native optimization
   const result = parser.parse(data);
   ZeroCopyHttpParser.releaseParser(parser);
   return result;

@@ -1,8 +1,19 @@
 /**
  * NexureJS Native Modules Simple Example
  *
- * This example demonstrates how to use the native modules directly.
- * It's a simpler version that works with the compiled JavaScript files.
+ * This example demonstrates how to use the native modules directly for maximum performance.
+ * It showcases the following native modules:
+ * - HttpParser: Fast HTTP request parsing
+ * - RadixRouter: Efficient route matching
+ * - JsonProcessor: High-performance JSON operations
+ * - Performance metrics collection
+ *
+ * The example includes benchmarks comparing native vs JavaScript implementations
+ * and demonstrates how to configure and check the status of native modules.
+ *
+ * For complete API documentation, see:
+ * - API Reference: ../../docs/API_REFERENCE.md
+ * - Examples Guide: ../../docs/EXAMPLES.md
  */
 
 const {
@@ -13,9 +24,9 @@ const {
   getNativeModuleStatus,
   resetAllPerformanceMetrics,
   getAllPerformanceMetrics
-} = require('../../dist/src/native/index.js');
+} = require('../../dist/src/native');
 
-const { HttpStreamParser } = require('../../dist/src/http/http-parser.js');
+const { HttpStreamParser } = require('../../dist/src/http/http-parser');
 
 // Configure native modules with verbose logging
 configureNativeModules({

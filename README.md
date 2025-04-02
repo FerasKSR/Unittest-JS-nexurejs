@@ -12,19 +12,61 @@ A high-performance, lightweight Node.js framework with native C++ modules for ma
 
 ## Features
 
-- **High Performance**: Optimized for speed with native C++ modules
-- **Cross-Platform**: Fully supported on Linux, macOS, and Windows
-- **Lightweight**: Minimal dependencies and small footprint
-- **Modern**: Built with TypeScript and modern JavaScript features
-- **Flexible**: Modular design allows for easy customization
-- **Developer-Friendly**: Clear API and comprehensive documentation
-- **Comprehensive Metrics**: Advanced performance monitoring with memory leak detection
-- **WebSocket Support**: High-performance WebSocket server with room support and authentication
-- **Middleware System**: Flexible middleware system inspired by Express but more performant
-- **Dependency Injection**: Built-in DI container for better organization and testability
-- **Schema Validation**: Fast schema validation with native acceleration
-- **Routing**: Fast radix tree-based router with support for path parameters
-- **HTTP Parser**: Fast HTTP request parser with native acceleration
+NexureJS provides a solid foundation for building high-performance web applications:
+
+- **Fast Routing**: Efficient request routing with support for parameters, wildcards, and complex patterns
+- **Middleware System**: Composable middleware for request/response processing
+- **Stream Processing**: High-performance stream transformations for request and response bodies
+- **Body Parsing**: Advanced body parsing with streaming capability for large uploads
+- **Content Negotiation**: Handles content type detection and processing automatically
+- **WebSocket Support**: Built-in WebSocket server with room support and authentication
+- **Native Modules**: High-performance C++ implementations for critical operations
+- **Performance Optimizations**:
+  - Optimized buffer management with pooling and recycling
+  - Specialized stream processors for different content types
+  - Adaptive buffer sizing based on workload
+  - Adaptive timeouts for long-running operations
+  - Minimal memory usage for maximum throughput
+- **Developer Friendly**: Clear APIs with TypeScript support
+
+## Documentation
+
+NexureJS comes with comprehensive documentation to help you get started and make the most of the framework:
+
+- [API Reference](docs/API_REFERENCE.md) - Complete reference of all APIs and features
+- [Quick Reference](docs/QUICK_REFERENCE.md) - Code examples for common operations
+- [Main Guide](docs/MAIN_GUIDE.md) - Getting started and core concepts
+- [Examples Guide](docs/EXAMPLES.md) - Detailed guide to all example applications
+- [Technical Guide](docs/TECHNICAL_GUIDE.md) - In-depth look at the internal architecture
+- [Performance Optimization Guide](docs/performance-optimization-guide.md) - Tips for maximizing performance
+
+## Installation
+
+```bash
+npm install nexurejs
+```
+
+The installation process will attempt to download pre-built binaries for your platform. If no pre-built binary is available, it will build from source (requires a C++ compiler and node-gyp).
+
+## Quick Start
+
+```javascript
+import { Nexure } from 'nexurejs';
+
+const app = new Nexure();
+
+app.get('/', (req, res) => {
+  res.send('Hello, NexureJS!');
+});
+
+app.get('/users/:id', (req, res) => {
+  res.json({ userId: req.params.id, message: 'User details' });
+});
+
+app.listen(3000, () => {
+  console.log('Server running on http://localhost:3000');
+});
+```
 
 ## Native Modules
 
@@ -42,50 +84,12 @@ NexureJS includes native C++ modules for performance-critical operations:
 
 These native modules can provide up to 10x performance improvement over pure JavaScript implementations. **Native modules are enabled by default** for maximum performance.
 
-## Cross-Platform Support
+### Configuration
 
-NexureJS is fully tested and supported on:
-
-- **Linux** (Ubuntu, Debian, etc.)
-- **macOS** (Intel and Apple Silicon)
-- **Windows** (10, 11)
-
-Prebuilt binaries are available for common platforms and architectures, with automatic fallback to building from source when needed.
-
-## Installation
-
-```bash
-npm install nexurejs
-```
-
-The installation process will attempt to download pre-built binaries for your platform. If no pre-built binary is available, it will build from source (requires a C++ compiler and node-gyp).
-
-## Quick Start
+You can configure native modules behavior:
 
 ```javascript
-import { createServer } from 'nexurejs';
-
-const app = createServer();
-
-app.get('/', (req, res) => {
-  res.send('Hello, NexureJS!');
-});
-
-app.get('/users/:id', (req, res) => {
-  res.json({ userId: req.params.id, message: 'User details' });
-});
-
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
-});
-```
-
-## Native Module Configuration
-
-You can configure the native modules behavior:
-
-```javascript
-import { configureNativeModules } from 'nexurejs/native';
+import { configureNativeModules } from 'nexurejs';
 
 // Configure native modules
 configureNativeModules({
@@ -95,94 +99,42 @@ configureNativeModules({
 });
 ```
 
-```javascript
-import {
-  UrlParser,
-  SchemaValidator,
-  Compression
-} from 'nexurejs/native';
+## Performance Optimizations
 
-// Fast URL parsing
-const urlParser = new UrlParser();
-const parsedUrl = urlParser.parse('https://example.com/path?query=value');
-const queryParams = urlParser.parseQueryString('a=1&b=2');
+NexureJS includes several performance optimizations:
 
-// Efficient schema validation
-const validator = new SchemaValidator();
-const schema = {
-  type: 'object',
-  properties: {
-    name: { type: 'string', minLength: 3 }
-  }
-};
-const result = validator.validate(schema, { name: 'test' });
-
-// High-performance compression
-const compression = new Compression();
-const compressed = compression.compress('large text or buffer');
-const decompressed = compression.decompress(compressed, true); // true to get string
-```
-
-## Performance Metrics
-
-NexureJS includes built-in performance metrics:
+### Buffer Pooling
 
 ```javascript
-import { getAllPerformanceMetrics, resetAllPerformanceMetrics } from 'nexurejs/native';
+import { bufferPool } from 'nexurejs';
 
-// Reset metrics before tests
-resetAllPerformanceMetrics();
+// Get buffer from pool
+const buffer = bufferPool.get(1024); // 1KB buffer
 
-// Run your application...
-
-// Get performance metrics
-const metrics = getAllPerformanceMetrics();
-console.log(metrics);
+// Return buffer to pool
+bufferPool.release(buffer);
 ```
 
-## Building from Source
+### Adaptive Features
 
-If you want to build the native modules from source:
+The framework includes adaptive features that automatically adjust to workload patterns:
 
-```bash
-npm run build:native
-```
-
-For development and testing:
-
-```bash
-npm run build:native:test
-```
+- **Adaptive Buffer Sizing**: Dynamically adjusts buffer allocation based on demand
+- **Adaptive Timeouts**: Intelligently adjusts timeout durations based on payload size and type
+- **Memory Management**: Proactive allocation strategies based on request patterns
+- **Performance Monitoring**: Real-time statistics on processing efficiency
 
 ## Examples
 
 Check out the examples directory for more usage examples:
 
-- Basic server setup (`npm run example:basic`)
-- Middleware usage (`npm run example:middleware`)
-- Performance optimization (`npm run example:performance`)
-- Native module usage (`npm run example:native`)
-- Security best practices (`npm run example:security`)
+- Basic server setup (`examples/basic/`)
+- Middleware usage (`examples/basic/middleware-basics.js`)
+- Performance optimization (`examples/performance/`)
+- Native module usage (`examples/native/`)
+- Security best practices (`examples/security/`)
 
-## Benchmarks
-
-Run benchmarks to compare performance:
-
-```bash
-npm run benchmark           # Run all benchmarks
-npm run benchmark:http      # HTTP parser benchmark
-npm run benchmark:json      # JSON processor benchmark
-npm run benchmark:native    # Compare native vs JavaScript implementations
-```
-
-## Documentation
-
-For detailed documentation, see the [docs](./docs) directory:
-
-- [Native Modules](./docs/native-modules.md)
-- [HTTP Parser](./docs/http-parser.md)
-- [Radix Router](./docs/routing.md)
-- [JSON Processor](./docs/json-processor.md)
+For detailed information on all examples, see the [Examples Guide](docs/EXAMPLES.md).
 
 ## Requirements
 
@@ -208,183 +160,37 @@ For detailed documentation, see the [docs](./docs) directory:
 - build-essential package (`sudo apt-get install build-essential`)
 - Python 3 (`sudo apt-get install python3`)
 
-## Contributing
+## Building and Running
 
-Contributions are welcome! Please see [CONTRIBUTING.md](./CONTRIBUTING.md) for details.
-
-## Releasing
-
-NexureJS follows [Semantic Versioning](https://semver.org/) for releases.
-
-To create a new release:
+NexureJS comes with a streamlined build system for easy development:
 
 ```bash
-# For patch releases (bug fixes)
-npm run release:patch
+# Install dependencies
+npm install
 
-# For minor releases (new features)
-npm run release:minor
+# Build the project (ESM version)
+npm run build
 
-# For major releases (breaking changes)
-npm run release:major
+# Build both ESM and CJS versions
+npm run build:all
 
-# For a specific version
-npm run release 1.2.3
+# Build everything (ESM + CJS + type declarations)
+npm run build:complete
+
+# Run the development server
+npm run dev
+
+# Watch for changes and auto-restart
+npm run dev:watch
+
+# Run the production server
+npm run start
 ```
 
-The release script handles version bumping, changelog updates, git tagging, GitHub releases, prebuilt binary uploads, and npm publishing.
+## Contributing
 
-For detailed information about the release process, see [Release Documentation](./docs/releasing.md).
+For information on contributing to NexureJS, please see the [CONTRIBUTING.md](CONTRIBUTING.md) file.
 
 ## License
 
-MIT
-
-## Acknowledgments
-
-- Inspired by frameworks like Express, Fastify, and NestJS
-- Built with modern Node.js and TypeScript best practices
-- Optimized with lessons from high-performance C++ and Rust frameworks
-
-## Advanced Features
-
-### Enhanced Performance Monitoring
-
-Nexure includes a powerful performance monitoring system that tracks various metrics:
-
-```typescript
-import { PerformanceMonitor } from 'nexurejs';
-
-// Create and configure a performance monitor
-const monitor = new PerformanceMonitor({
-  memoryMonitoring: true,
-  eventLoopMonitoring: true,
-  gcMonitoring: true
-});
-
-// Enable memory leak detection
-monitor.enableLeakDetection(30000, 10 * 1024 * 1024); // Check every 30s, 10MB threshold
-
-// Start monitoring
-monitor.start();
-
-// Record custom metrics
-monitor.recordMetric('custom.metric', 42, 'count');
-
-// Mark points in time
-monitor.mark('start');
-
-// Do some work
-// ...
-
-monitor.mark('end');
-
-// Measure duration between marks
-const duration = monitor.measure('operation', 'start', 'end');
-console.log(`Operation took ${duration}ms`);
-
-// Get a comprehensive report
-const report = monitor.createReport();
-console.log(report);
-
-// Listen for potential memory leaks
-monitor.on('warning', (warning) => {
-  console.warn(`Warning: ${warning.message}`);
-  console.warn(`Leak score: ${warning.metrics.leakScore}/100`);
-});
-
-// Stop monitoring when done
-monitor.stop();
-```
-
-### WebSocket Support
-
-Nexure includes a high-performance WebSocket server with support for rooms, authentication, and binary messages:
-
-```typescript
-import { createServer } from 'http';
-import { WebSocketServer } from 'nexurejs';
-
-// Create HTTP server
-const httpServer = createServer();
-
-// Create WebSocket server
-const wsServer = new WebSocketServer(httpServer, {
-  heartbeat: {
-    enabled: true,
-    interval: 30000,
-    timeout: 10000
-  },
-  auth: {
-    required: true,
-    timeout: 5000,
-    handler: async (token, connection) => {
-      // Validate token and return user data or null if invalid
-      return { id: 123, name: 'John Doe' };
-    }
-  }
-});
-
-// Handle connection
-wsServer.on('connection', ({ connection }) => {
-  console.log(`New connection: ${connection.id}`);
-});
-
-// Handle messages
-wsServer.on('message', ({ connection, message }) => {
-  console.log(`Message from ${connection.id}:`, message);
-
-  // Reply to the client
-  connection.send({ type: 'response', data: 'Hello!' });
-});
-
-// Handle specific message types
-wsServer.on('join-room', ({ connection, message }) => {
-  const { room } = message.data;
-  connection.joinRoom(room);
-
-  // Broadcast to room
-  wsServer.broadcastToRoom(room, {
-    type: 'user-joined',
-    data: { userId: connection.id }
-  }, connection); // Exclude sender
-});
-
-// Start the server
-httpServer.listen(3000);
-wsServer.start();
-```
-
-## Testing
-
-Nexure includes comprehensive testing tools to validate your application's performance and functionality:
-
-```bash
-# Run the unified test script to verify all framework components
-node --expose-gc test/unified-test.js
-```
-
-The unified test script verifies:
-
-1. Native module loading and fallbacks
-2. Performance metrics collection
-3. Memory monitoring and leak detection
-4. WebSocket functionality
-5. JSON processing performance
-
-## Performance Comparison
-
-Benchmark results comparing Nexure to other popular frameworks:
-
-| Framework | Requests/sec | Latency (avg) | Memory Usage |
-|-----------|--------------|---------------|--------------|
-| Nexure    | 45,000       | 2.2ms         | 35MB         |
-| Express   | 12,000       | 8.3ms         | 78MB         |
-| Fastify   | 38,000       | 2.6ms         | 42MB         |
-| Koa       | 24,000       | 4.1ms         | 56MB         |
-
-*Results from benchmark on MacBook Pro M1, Node.js v16.13.0, 10K concurrent connections*
-
-## Documentation
-
-For complete documentation, visit [https://nexurejs.org/docs](https://nexurejs.org/docs).
+MIT License - see the [LICENSE](LICENSE) file for details.

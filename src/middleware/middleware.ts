@@ -16,7 +16,11 @@ export abstract class Middleware {
   /**
    * Method to be implemented by middleware classes
    */
-  abstract use(_req: IncomingMessage, _res: ServerResponse, _next: () => Promise<void>): Promise<void>;
+  abstract use(
+    _req: IncomingMessage,
+    _res: ServerResponse,
+    _next: () => Promise<void>
+  ): Promise<void>;
 
   /**
    * Returns the middleware handler
@@ -47,7 +51,7 @@ export function composeMiddleware(middlewares: MiddlewareHandler[]): MiddlewareH
         return next();
       }
 
-      const middleware = middlewares[index++];
+      const middleware = middlewares[index++]!;
       await middleware(req, res, dispatch);
     };
 

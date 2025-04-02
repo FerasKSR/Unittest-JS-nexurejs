@@ -1,0 +1,36 @@
+codecov:
+  require_ci_to_pass: false
+  notify:
+    wait_for_ci: false
+
+coverage:
+  precision: 2
+  round: down
+  range: "50...90"
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 5%
+        base: auto
+        informational: true
+    patch:
+      default:
+        target: auto
+        threshold: 10%
+        base: auto
+        informational: true
+
+comment:
+  layout: "reach, diff, flags, files"
+  behavior: default
+  require_changes: false
+
+ignore:
+  - "dist/**/*"
+  - "coverage/**/*"
+  - "node_modules/**/*"
+  - "test/**/*"
+  - "benchmarks/**/*"
+  - "profiling/**/*"
+  - "scripts/**/*"

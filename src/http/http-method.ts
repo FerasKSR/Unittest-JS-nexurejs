@@ -2,12 +2,12 @@
  * HTTP methods supported by the framework
  */
 export enum HttpMethod {
-  _GET = 'GET',
-  _POST = 'POST',
-  _PUT = 'PUT',
-  _DELETE = 'DELETE',
-  _PATCH = 'PATCH',
-  _HEAD = 'HEAD',
-  _OPTIONS = 'OPTIONS',
-  _ALL = '*'
+  GET = 'GET',
+  POST = 'POST',
+  PUT = 'PUT',
+  DELETE = 'DELETE',
+  PATCH = 'PATCH',
+  HEAD = 'HEAD',
+  OPTIONS = 'OPTIONS',
+  ALL = '*'
 }

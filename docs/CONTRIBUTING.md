@@ -1,4 +1,4 @@
-# Contributing to NexureJS
+ # Contributing to NexureJS
 
 Thank you for considering contributing to NexureJS! This document outlines the process and guidelines for contributing to the project.
 

@@ -6,24 +6,51 @@
 
 import { join, dirname } from 'node:path';
 import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, URL, URLSearchParams } from 'node:url';
 import { performance } from 'node:perf_hooks';
-import { URL, URLSearchParams } from 'node:url';
 import { Server as HttpServer } from 'node:http';
 import { EventEmitter } from 'node:events';
 import { createRequire } from 'node:module';
-import { JsHttpParser } from '../http/http-parser.js';
-import { HttpMethod } from '../http/http-method.js';
-import { Logger } from '../utils/logger.js';
-import type { HttpParseResult, NativeHttpParser } from '../types/native.js';
-import { RadixRouter as JsRadixRouter } from '../routing/radix-router.js';
+import { loadNativeBinding as safeLoadNativeBinding } from './loader.js';
+import { JsHttpParser } from '../http/index.js';
+import { JsRadixRouter } from '../routing/js-router.js';
+import type {
+  HttpParseResult,
+  NativeHttpParser,
+  NativeObjectPool,
+  ObjectPoolOptions,
+  PoolInfo
+} from '../types/native.js';
 
-// Get __dirname equivalent in ESM
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Get dirName equivalent in ESM/CJS compatible way
+let dirName: string;
+let customRequire: NodeRequire;
 
-// Create a require function for ESM
-const require = createRequire(import.meta.url);
+// Handle both ESM and CommonJS environments
+if (typeof __dirname !== 'undefined') {
+  // CommonJS
+  dirName = __dirname;
+  customRequire = require;
+} else {
+  // ESM - handle import.meta.url with typeof check for CJS compatibility
+  try {
+    // @ts-ignore - Conditionally use import.meta.url
+    const metaUrl = typeof import.meta !== 'undefined' ? import.meta.url : '';
+    if (metaUrl) {
+      const filename = fileURLToPath(metaUrl);
+      dirName = dirname(filename);
+      customRequire = createRequire(metaUrl);
+    } else {
+      // Fallback if import.meta is not available (during CJS build)
+      dirName = process.cwd();
+      customRequire = require;
+    }
+  } catch (_err) {
+    // Final fallback
+    dirName = process.cwd();
+    customRequire = require;
+  }
+}
 
 /**
  * Configuration options for native modules
@@ -37,6 +64,8 @@ export interface NativeModuleOptions {
   modulePath?: string;
   /** Maximum size for route cache (default: 1000) */
   maxCacheSize?: number;
+  /** Object pool options */
+  objectPoolOptions?: ObjectPoolOptions;
 }
 
 // Define WebSocket connection interface
@@ -152,6 +181,8 @@ export interface NativeModuleStatus {
   compression: boolean;
   /** Whether the WebSocket module is available */
   webSocket: boolean;
+  /** Whether the object pool is available */
+  objectPool: boolean;
   /** Error message if loading failed */
   error?: string;
 }
@@ -159,7 +190,7 @@ export interface NativeModuleStatus {
 // Track native binding and loading status
 let nativeBinding: any = null;
 let nativeBindingAttempted = false;
-let nativeBindingError: string | null = null;
+const nativeBindingError: string | null = null;
 
 // Default native module status
 const nativeModuleStatus: NativeModuleStatus = {
@@ -170,14 +201,21 @@ const nativeModuleStatus: NativeModuleStatus = {
   urlParser: false,
   schemaValidator: false,
   compression: false,
-  webSocket: false
+  webSocket: false,
+  objectPool: false
 };
 
 // Default configuration
 let nativeOptions: NativeModuleOptions = {
   enabled: true,
   verbose: false,
-  maxCacheSize: 1000
+  maxCacheSize: 1000,
+  objectPoolOptions: {
+    maxObjectPoolSize: 1000,
+    maxBufferPoolSize: 1000,
+    maxHeadersPoolSize: 1000,
+    enabled: true
+  }
 };
 
 /**
@@ -200,6 +238,7 @@ export function configureNativeModules(options: NativeModuleOptions): NativeModu
     nativeModuleStatus.schemaValidator = false;
     nativeModuleStatus.compression = false;
     nativeModuleStatus.webSocket = false;
+    nativeModuleStatus.objectPool = false;
   }
 
   return nativeOptions;
@@ -221,105 +260,82 @@ export function getNativeModuleStatus(): NativeModuleStatus {
     schemaValidator: nativeBinding?.SchemaValidator !== undefined,
     compression: nativeBinding?.Compression !== undefined,
     webSocket: nativeBinding?.NativeWebSocketServer !== undefined,
-    error: nativeBindingError || undefined
+    objectPool: nativeBinding?.ObjectPool !== undefined,
+    error: nativeBindingError === null ? undefined : nativeBindingError
   };
 }
 
 /**
- * Load the native module
- * @returns The native module or null if not available
+ * Load native binding module
  */
 export function loadNativeBinding(): any {
-  // Return cached result if already attempted
-  if (nativeBindingAttempted) return nativeBinding;
-
-  nativeBindingAttempted = true;
+  // Skip if already loaded
+  if (nativeBindingAttempted) {
+    return nativeBinding;
+  }
 
   // Skip if disabled
   if (!nativeOptions.enabled) {
     if (nativeOptions.verbose) {
-      console.log('Native modules disabled by configuration');
+      console.log('Native modules are disabled in configuration options');
     }
-    nativeModuleStatus.error = 'Disabled by configuration';
+    nativeBindingAttempted = true;
     return null;
   }
 
+  // Mark as attempted
+  nativeBindingAttempted = true;
+
   try {
-    // Try to load the native module from multiple possible locations
-    const possiblePaths = [
-      // Custom path from options
-      nativeOptions.modulePath,
-      // Local build path
-      join(__dirname, '..', '..', 'build', 'Release', 'nexurejs_native.node'),
-      // Prebuilt binary paths based on platform
-      join(__dirname, '..', '..', 'prebuilds', `${process.platform}-${process.arch}`, 'nexurejs_native.node'),
-    ].filter(Boolean) as string[];
-
-    // Try to add the platform-specific package if it exists
-    try {
-      const platformSpecificPackage = `nexurejs-native-${process.platform}-${process.arch}`;
-      // This will throw if the package doesn't exist
-      require.resolve(platformSpecificPackage);
-      possiblePaths.push(platformSpecificPackage);
-    } catch (e) {
-      // Package not found, continue with other paths
-    }
-
-    let loadError: Error | null = null;
-
-    // Try each path until one works
-    for (const bindingPath of possiblePaths) {
-      try {
-        // For direct file paths, check if they exist first
-        if (bindingPath.endsWith('.node') && !existsSync(bindingPath)) {
-          continue;
+    // Custom path provided in options
+    if (nativeOptions.modulePath) {
+      if (existsSync(nativeOptions.modulePath)) {
+        try {
+          // Use the safer loader
+          nativeBinding = safeLoadNativeBinding(nativeOptions.modulePath);
+          if (nativeBinding) {
+            nativeModuleStatus.loaded = true;
+          }
+        } catch (err: any) {
+          nativeModuleStatus.error = err.message;
+          if (nativeOptions.verbose) {
+            console.error(`Failed to load native binding from ${nativeOptions.modulePath}:`, err);
+          }
         }
-
-        // Load the native module
-        nativeBinding = require(bindingPath);
-
-        // Update status
+      } else if (nativeOptions.verbose) {
+        console.error(`Native module path not found: ${nativeOptions.modulePath}`);
+      }
+    } else {
+      // Auto-detect module
+      nativeBinding = safeLoadNativeBinding();
+      if (nativeBinding) {
         nativeModuleStatus.loaded = true;
-        nativeModuleStatus.httpParser = !!nativeBinding.HttpParser;
-        nativeModuleStatus.radixRouter = !!nativeBinding.RadixRouter;
-        nativeModuleStatus.jsonProcessor = !!nativeBinding.JsonProcessor;
-        nativeModuleStatus.urlParser = !!nativeBinding.UrlParser;
-        nativeModuleStatus.schemaValidator = !!nativeBinding.SchemaValidator;
-        nativeModuleStatus.compression = !!nativeBinding.Compression;
-        nativeModuleStatus.webSocket = !!nativeBinding.NativeWebSocketServer;
-
-        if (nativeOptions.verbose) {
-          console.log(`Native module loaded successfully from ${bindingPath}`);
-          console.log(`Available native components: ${Object.keys(nativeBinding).join(', ')}`);
-        }
-
-        // Successfully loaded
-        return nativeBinding;
-      } catch (err: any) {
-        // Store the error but continue trying other paths
-        loadError = err;
       }
     }
 
-    // If we get here, all paths failed
-    throw loadError || new Error('Failed to load native module from any location');
+    // Initialize component status if module loaded
+    if (nativeBinding) {
+      nativeModuleStatus.httpParser = Boolean(nativeBinding.HttpParser);
+      nativeModuleStatus.radixRouter = Boolean(nativeBinding.RadixRouter);
+      nativeModuleStatus.jsonProcessor = Boolean(nativeBinding.JsonProcessor);
+      nativeModuleStatus.urlParser = Boolean(nativeBinding.parse && nativeBinding.parseQueryString);
+      nativeModuleStatus.schemaValidator = Boolean(nativeBinding.validate && nativeBinding.compileSchema);
+      nativeModuleStatus.compression = Boolean(nativeBinding.compress && nativeBinding.decompress);
+      nativeModuleStatus.webSocket = Boolean(nativeBinding.NativeWebSocketServer);
+      nativeModuleStatus.objectPool = Boolean(nativeBinding.ObjectPool);
+
+      if (nativeOptions.verbose) {
+        console.log('Native modules loaded successfully');
+        console.log('Available components:', JSON.stringify(nativeModuleStatus, null, 2));
+      }
+    } else if (nativeOptions.verbose) {
+      console.log('Native modules not available, using JavaScript fallbacks');
+    }
   } catch (err: any) {
-    if (nativeOptions.verbose || process.env.NODE_ENV !== 'production') {
-      console.warn(`Failed to load native module: ${err.message}`);
-
-      if (err.code === 'MODULE_NOT_FOUND') {
-        console.warn('Native module not built. Run "npm run build:native:test" to build it.');
-      } else if (err.code === 'ENOENT') {
-        console.warn('Native module file not found. Check build configuration.');
-      } else {
-        console.warn(`Error type: ${err.code || 'Unknown'}`);
-      }
-
-      console.warn('Using JavaScript fallbacks instead');
-    }
-
     nativeModuleStatus.error = err.message;
-    nativeBinding = null;
+    if (nativeOptions.verbose) {
+      console.error('Error loading native modules:', err);
+    }
   }
 
   return nativeBinding;
@@ -341,14 +357,14 @@ export class HttpParser implements NativeHttpParser {
 
   constructor() {
     const nativeModule = loadNativeBinding();
-    this.useNative = !!(nativeModule?.HttpParser && nativeOptions.enabled);
+    this.useNative = Boolean(nativeModule?.HttpParser && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
         this.parser = new nativeModule.HttpParser();
       } catch (err: any) {
         if (nativeOptions.verbose) {
-          console.warn(`Failed to create native HTTP parser: ${err.message}`);
+          Logger.warn(`Failed to create native HTTP parser: ${err.message}`);
         }
         this.useNative = false;
       }
@@ -428,7 +444,12 @@ export class HttpParser implements NativeHttpParser {
    * Get performance metrics for HTTP parsing
    * @returns Performance metrics
    */
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number } {
+  static getPerformanceMetrics(): {
+    jsTime: number;
+    jsCount: number;
+    nativeTime: number;
+    nativeCount: number;
+  } {
     return {
       jsTime: HttpParser.jsParseTime,
       jsCount: HttpParser.jsParseCount,
@@ -452,9 +473,9 @@ export class HttpParser implements NativeHttpParser {
  * Radix Router Interface
  */
 export interface RouteMatch {
-  handler: any;
-  params: Record<string, string>;
   found: boolean;
+  params: Record<string, string>;
+  handler?: any;
 }
 
 /**
@@ -473,7 +494,7 @@ export class RadixRouter {
 
   constructor(options?: { maxCacheSize?: number }) {
     const nativeModule = loadNativeBinding();
-    this.useNative = !!(nativeModule?.RadixRouter && nativeOptions.enabled);
+    this.useNative = Boolean(nativeModule?.RadixRouter && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
@@ -482,7 +503,7 @@ export class RadixRouter {
         this.router = new nativeModule.RadixRouter({ maxCacheSize });
       } catch (err: any) {
         if (nativeOptions.verbose) {
-          console.warn(`Failed to create native radix router: ${err.message}`);
+          Logger.warn(`Failed to create native radix router: ${err.message}`);
         }
         this.useNative = false;
       }
@@ -490,7 +511,7 @@ export class RadixRouter {
 
     if (!this.useNative) {
       // Use JavaScript fallback
-      this.jsRouter = new JsRadixRouter('');
+      this.jsRouter = new JsRadixRouter();
     }
   }
 
@@ -523,15 +544,20 @@ export class RadixRouter {
     let result: RouteMatch;
 
     if (this.useNative && this.router) {
-      result = this.router.find(method, path);
+      const nativeResult = this.router.find(method, path);
+      result = {
+        found: nativeResult.found,
+        params: nativeResult.params,
+        ...(nativeResult.found ? { handler: nativeResult.handler } : {})
+      };
       RadixRouter.nativeFindTime += performance.now() - start;
       RadixRouter.nativeFindCount++;
     } else if (this.jsRouter) {
       const jsResult = this.jsRouter.findRoute(method as HttpMethod, path);
       result = {
-        handler: jsResult?.route?.handler || null,
-        params: jsResult?.params || {},
-        found: !!jsResult
+        found: jsResult.found,
+        params: jsResult.params,
+        ...(jsResult.found ? { handler: jsResult.handler } : {})
       };
       RadixRouter.jsFindTime += performance.now() - start;
       RadixRouter.jsFindCount++;
@@ -543,28 +569,42 @@ export class RadixRouter {
   }
 
   /**
-   * Remove a route
+   * Remove a route from the router
    * @param method HTTP method
    * @param path Route path
-   * @returns Whether the route was removed
+   * @returns True if the route was removed, false if it didn't exist
    */
   remove(method: string, path: string): boolean {
     if (this.useNative && this.router) {
       return this.router.remove(method, path);
     } else if (this.jsRouter) {
-      // JavaScript implementation doesn't have a remove method
-      // This is a stub implementation
+      // Normalize path for JS implementation
+      const normalizedPath = path.startsWith('/') ? path : `/${path}`;
+
+      // Find the key format used in the JS implementation
+      const key = `${method}:${normalizedPath}`;
+
+      // Check if the route exists before attempting removal
+      const routes = (this.jsRouter as any).routes;
+      if (routes && routes instanceof Map && routes.has(key)) {
+        routes.delete(key);
+        return true;
+      }
       return false;
-    } else {
-      throw new Error('No router implementation available');
     }
+    return false;
   }
 
   /**
    * Get performance metrics for route finding
    * @returns Performance metrics
    */
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number } {
+  static getPerformanceMetrics(): {
+    jsTime: number;
+    jsCount: number;
+    nativeTime: number;
+    nativeCount: number;
+  } {
     return {
       jsTime: RadixRouter.jsFindTime,
       jsCount: RadixRouter.jsFindCount,
@@ -603,14 +643,14 @@ export class JsonProcessor {
 
   constructor() {
     const nativeModule = loadNativeBinding();
-    this.useNative = !!(nativeModule?.JsonProcessor && nativeOptions.enabled);
+    this.useNative = Boolean(nativeModule?.JsonProcessor && nativeOptions.enabled);
 
     if (this.useNative) {
       try {
         this.processor = new nativeModule.JsonProcessor();
       } catch (err: any) {
         if (nativeOptions.verbose) {
-          console.warn(`Failed to create native JSON processor: ${err.message}`);
+          Logger.warn(`Failed to create native JSON processor: ${err.message}`);
         }
         this.useNative = false;
       }
@@ -767,7 +807,7 @@ export class UrlParser {
       const start = performance.now();
       const result = this.parser.parse(url);
       const end = performance.now();
-      UrlParser.nativeParseTime += (end - start);
+      UrlParser.nativeParseTime += end - start;
       UrlParser.nativeParseCount++;
       return result;
     } else {
@@ -777,9 +817,10 @@ export class UrlParser {
         const parsedUrl = new URL(url);
         const result = {
           protocol: parsedUrl.protocol.replace(/:$/, ''),
-          auth: parsedUrl.username && parsedUrl.password ?
-            `${parsedUrl.username}:${parsedUrl.password}` :
-            parsedUrl.username || '',
+          auth:
+            parsedUrl.username && parsedUrl.password
+              ? `${parsedUrl.username}:${parsedUrl.password}`
+              : parsedUrl.username || '',
           hostname: parsedUrl.hostname,
           port: parsedUrl.port,
           pathname: parsedUrl.pathname,
@@ -787,12 +828,12 @@ export class UrlParser {
           hash: parsedUrl.hash.replace(/^#/, '')
         };
         const end = performance.now();
-        UrlParser.jsParseTime += (end - start);
+        UrlParser.jsParseTime += end - start;
         UrlParser.jsParseCount++;
         return result;
-      } catch (err) {
+      } catch (_err) {
         const end = performance.now();
-        UrlParser.jsParseTime += (end - start);
+        UrlParser.jsParseTime += end - start;
         UrlParser.jsParseCount++;
         return {
           protocol: '',
@@ -812,7 +853,7 @@ export class UrlParser {
       const start = performance.now();
       const result = this.parser.parseQueryString(queryString);
       const end = performance.now();
-      UrlParser.nativeParseTime += (end - start);
+      UrlParser.nativeParseTime += end - start;
       UrlParser.nativeParseCount++;
       return result;
     } else {
@@ -824,7 +865,7 @@ export class UrlParser {
         params[key] = value;
       });
       const end = performance.now();
-      UrlParser.jsParseTime += (end - start);
+      UrlParser.jsParseTime += end - start;
       UrlParser.jsParseCount++;
       return params;
     }
@@ -836,7 +877,12 @@ export class UrlParser {
   private static nativeParseTime = 0;
   private static nativeParseCount = 0;
 
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number } {
+  static getPerformanceMetrics(): {
+    jsTime: number;
+    jsCount: number;
+    nativeTime: number;
+    nativeCount: number;
+  } {
     return {
       jsTime: UrlParser.jsParseTime,
       jsCount: UrlParser.jsParseCount,
@@ -857,6 +903,7 @@ export class UrlParser {
 export class SchemaValidator {
   private validator: any;
   private useNative: boolean;
+  private compiledSchemas: Map<string, any> = new Map();
 
   constructor() {
     if (nativeBinding && nativeBinding.validate) {
@@ -867,12 +914,21 @@ export class SchemaValidator {
     }
   }
 
-  validate(schema: object, data: any): { valid: boolean; errors: { path: string; message: string }[] } {
+  /**
+   * Validate data against a schema
+   * @param schema The JSON schema to validate against
+   * @param data The data to validate
+   * @returns Validation result with errors if any
+   */
+  validate(
+    schema: object,
+    data: any
+  ): { valid: boolean; errors: { path: string; message: string }[] } {
     if (this.useNative) {
       const start = performance.now();
       const result = this.validator.validate(schema, data);
       const end = performance.now();
-      SchemaValidator.nativeValidateTime += (end - start);
+      SchemaValidator.nativeValidateTime += end - start;
       SchemaValidator.nativeValidateCount++;
       return result;
     } else {
@@ -880,92 +936,321 @@ export class SchemaValidator {
       const start = performance.now();
       const errors: { path: string; message: string }[] = [];
       this.validateValue(schema, data, '$', errors);
+      const valid = errors.length === 0;
       const end = performance.now();
-      SchemaValidator.jsValidateTime += (end - start);
+      SchemaValidator.jsValidateTime += end - start;
       SchemaValidator.jsValidateCount++;
-      return { valid: errors.length === 0, errors };
+      return { valid, errors };
+    }
+  }
+
+  /**
+   * Validate partial updates against an existing object
+   * @param schema The JSON schema for the entire object
+   * @param data The existing data object
+   * @param updates The partial updates to apply and validate
+   * @returns Validation result
+   */
+  validatePartial(
+    schema: object,
+    data: object,
+    updates: object
+  ): { valid: boolean; errors: { path: string; message: string }[] } {
+    if (this.useNative && this.validator.validatePartial) {
+      const start = performance.now();
+      const result = this.validator.validatePartial(schema, data, updates);
+      const end = performance.now();
+      SchemaValidator.nativeValidateTime += end - start;
+      SchemaValidator.nativeValidateCount++;
+      return result;
+    } else {
+      // Fallback: merge updates into data and validate
+      const start = performance.now();
+      const mergedData = { ...data, ...updates };
+      const errors: { path: string; message: string }[] = [];
+      this.validateValue(schema, mergedData, '$', errors);
+      const end = performance.now();
+      SchemaValidator.jsValidateTime += end - start;
+      SchemaValidator.jsValidateCount++;
+      const valid = errors.length === 0;
+      return { valid, errors };
+    }
+  }
+
+  /**
+   * Compile a schema for faster validation
+   * @param schema The schema to compile
+   * @returns A reference to the compiled schema
+   */
+  compileSchema(schema: object): { id: string; hash: string; version: number } {
+    if (this.useNative && this.validator.compileSchema) {
+      const start = performance.now();
+      const compiled = this.validator.compileSchema(schema);
+      const end = performance.now();
+      SchemaValidator.nativeCompileTime += end - start;
+      SchemaValidator.nativeCompileCount++;
+
+      // Store in local cache
+      const key = compiled.id ? `${compiled.id}:${compiled.hash}` : compiled.hash;
+      this.compiledSchemas.set(key, compiled);
+
+      return compiled;
+    } else {
+      // No compilation in JS fallback, return empty reference
+      return { id: '', hash: '', version: 0 };
+    }
+  }
+
+  /**
+   * Clear the schema cache
+   */
+  clearCache(): void {
+    if (this.useNative && this.validator.clearCache) {
+      this.validator.clearCache();
+    }
+    this.compiledSchemas.clear();
+  }
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): {
+    cacheSize: number;
+    cacheHits: number;
+    cacheMisses: number;
+    cacheEvictions: number;
+    hitRatio: number;
+    totalValidations: number;
+    generationTime: number;
+    validationTime: number;
+  } {
+    if (this.useNative && this.validator.getCacheStats) {
+      return this.validator.getCacheStats();
+    } else {
+      return {
+        cacheSize: 0,
+        cacheHits: 0,
+        cacheMisses: 0,
+        cacheEvictions: 0,
+        hitRatio: 0,
+        totalValidations: SchemaValidator.jsValidateCount,
+        generationTime: 0,
+        validationTime: SchemaValidator.jsValidateTime
+      };
     }
   }
 
   // Simple validation implementation for fallback
-  private validateValue(schema: any, value: any, path: string, errors: { path: string; message: string }[]): boolean {
-    // Type validation
-    if (schema.type) {
-      const type = typeof value;
-      if (schema.type === 'array' && !Array.isArray(value)) {
-        errors.push({ path, message: 'Expected array' });
-        return false;
-      } else if (schema.type === 'object' && (typeof value !== 'object' || Array.isArray(value) || value === null)) {
-        errors.push({ path, message: 'Expected object' });
-        return false;
-      } else if (schema.type === 'string' && type !== 'string') {
-        errors.push({ path, message: 'Expected string' });
-        return false;
-      } else if (schema.type === 'number' && type !== 'number') {
-        errors.push({ path, message: 'Expected number' });
-        return false;
-      } else if (schema.type === 'boolean' && type !== 'boolean') {
-        errors.push({ path, message: 'Expected boolean' });
-        return false;
-      } else if (schema.type === 'null' && value !== null) {
-        errors.push({ path, message: 'Expected null' });
-        return false;
-      }
+  private validateValue(
+    schema: any,
+    value: any,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): boolean {
+    // Basic type validation
+    if (!this.validateType(schema, value, path, errors)) {
+      return false;
     }
 
-    // String validations
+    // Type-specific validations
     if (schema.type === 'string' && typeof value === 'string') {
-      if (schema.minLength !== undefined && value.length < schema.minLength) {
-        errors.push({ path, message: 'String too short' });
-        return false;
-      }
-      if (schema.maxLength !== undefined && value.length > schema.maxLength) {
-        errors.push({ path, message: 'String too long' });
-        return false;
-      }
-    }
-
-    // Number validations
-    if (schema.type === 'number' && typeof value === 'number') {
-      if (schema.minimum !== undefined && value < schema.minimum) {
-        errors.push({ path, message: 'Number too small' });
-        return false;
-      }
-      if (schema.maximum !== undefined && value > schema.maximum) {
-        errors.push({ path, message: 'Number too large' });
-        return false;
-      }
-    }
-
-    // Object validations
-    if (schema.type === 'object' && typeof value === 'object' && value !== null && !Array.isArray(value)) {
-      if (schema.required && Array.isArray(schema.required)) {
-        for (const prop of schema.required) {
-          if (!(prop in value)) {
-            errors.push({ path: `${path}.${prop}`, message: 'Required property missing' });
-          }
-        }
-      }
-
-      if (schema.properties) {
-        for (const [propName, propSchema] of Object.entries(schema.properties)) {
-          if (propName in value) {
-            this.validateValue(propSchema, value[propName], `${path}.${propName}`, errors);
-          }
-        }
-      }
-    }
-
-    // Array validations
-    if (schema.type === 'array' && Array.isArray(value)) {
-      if (schema.items) {
-        for (let i = 0; i < value.length; i++) {
-          this.validateValue(schema.items, value[i], `${path}[${i}]`, errors);
-        }
-      }
+      this.validateString(schema, value, path, errors);
+    } else if (schema.type === 'number' && typeof value === 'number') {
+      this.validateNumber(schema, value, path, errors);
+    } else if (
+      schema.type === 'object' &&
+      typeof value === 'object' &&
+      value !== null &&
+      !Array.isArray(value)
+    ) {
+      this.validateObject(schema, value, path, errors);
+    } else if (schema.type === 'array' && Array.isArray(value)) {
+      this.validateArray(schema, value, path, errors);
     }
 
     return errors.length === 0;
+  }
+
+  /**
+   * Validate the type of a value
+   * @private
+   */
+  private validateType(
+    schema: any,
+    value: any,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): boolean {
+    if (!schema.type) {
+      return true;
+    }
+
+    const type = typeof value;
+    if (schema.type === 'array' && !Array.isArray(value)) {
+      errors.push({ path, message: 'Expected array' });
+      return false;
+    } else if (
+      schema.type === 'object' &&
+      (typeof value !== 'object' || Array.isArray(value) || value === null)
+    ) {
+      errors.push({ path, message: 'Expected object' });
+      return false;
+    } else if (schema.type === 'string' && type !== 'string') {
+      errors.push({ path, message: 'Expected string' });
+      return false;
+    } else if (schema.type === 'number' && type !== 'number') {
+      errors.push({ path, message: 'Expected number' });
+      return false;
+    } else if (schema.type === 'boolean' && type !== 'boolean') {
+      errors.push({ path, message: 'Expected boolean' });
+      return false;
+    } else if (schema.type === 'null' && value !== null) {
+      errors.push({ path, message: 'Expected null' });
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * Validate string values
+   * @private
+   */
+  private validateString(
+    schema: any,
+    value: string,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): void {
+    if (schema.minLength !== undefined && value.length < schema.minLength) {
+      errors.push({ path, message: 'String too short' });
+    }
+    if (schema.maxLength !== undefined && value.length > schema.maxLength) {
+      errors.push({ path, message: 'String too long' });
+    }
+  }
+
+  /**
+   * Validate number values
+   * @private
+   */
+  private validateNumber(
+    schema: any,
+    value: number,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): void {
+    if (schema.minimum !== undefined && value < schema.minimum) {
+      errors.push({ path, message: 'Number too small' });
+    }
+    if (schema.maximum !== undefined && value > schema.maximum) {
+      errors.push({ path, message: 'Number too large' });
+    }
+  }
+
+  /**
+   * Validate object values
+   * @private
+   */
+  private validateObject(
+    schema: any,
+    value: object,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): void {
+    // Check required properties
+    this.validateRequiredProperties(schema, value, path, errors);
+
+    // Validate properties
+    this.validateObjectProperties(schema, value, path, errors);
+
+    // Check additionalProperties
+    this.validateAdditionalProperties(schema, value, path, errors);
+  }
+
+  /**
+   * Validate required properties of an object
+   * @private
+   */
+  private validateRequiredProperties(
+    schema: any,
+    value: any,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): void {
+    if (schema.required && Array.isArray(schema.required)) {
+      for (const prop of schema.required) {
+        if (!(prop in value)) {
+          errors.push({ path: `${path}.${prop}`, message: 'Required property missing' });
+        }
+      }
+    }
+  }
+
+  /**
+   * Validate properties of an object
+   * @private
+   */
+  private validateObjectProperties(
+    schema: any,
+    value: any,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): void {
+    if (schema.properties) {
+      for (const [propName, propSchema] of Object.entries(schema.properties)) {
+        if (propName in value) {
+          this.validateValue(propSchema, value[propName], `${path}.${propName}`, errors);
+        }
+      }
+    }
+  }
+
+  /**
+   * Validate additional properties of an object
+   * @private
+   */
+  private validateAdditionalProperties(
+    schema: any,
+    value: any,
+    path: string,
+    errors: { path: string; message: string }[]
+  ): void {
+    if (schema.additionalProperties === false) {
+      const propertyNames = Object.keys(value);
+      const schemaProperties = schema.properties ? Object.keys(schema.properties) : [];
+      for (const prop of propertyNames) {
+        if (!schemaProperties.includes(prop)) {
+          errors.push({ path: `${path}.${prop}`, message: 'Additional property not allowed' });
+        }
+      }
+    }
+  }
+
+  /**
+   * Validate array values
+   * @private
+   */
+  private validateArray(
+    schema: any,
+    value: any[],
+    path: string,
+    errors: { path: string; message: string }[]
+  ): void {
+    // Validate array length
+    if (schema.minItems !== undefined && value.length < schema.minItems) {
+      errors.push({ path, message: 'Array too short' });
+    }
+    if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+      errors.push({ path, message: 'Array too long' });
+    }
+
+    // Validate array items
+    if (schema.items) {
+      for (let i = 0; i < value.length; i++) {
+        this.validateValue(schema.items, value[i], `${path}[${i}]`, errors);
+      }
+    }
   }
 
   // Performance metrics
@@ -973,13 +1258,24 @@ export class SchemaValidator {
   private static jsValidateCount = 0;
   private static nativeValidateTime = 0;
   private static nativeValidateCount = 0;
+  private static nativeCompileTime = 0;
+  private static nativeCompileCount = 0;
 
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number } {
+  static getPerformanceMetrics(): {
+    jsTime: number;
+    jsCount: number;
+    nativeTime: number;
+    nativeCount: number;
+    nativeCompileTime: number;
+    nativeCompileCount: number;
+  } {
     return {
       jsTime: SchemaValidator.jsValidateTime,
       jsCount: SchemaValidator.jsValidateCount,
       nativeTime: SchemaValidator.nativeValidateTime,
-      nativeCount: SchemaValidator.nativeValidateCount
+      nativeCount: SchemaValidator.nativeValidateCount,
+      nativeCompileTime: SchemaValidator.nativeCompileTime,
+      nativeCompileCount: SchemaValidator.nativeCompileCount
     };
   }
 
@@ -988,6 +1284,8 @@ export class SchemaValidator {
     SchemaValidator.jsValidateCount = 0;
     SchemaValidator.nativeValidateTime = 0;
     SchemaValidator.nativeValidateCount = 0;
+    SchemaValidator.nativeCompileTime = 0;
+    SchemaValidator.nativeCompileCount = 0;
   }
 }
 
@@ -1010,23 +1308,24 @@ export class Compression {
       const start = performance.now();
       const result = this.compressor.compress(data, level);
       const end = performance.now();
-      Compression.nativeCompressTime += (end - start);
+      Compression.nativeCompressTime += end - start;
       Compression.nativeCompressCount++;
       return result;
     } else {
       // Fallback to zlib (slower)
       const start = performance.now();
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const zlib = require('node:zlib');
         const buffer = typeof data === 'string' ? Buffer.from(data) : data;
         const result = zlib.gzipSync(buffer, { level });
         const end = performance.now();
-        Compression.jsCompressTime += (end - start);
+        Compression.jsCompressTime += end - start;
         Compression.jsCompressCount++;
         return result;
       } catch (err) {
         const end = performance.now();
-        Compression.jsCompressTime += (end - start);
+        Compression.jsCompressTime += end - start;
         Compression.jsCompressCount++;
         throw err;
       }
@@ -1038,22 +1337,23 @@ export class Compression {
       const start = performance.now();
       const result = this.compressor.decompress(data, asString);
       const end = performance.now();
-      Compression.nativeDecompressTime += (end - start);
+      Compression.nativeDecompressTime += end - start;
       Compression.nativeDecompressCount++;
       return result;
     } else {
       // Fallback to zlib (slower)
       const start = performance.now();
       try {
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
         const zlib = require('node:zlib');
         const result = zlib.gunzipSync(data);
         const end = performance.now();
-        Compression.jsDecompressTime += (end - start);
+        Compression.jsDecompressTime += end - start;
         Compression.jsDecompressCount++;
         return asString ? result.toString() : result;
       } catch (err) {
         const end = performance.now();
-        Compression.jsDecompressTime += (end - start);
+        Compression.jsDecompressTime += end - start;
         Compression.jsDecompressCount++;
         throw err;
       }
@@ -1144,7 +1444,7 @@ export class WebSocketServer extends EventEmitter {
     this.authOptions = {
       required: false,
       timeout: 10000,
-      handler: async () => null,
+      handler: async (): Promise<any> => null,
       ...options.auth
     };
 
@@ -1251,7 +1551,11 @@ export class WebSocketServer extends EventEmitter {
    */
   broadcastToRoom(roomName: string, message: string | object, exclude?: WebSocketConnection): void {
     const messageStr = typeof message === 'string' ? message : JSON.stringify(message);
-    this.nativeServer.broadcastToRoom(roomName, messageStr, exclude ? (exclude as any).id : undefined);
+    this.nativeServer.broadcastToRoom(
+      roomName,
+      messageStr,
+      exclude ? (exclude as any).id : undefined
+    );
   }
 
   /**
@@ -1261,7 +1565,11 @@ export class WebSocketServer extends EventEmitter {
    * @param exclude Connection to exclude from broadcast
    */
   broadcastBinaryToRoom(roomName: string, data: Buffer, exclude?: WebSocketConnection): void {
-    this.nativeServer.broadcastBinaryToRoom(roomName, data, exclude ? (exclude as any).id : undefined);
+    this.nativeServer.broadcastBinaryToRoom(
+      roomName,
+      data,
+      exclude ? (exclude as any).id : undefined
+    );
   }
 
   /**
@@ -1288,7 +1596,9 @@ export class WebSocketServer extends EventEmitter {
    */
   getRoomConnections(roomName: string): WebSocketConnection[] {
     const connectionIds = this.nativeServer.getRoomConnections(roomName);
-    return connectionIds.map(id => this.connections.get(id)).filter(Boolean) as WebSocketConnection[];
+    return connectionIds
+      .map(id => this.connections.get(id))
+      .filter(Boolean) as WebSocketConnection[];
   }
 
   /**
@@ -1470,26 +1780,29 @@ export class WebSocketServer extends EventEmitter {
       const parsedMessage = typeof message === 'string' ? JSON.parse(message) : message;
 
       // Handle auth message type if not authenticated
-      if (!connection.isAuthenticated && this.authOptions.required && parsedMessage.type === 'auth') {
-        this.authenticateConnection(connection, parsedMessage.data.token)
-          .then(success => {
-            // Clear authentication timeout
-            if (connection.data.__authTimeout) {
-              clearTimeout(connection.data.__authTimeout);
-              delete connection.data.__authTimeout;
-            }
+      if (
+        !connection.isAuthenticated &&
+        this.authOptions.required &&
+        parsedMessage.type === 'auth'
+      ) {
+        this.authenticateConnection(connection, parsedMessage.data.token).then(success => {
+          // Clear authentication timeout
+          if (connection.data.__authTimeout) {
+            clearTimeout(connection.data.__authTimeout);
+            delete connection.data.__authTimeout;
+          }
 
-            // Send auth response
-            connection.send({
-              type: 'auth:response',
-              data: { success }
-            });
-
-            // Close connection if authentication failed
-            if (!success) {
-              connection.close(1008, 'Authentication failed');
-            }
+          // Send auth response
+          connection.send({
+            type: 'auth:response',
+            data: { success }
           });
+
+          // Close connection if authentication failed
+          if (!success) {
+            connection.close(1008, 'Authentication failed');
+          }
+        });
 
         return;
       }
@@ -1614,7 +1927,9 @@ export class WebSocketServer extends EventEmitter {
    * Set the authentication handler function for this server
    * @param handler The function to call when authenticating a connection
    */
-  setAuthenticationHandler(handler: (token: string, connection: WebSocketConnection) => Promise<any>): void {
+  setAuthenticationHandler(
+    handler: (token: string, connection: WebSocketConnection) => Promise<any>
+  ): void {
     this.authOptions.handler = handler;
   }
 
@@ -1756,7 +2071,10 @@ export class WebSocketServer extends EventEmitter {
     nativeCount: number;
   } {
     // Check if the native module has getPerformanceMetrics method
-    if (WebSocketServer.nativeModule && typeof WebSocketServer.nativeModule.getPerformanceMetrics === 'function') {
+    if (
+      WebSocketServer.nativeModule &&
+      typeof WebSocketServer.nativeModule.getPerformanceMetrics === 'function'
+    ) {
       return {
         nativeTime: WebSocketServer.nativeModule.getPerformanceMetrics().nativeTime,
         nativeCount: WebSocketServer.nativeModule.getPerformanceMetrics().nativeCount
@@ -1775,7 +2093,10 @@ export class WebSocketServer extends EventEmitter {
    */
   static resetPerformanceMetrics(): void {
     // Check if the native module has resetPerformanceMetrics method
-    if (WebSocketServer.nativeModule && typeof WebSocketServer.nativeModule.resetPerformanceMetrics === 'function') {
+    if (
+      WebSocketServer.nativeModule &&
+      typeof WebSocketServer.nativeModule.resetPerformanceMetrics === 'function'
+    ) {
       WebSocketServer.nativeModule.resetPerformanceMetrics();
     } else {
       // Reset static metrics if native method is not available
@@ -1813,9 +2134,10 @@ export function getAllPerformanceMetrics(): {
   schemaValidator: ReturnType<typeof SchemaValidator.getPerformanceMetrics>;
   compression: ReturnType<typeof Compression.getPerformanceMetrics>;
   websocket: ReturnType<typeof WebSocketServer.getPerformanceMetrics>;
-  nativeBindings: ReturnType<typeof import('../utils/native-bindings').getNativeBindingMetrics>;
+  nativeBindings: ReturnType<typeof import('../utils/native-bindings.js').getNativeBindingMetrics>;
 } {
   // Import the getNativeBindingMetrics function
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getNativeBindingMetrics } = require('../utils/native-bindings');
 
   return {
@@ -1830,5 +2152,206 @@ export function getAllPerformanceMetrics(): {
   };
 }
 
+/**
+ * Get native module metrics including performance statistics
+ * @returns Object containing performance metrics for all native components
+ */
+export function getNativeModuleMetrics(): {
+  status: NativeModuleStatus;
+  performance: {
+    httpParser: ReturnType<typeof HttpParser.getPerformanceMetrics>;
+    radixRouter: ReturnType<typeof RadixRouter.getPerformanceMetrics>;
+    jsonProcessor: ReturnType<typeof JsonProcessor.getPerformanceMetrics>;
+    urlParser: ReturnType<typeof UrlParser.getPerformanceMetrics>;
+    schemaValidator: ReturnType<typeof SchemaValidator.getPerformanceMetrics>;
+    compression: ReturnType<typeof Compression.getPerformanceMetrics>;
+    websocket: ReturnType<typeof WebSocketServer.getPerformanceMetrics>;
+  };
+  nativeBindings: ReturnType<typeof import('../utils/native-bindings.js').getNativeBindingMetrics>;
+} {
+  return {
+    status: getNativeModuleStatus(),
+    performance: getAllPerformanceMetrics(),
+    nativeBindings: import('../utils/native-bindings.js')
+      .then(m => m.getNativeBindingMetrics())
+      .catch(() => ({ loadAttempts: 0, loadSuccesses: 0, loadTime: 0 })) as any
+  };
+}
+
 // Export native module status
-export const hasNativeSupport = !!loadNativeBinding();
+export const hasNativeSupport = Boolean(loadNativeBinding());
+
+/**
+ * Object Pool class that provides efficient reuse of objects and buffers
+ */
+export class ObjectPool implements NativeObjectPool {
+  private pool: any;
+  private useNative: boolean;
+  private logger = new Logger();
+
+  // Performance metrics
+  private static objectCreationCount = 0;
+  private static objectReuseCount = 0;
+  private static bufferCreationCount = 0;
+  private static bufferReuseCount = 0;
+
+  constructor(options?: ObjectPoolOptions) {
+    const nativeModule = loadNativeBinding();
+    this.useNative = Boolean(nativeModule?.ObjectPool && nativeOptions.enabled);
+
+    if (this.useNative) {
+      try {
+        // Merge options from constructor with global native options
+        const mergedOptions = {
+          ...nativeOptions.objectPoolOptions,
+          ...options
+        };
+
+        this.pool = new nativeModule.ObjectPool(mergedOptions);
+
+        if (nativeOptions.verbose) {
+          this.logger.debug('Native ObjectPool initialized');
+        }
+      } catch (err: any) {
+        if (nativeOptions.verbose) {
+          this.logger.warn(`Failed to create native ObjectPool: ${err.message}`);
+        }
+        this.useNative = false;
+      }
+    }
+
+    if (!this.useNative && nativeOptions.verbose) {
+      this.logger.warn('Native ObjectPool not available, falling back to direct object creation');
+    }
+  }
+
+  /**
+   * Create an object from the pool or create a new one if the pool is empty
+   */
+  createObject(): object {
+    if (this.useNative && this.pool) {
+      const obj = this.pool.createObject();
+      if (obj) {
+        ObjectPool.objectReuseCount++;
+        return obj;
+      }
+    }
+
+    // Fallback to creating a new object
+    ObjectPool.objectCreationCount++;
+    return {};
+  }
+
+  /**
+   * Release an object back to the pool
+   * @param obj The object to release
+   */
+  releaseObject(obj: object): void {
+    if (this.useNative && this.pool) {
+      this.pool.releaseObject(obj);
+    }
+  }
+
+  /**
+   * Get a headers object from the pool
+   */
+  getHeadersObject(): object {
+    if (this.useNative && this.pool) {
+      return this.pool.getHeadersObject();
+    }
+
+    // Fallback to creating a new headers object
+    return {};
+  }
+
+  /**
+   * Release a headers object back to the pool
+   * @param headers The headers object to release
+   */
+  releaseHeadersObject(headers: object): void {
+    if (this.useNative && this.pool) {
+      this.pool.releaseHeadersObject(headers);
+    }
+  }
+
+  /**
+   * Get a buffer from the pool
+   * @param size The minimum size of the buffer
+   */
+  getBuffer(size: number): Buffer {
+    if (this.useNative && this.pool) {
+      const buffer = this.pool.getBuffer(size);
+      if (buffer) {
+        ObjectPool.bufferReuseCount++;
+        return buffer;
+      }
+    }
+
+    // Fallback to creating a new buffer
+    ObjectPool.bufferCreationCount++;
+    return Buffer.alloc(size);
+  }
+
+  /**
+   * Release a buffer back to the pool
+   * @param buffer The buffer to release
+   */
+  releaseBuffer(buffer: Buffer): void {
+    if (this.useNative && this.pool) {
+      this.pool.releaseBuffer(buffer);
+    }
+  }
+
+  /**
+   * Reset the object pool
+   */
+  reset(): void {
+    if (this.useNative && this.pool) {
+      this.pool.reset();
+    }
+  }
+
+  /**
+   * Get information about the pool
+   */
+  getPoolInfo(): PoolInfo {
+    if (this.useNative && this.pool) {
+      return this.pool.getPoolInfo();
+    }
+
+    // Return empty info if not available
+    return {
+      enabled: false,
+      objects: { total: 0, inUse: 0, available: 0, maxSize: 0 },
+      buffers: { total: 0, inUse: 0, available: 0, maxSize: 0 },
+      headers: { total: 0, inUse: 0, available: 0, maxSize: 0 }
+    };
+  }
+
+  /**
+   * Get performance metrics for object pooling
+   */
+  static getPerformanceMetrics(): {
+    objectCreations: number;
+    objectReuses: number;
+    bufferCreations: number;
+    bufferReuses: number;
+  } {
+    return {
+      objectCreations: ObjectPool.objectCreationCount,
+      objectReuses: ObjectPool.objectReuseCount,
+      bufferCreations: ObjectPool.bufferCreationCount,
+      bufferReuses: ObjectPool.bufferReuseCount
+    };
+  }
+
+  /**
+   * Reset performance metrics
+   */
+  static resetPerformanceMetrics(): void {
+    ObjectPool.objectCreationCount = 0;
+    ObjectPool.objectReuseCount = 0;
+    ObjectPool.bufferCreationCount = 0;
+    ObjectPool.bufferReuseCount = 0;
+  }
+}

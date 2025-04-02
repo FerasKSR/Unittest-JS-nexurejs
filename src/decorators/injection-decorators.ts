@@ -105,12 +105,17 @@ export function Inject(token?: any): ParameterDecorator {
     }
 
     // Set the injection metadata
-    setInjectionMetadata({
-      params: [{
-        index: parameterIndex,
-        type: paramType
-      }]
-    }, propertyKey ? target.constructor : target);
+    setInjectionMetadata(
+      {
+        params: [
+          {
+            index: parameterIndex,
+            type: paramType
+          }
+        ]
+      },
+      propertyKey ? target.constructor : target
+    );
   };
 }
 

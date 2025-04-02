@@ -1,9 +1,10 @@
 /**
- * Request object pool to reduce garbage collection overhead
+ * Enhanced request and response object pool to reduce garbage collection overhead
  */
 
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
+import { ObjectPool } from '../native/index.js';
 
 /**
  * Request pool options
@@ -20,19 +21,148 @@ export interface RequestPoolOptions {
    * @default true
    */
   enabled?: boolean;
+
+  /**
+   * Whether to use native object pooling if available
+   * @default true
+   */
+  useNative?: boolean;
+
+  /**
+   * Whether to automatically preallocate objects at initialization
+   * @default false
+   */
+  preallocate?: boolean;
+
+  /**
+   * Number of objects to preallocate if preallocate is true
+   * @default 100
+   */
+  preallocateCount?: number;
+
+  /**
+   * Whether to warmup the pool by initializing objects
+   * @default true
+   */
+  warmup?: boolean;
 }
 
 /**
- * Request object pool
- *
- * This class maintains a pool of IncomingMessage objects to reduce
- * garbage collection overhead by reusing objects instead of creating
- * new ones for each request.
+ * Base class for object pools
  */
-export class RequestPool {
-  private pool: IncomingMessage[] = [];
-  private maxSize: number;
-  private enabled: boolean;
+abstract class BaseObjectPool<T> {
+  protected pool: T[] = [];
+  protected maxSize: number;
+  protected enabled: boolean;
+  protected objectPool: ObjectPool | null = null;
+  protected preallocated: boolean = false;
+
+  constructor(options: RequestPoolOptions = {}) {
+    this.maxSize = options.maxSize || 1000;
+    this.enabled = options.enabled !== false;
+
+    // Initialize native object pool if enabled
+    if (options.useNative !== false) {
+      try {
+        this.objectPool = new ObjectPool({
+          maxObjectPoolSize: this.maxSize,
+          enabled: this.enabled
+        });
+      } catch (error) {
+        Logger.warn('Failed to initialize native object pool:', error);
+        this.objectPool = null;
+      }
+    }
+
+    // Preallocate objects if requested
+    if (options.preallocate && !this.preallocated) {
+      const count = options.preallocateCount || 100;
+      this.preallocate(count);
+      this.preallocated = true;
+    }
+
+    // Warmup the pool by acquiring and releasing objects
+    if (options.warmup !== false) {
+      this.warmup();
+    }
+  }
+
+  /**
+   * Preallocate objects in the pool
+   * @param count Number of objects to preallocate
+   */
+  protected abstract preallocate(count: number): void;
+
+  /**
+   * Warmup the pool by acquiring and releasing objects
+   */
+  protected warmup(): void {
+    // Subclasses can implement this for specific warmup procedures
+  }
+
+  /**
+   * Clear the pool
+   */
+  clear(): void {
+    this.pool = [];
+
+    // Reset native object pool if available
+    if (this.objectPool) {
+      this.objectPool.reset();
+    }
+  }
+
+  /**
+   * Get the current size of the pool
+   */
+  size(): number {
+    return this.pool.length;
+  }
+
+  /**
+   * Get a buffer from the native pool if available
+   * @param size Buffer size
+   */
+  getBuffer(size: number): Buffer {
+    if (this.objectPool) {
+      return this.objectPool.getBuffer(size);
+    }
+    return Buffer.alloc(size);
+  }
+
+  /**
+   * Release a buffer back to the native pool
+   * @param buffer Buffer to release
+   */
+  releaseBuffer(buffer: Buffer): void {
+    if (this.objectPool) {
+      this.objectPool.releaseBuffer(buffer);
+    }
+  }
+
+  /**
+   * Get the native object pool instance
+   */
+  getNativeObjectPool(): ObjectPool | null {
+    return this.objectPool;
+  }
+
+  /**
+   * Share the object pool with another pool
+   * @param pool Another pool to share with
+   */
+  shareObjectPoolWith(pool: BaseObjectPool<any>): void {
+    const otherNativePool = pool.getNativeObjectPool();
+    if (otherNativePool && !this.objectPool) {
+      this.objectPool = otherNativePool;
+    }
+  }
+}
+
+/**
+ * Enhanced Request object pool
+ */
+export class RequestPool extends BaseObjectPool<IncomingMessage> {
   private socket: Socket;
 
   /**
@@ -40,9 +170,47 @@ export class RequestPool {
    * @param options Request pool options
    */
   constructor(options: RequestPoolOptions = {}) {
-    this.maxSize = options.maxSize || 1000;
-    this.enabled = options.enabled !== false;
+    super(options);
     this.socket = new Socket();
+  }
+
+  /**
+   * Preallocate IncomingMessage objects
+   * @param count Number of objects to preallocate
+   */
+  protected override preallocate(count: number): void {
+    if (!this.enabled) return;
+
+    // Create objects up to the count and add them to the pool
+    const currentCount = this.pool.length;
+    const neededCount = Math.min(count, this.maxSize) - currentCount;
+
+    if (neededCount <= 0) return;
+
+    for (let i = 0; i < neededCount; i++) {
+      const req = new IncomingMessage(this.socket);
+      this.pool.push(req);
+    }
+  }
+
+  /**
+   * Warmup the pool by acquiring and releasing objects
+   */
+  protected override warmup(): void {
+    if (!this.enabled) return;
+
+    // Acquire and release a few objects to warmup the pool
+    const warmupCount = Math.min(5, this.pool.length);
+    const acquiredObjects: IncomingMessage[] = [];
+
+    for (let i = 0; i < warmupCount; i++) {
+      acquiredObjects.push(this.acquire());
+    }
+
+    // Release them back to the pool
+    for (const obj of acquiredObjects) {
+      this.release(obj);
+    }
   }
 
   /**
@@ -84,41 +252,36 @@ export class RequestPool {
     // Add back to pool
     this.pool.push(req);
   }
-
-  /**
-   * Clear the pool
-   */
-  clear(): void {
-    this.pool = [];
-  }
-
-  /**
-   * Get the current size of the pool
-   */
-  size(): number {
-    return this.pool.length;
-  }
 }
 
 /**
- * Response object pool
- *
- * This class maintains a pool of ServerResponse objects to reduce
- * garbage collection overhead by reusing objects instead of creating
- * new ones for each response.
+ * Enhanced Response object pool
  */
-export class ResponsePool {
-  private pool: ServerResponse[] = [];
-  private maxSize: number;
-  private enabled: boolean;
-
+export class ResponsePool extends BaseObjectPool<ServerResponse> {
   /**
    * Create a new response pool
    * @param options Response pool options
    */
   constructor(options: RequestPoolOptions = {}) {
-    this.maxSize = options.maxSize || 1000;
-    this.enabled = options.enabled !== false;
+    super(options);
+  }
+
+  /**
+   * Preallocate ServerResponse objects
+   * @param count Number of objects to preallocate
+   */
+  protected override preallocate(_count: number): void {
+    // We can't preallocate ServerResponse objects directly
+    // since they require an IncomingMessage for construction
+    // This is handled dynamically in acquire()
+  }
+
+  /**
+   * Warmup the pool by acquiring and releasing objects
+   */
+  protected override warmup(): void {
+    // ServerResponse objects require an IncomingMessage
+    // so we can't easily warmup this pool
   }
 
   /**
@@ -131,9 +294,13 @@ export class ResponsePool {
     }
 
     const res = this.pool.pop()!;
-
-    // Update the request reference
-    (res as any)._req = req;
+    // Update the response with the new request reference
+    Object.defineProperty(res, 'req', {
+      value: req,
+      writable: true,
+      enumerable: true,
+      configurable: true
+    });
 
     return res;
   }
@@ -151,33 +318,67 @@ export class ResponsePool {
     res.statusCode = 200;
     res.statusMessage = '';
 
-    // Clear headers
-    for (const name of res.getHeaderNames()) {
-      res.removeHeader(name);
+    // Reset headers using a more efficient approach
+    if (typeof (res as any)._headers === 'object') {
+      (res as any)._headers = {};
+      (res as any)._headerNames = {};
     }
 
-    // Reset internal properties
-    (res as any)._sent100 = false;
-    (res as any)._expect_continue = false;
-    (res as any)._contentLength = null;
-    (res as any)._hasBody = true;
-    (res as any)._trailer = '';
+    // Reset other properties
+    (res as any).finished = false;
+    (res as any).writableEnded = false;
+    (res as any).writableFinished = false;
+
+    // Clear write buffers if possible
+    if ((res as any)._writableState) {
+      (res as any)._writableState.ended = false;
+      if (
+        (res as any)._writableState.buffer &&
+        typeof (res as any)._writableState.buffer.clear === 'function'
+      ) {
+        (res as any)._writableState.buffer.clear();
+      }
+      (res as any)._writableState.length = 0;
+    }
 
     // Add back to pool
     this.pool.push(res);
   }
 
   /**
-   * Clear the pool
+   * Get a headers object from the native pool
    */
-  clear(): void {
-    this.pool = [];
+  getHeadersObject(): Record<string, string> {
+    if (this.objectPool) {
+      return this.objectPool.getHeadersObject() as Record<string, string>;
+    }
+    // Use a regular object with explicit type annotation
+    return {} as Record<string, string>;
   }
 
   /**
-   * Get the current size of the pool
+   * Release a headers object to the native pool
+   * @param headers Headers object to release
    */
-  size(): number {
-    return this.pool.length;
+  releaseHeadersObject(headers: Record<string, string>): void {
+    if (this.objectPool) {
+      this.objectPool.releaseHeadersObject(headers);
+    }
   }
+}
+
+/**
+ * Create a paired request and response pool with shared native resources
+ */
+export function createPoolPair(options: RequestPoolOptions = {}): {
+  requestPool: RequestPool;
+  responsePool: ResponsePool;
+} {
+  const requestPool = new RequestPool(options);
+  const responsePool = new ResponsePool(options);
+
+  // Share the native object pool between the two pools
+  responsePool.shareObjectPoolWith(requestPool);
+
+  return { requestPool, responsePool };
 }

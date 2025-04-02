@@ -1,10 +1,10 @@
-/** @type {import('jest').Config} */
 export default {
-  preset: 'ts-jest/presets/default-esm',
+  preset: 'ts-jest',
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^@/(.*)$': '<rootDir>/src/$1',
   },
   transform: {
     '^.+\\.tsx?$': [
@@ -14,18 +14,23 @@ export default {
       },
     ],
   },
-  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
-  testMatch: ['**/tests/**/*.test.ts', '**/test/**/*.test.ts'],
-  setupFiles: ['<rootDir>/tests/setup.ts'],
-  verbose: true,
+  testMatch: [
+    '**/test/unit/**/*.test.ts',
+    '**/test/integration/**/*.test.ts',
+    '**/test/compatibility/**/*.test.ts'
+  ],
   collectCoverage: true,
-  coverageDirectory: 'coverage',
-  coverageReporters: ['text', 'lcov'],
-  coveragePathIgnorePatterns: [
-    '/node_modules/',
-    '/dist/',
-    '/coverage/',
-    '/test/',
-    '/tests/'
-  ]
+  coverageDirectory: './coverage',
+  coverageReporters: ['text', 'lcov', 'json'],
+  setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
+  coverageProvider: 'babel',
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.d.ts',
+    '!src/types/**/*',
+    '!src/**/*.test.ts'
+  ],
+  testEnvironmentOptions: {
+    url: 'http://localhost'
+  }
 };

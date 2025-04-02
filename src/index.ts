@@ -1,147 +1,224 @@
-// Core
-export { Nexure, type NexureOptions } from './core/nexure.js';
-export { HttpsServerAdapter, type HttpsServerOptions } from './core/https-server.js';
+/**
+ * Nexure.js API
+ *
+ * Main exports for the Nexure.js framework
+ */
 
-// HTTP
-export { HttpMethod } from './http/http-method.js';
-export { HttpException } from './http/http-exception.js';
-export { parseBody } from './http/body-parser.js';
-export { Http2ServerAdapter, type Http2ServerOptions } from './http/http2-server.js';
+// Application startup message
+console.log('🚀 Nexure.js started - High-performance Node.js framework');
 
-// Middleware
-export {
-  type MiddlewareHandler,
-  Middleware,
-  createMiddleware,
-  composeMiddleware
-} from './middleware/middleware.js';
-
-// Routing
+// Core exports
+export { Nexure } from './core/nexure.js';
 export { Router } from './routing/router.js';
+export { Container, Scope } from './di/container.js';
 
-// Decorators
-export {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Patch,
-  Head,
-  Options,
-  All,
-  Use,
-  Status,
-  type RouteMetadata
-} from './decorators/route-decorators.js';
-
-export {
-  Injectable,
-  Inject,
-  InjectProperty,
-  type InjectionMetadata
-} from './decorators/injection-decorators.js';
-
-// Dependency Injection
-export {
-  Container,
-  Scope,
-  type ProviderOptions
-} from './di/container.js';
-
-// Utils
-export {
-  Logger,
-  LogLevel,
-  type LoggerOptions
-} from './utils/logger.js';
-
-export {
-  BindingType,
-  tryLoadNativeBinding,
-  hasNativeBinding,
-  getNativeBinding,
-  fastJsonParse,
-  fastJsonStringify,
-  initNativeBindings
-} from './utils/native-bindings.js';
-
-export {
-  PerformanceMonitor,
-  type PerformanceMetric,
-  type PerformanceMonitorOptions
-} from './utils/performance-monitor.js';
-
-export {
-  Env,
-  type EnvOptions
-} from './utils/env.js';
-
-// Cache
-export {
-  CacheManager,
-  MemoryCacheStore,
-  type CacheStore,
-  type CacheOptions
-} from './cache/cache-manager.js';
-
-export {
-  createCacheMiddleware,
-  createCacheControlMiddleware,
-  type HttpCacheOptions
-} from './cache/cache-middleware.js';
-
-// Concurrency
-export {
-  WorkerPool,
-  type WorkerTask,
-  type WorkerResult,
-  type WorkerPoolOptions
-} from './concurrency/worker-pool.js';
-
-export {
-  ClusterManager,
-  type ClusterManagerOptions,
-  type ClusterManagerEvents
-} from './concurrency/cluster-manager.js';
+// HTTP utilities
+export * from './http/constants.js';
+export * from './http/body-parser.js';
+export * from './http/http-utils.js';
+export * from './http/http-method.js';
+export * from './http/http-exception.js';
 
 // Validation
-export {
-  Validator,
-  type ValidationRule,
-  type ValidationError,
-  type ValidationResult,
-  type ValidationSchema,
-  type ValidatorFunction,
-  type SanitizerFunction
-} from './validation/validator.js';
+export * from './validation/index.js';
 
-export {
-  validateBody,
-  validateQuery,
-  validateParams,
-  type ValidationOptions
-} from './validation/validation-middleware.js';
+// Serialization
+export * from './serialization/index.js';
 
-// Security
+// Core utilities
+export { logger, LogLevel } from './utils/logger.js';
+export { crypto } from './utils/crypto-service.js';
+export { globalPool as bufferPool } from './utils/buffer-pool.js';
 export {
-  createSecurityHeadersMiddleware,
-  type SecurityHeadersOptions
-} from './security/security-headers.js';
+  readFileContents,
+  readTextFile,
+  writeFileContents,
+  writeTextFile,
+  ensureDirectory,
+  getFileMetadata,
+  fileExists,
+  copyFile,
+  streamFile,
+  getTempDirectory,
+  getTempFilePath,
+  saveStreamToFile,
+  deleteFile,
+  getMimeType,
+  type FileOptions,
+  type FileMetadata
+} from './utils/file-utils.js';
 
+// Error handling
 export {
-  CsrfTokenGenerator,
-  createCsrfMiddleware,
-  createCsrfTokenMiddleware,
-  type CsrfOptions
-} from './security/csrf.js';
+  HttpError,
+  BadRequestError,
+  UnauthorizedError,
+  ForbiddenError,
+  NotFoundError,
+  MethodNotAllowedError,
+  NotAcceptableError,
+  ConflictError,
+  PayloadTooLargeError,
+  UnsupportedMediaTypeError,
+  UnprocessableEntityError,
+  TooManyRequestsError,
+  InternalServerError,
+  NotImplementedError,
+  ServiceUnavailableError,
+  createHttpError,
+  isHttpError,
+  toHttpError
+} from './errors/http-errors.js';
 
+// Middleware
+export * from './middleware/middleware.js';
 export {
-  createRateLimiterMiddleware,
-  createRedisStore,
-  type RateLimiterOptions,
-  type RateLimiterStore
-} from './security/rate-limiter.js';
+  createStreamMiddleware,
+  stream,
+  streamToBuffer,
+  BufferCollector,
+  type StreamOptions,
+  type StreamResult
+} from './middleware/stream-middleware.js';
+export {
+  errorHandler,
+  developmentErrorHandler,
+  createErrorHandler
+} from './middleware/error-handler.js';
 
-// Version
-export const VERSION = '0.1.0';
+// Decorators
+export * from './decorators/route-decorators.js';
+export * from './decorators/injection-decorators.js';
+
+/**
+ * NexureJS Main Module
+ *
+ * This module loads either the native C++ bindings or falls back to pure JavaScript
+ * implementations if there are issues with the native modules.
+ */
+
+import * as safeImpl from './safe-wrapper.js.js';
+import { flags, displayHelp, displayVersion } from './cli-flags.js';
+
+// Process flags
+if (flags.help) {
+  displayHelp();
+  process.exit(0);
+}
+
+// First try to load the native modules
+let nativeImpl: typeof safeImpl | null = null;
+let usingNative = false;
+
+// Skip native loading if forceJs is true
+if (!flags.forceJs) {
+  try {
+    // Attempt to load native modules
+    nativeImpl = require('./native');
+
+    // Verify that the native module is working by calling a simple function
+    if (nativeImpl && !nativeImpl.isAvailable()) {
+      throw new Error('Native module reports it is not available');
+    }
+
+    usingNative = true;
+    if (flags.verbose) {
+      console.log(`Using native implementation (v${nativeImpl?.version})`);
+    }
+  } catch (err) {
+    if (flags.verbose) {
+      console.warn(`Failed to load native modules, falling back to JavaScript implementation: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    nativeImpl = null;
+    usingNative = false;
+  }
+} else if (flags.verbose) {
+  console.log('Forced JavaScript implementation via --force-js flag');
+}
+
+// Process version flag
+if (flags.version) {
+  displayVersion(usingNative && nativeImpl ? nativeImpl.version : safeImpl.version);
+  process.exit(0);
+}
+
+// Export all the modules, using native if available or falling back to JS
+export const HttpParser = usingNative ? nativeImpl!.HttpParser : safeImpl.HttpParser;
+export const ObjectPool = usingNative ? nativeImpl!.ObjectPool : safeImpl.ObjectPool;
+export const RadixRouter = usingNative ? nativeImpl!.RadixRouter : safeImpl.RadixRouter;
+export const JsonProcessor = usingNative ? nativeImpl!.JsonProcessor : safeImpl.JsonProcessor;
+export const WebSocketServer = usingNative ? nativeImpl!.WebSocketServer : safeImpl.WebSocketServer;
+
+// URL parsing functions
+export const parseUrl = usingNative ? nativeImpl!.parseUrl : safeImpl.parseUrl;
+export const parseQueryString = usingNative ? nativeImpl!.parseQueryString : safeImpl.parseQueryString;
+export const formatUrl = usingNative ? nativeImpl!.formatUrl : safeImpl.formatUrl;
+export const formatQueryString = usingNative ? nativeImpl!.formatQueryString : safeImpl.formatQueryString;
+
+// Schema validation functions
+export const validate = usingNative ? nativeImpl!.validate : safeImpl.validate;
+export const validatePartial = usingNative ? nativeImpl!.validatePartial : safeImpl.validatePartial;
+export const compileSchema = usingNative ? nativeImpl!.compileSchema : safeImpl.compileSchema;
+export const clearCache = usingNative ? nativeImpl!.clearCache : safeImpl.clearCache;
+export const getCacheStats = usingNative ? nativeImpl!.getCacheStats : safeImpl.getCacheStats;
+
+// Compression functions
+export const compress = usingNative ? nativeImpl!.compress : safeImpl.compress;
+export const decompress = usingNative ? nativeImpl!.decompress : safeImpl.decompress;
+
+// Module metadata
+export const version = usingNative ? nativeImpl!.version : safeImpl.version;
+export const isNative = usingNative;
+
+// Function to check if native modules are available
+export function isNativeAvailable(): boolean {
+  return usingNative;
+}
+
+// Function to force JavaScript fallback (for testing)
+export function forceJavaScriptFallback(): void {
+  if (usingNative) {
+    console.log('Forcing JavaScript fallback (native modules will be ignored)');
+    usingNative = false;
+
+    // Re-export all modules using JavaScript implementation
+    module.exports = {
+      ...safeImpl,
+      isNative: false,
+      isNativeAvailable: () => false,
+      forceJavaScriptFallback: () => {/* no-op */},
+      forceNativeImplementation: forceNativeImplementation
+    };
+  }
+}
+
+// Function to force native implementation (if available)
+export function forceNativeImplementation(): boolean {
+  if (!usingNative && nativeImpl) {
+    try {
+      // Verify that the native module is working
+      if (!nativeImpl.isAvailable()) {
+        return false;
+      }
+
+      console.log(`Switching to native implementation (v${nativeImpl.version})`);
+      usingNative = true;
+
+      // Re-export all modules using native implementation
+      module.exports = {
+        ...nativeImpl,
+        isNative: true,
+        isNativeAvailable: () => true,
+        forceJavaScriptFallback: forceJavaScriptFallback,
+        forceNativeImplementation: () => {/* no-op */}
+      };
+
+      return true;
+    } catch (err) {
+      console.warn(`Failed to force native implementation: ${err instanceof Error ? err.message : String(err)}`);
+      return false;
+    }
+  }
+
+  return usingNative;
+}

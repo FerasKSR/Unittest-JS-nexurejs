@@ -1,59 +1,44 @@
 {
   "compilerOptions": {
+    "strictNullChecks": true,
     "target": "ES2022",
-    "module": "ESNext",
-    "moduleResolution": "node",
-    "lib": ["ES2022"],
-    "outDir": "dist",
-    "rootDir": ".",
-    "strict": true,
-    "esModuleInterop": true,
+    "useDefineForClassFields": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "NodeNext",
     "skipLibCheck": true,
-    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "NodeNext",
+    "allowImportingTsExtensions": false,
+    "esModuleInterop": true,
     "resolveJsonModule": true,
-    "allowJs": true,
-    "checkJs": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    "isolatedModules": true,
+    "noEmit": false,
+    "jsx": "react-jsx",
+    "strict": false,
     "noImplicitAny": false,
-    "strictNullChecks": false,
-    "strictFunctionTypes": true,
-    "strictBindCallApply": true,
-    "strictPropertyInitialization": false,
-    "noImplicitThis": true,
-    "useUnknownInCatchVariables": true,
-    "alwaysStrict": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
-    "exactOptionalPropertyTypes": false,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "noUncheckedIndexedAccess": true,
-    "noImplicitOverride": true,
-    "allowUnusedLabels": false,
-    "allowUnreachableCode": false,
-    "noPropertyAccessFromIndexSignature": false,
-    "experimentalDecorators": true,
-    "emitDecoratorMetadata": true,
-    "downlevelIteration": true,
-    "types": ["node", "jest"]
+    "noFallthroughCasesInSwitch": false,
+    "allowSyntheticDefaultImports": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "baseUrl": ".",
+    "allowJs": true,
+    "checkJs": false,
+    "noEmitOnError": false,
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ],
+    "outDir": "./dist",
+    "sourceMap": false
   },
-  "include": [
-    "src/**/*",
-    "*.ts",
-    "examples/simple-server.ts",
-    "benchmarks/**/*"
-  ],
-  "exclude": [
-    "node_modules",
-    "dist",
-    "lib",
-    "examples",
-    "tests"
-  ],
   "ts-node": {
     "esm": true,
     "experimentalSpecifierResolution": "node"
-  }
+  },
+  "include": ["src", "src/types/*.d.ts", "benchmarks/benchmarks.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
 }

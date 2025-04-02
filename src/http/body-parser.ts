@@ -1,110 +1,146 @@
-import { IncomingMessage } from 'node:http';
-import { HttpException } from './http-exception.js';
-import { Readable } from 'node:stream';
-import { URLSearchParams } from 'node:url';
+import { Buffer } from 'node:buffer';
+import type { IncomingMessage } from 'node:http';
+import { MultipartParser } from '../utils/multipart-parser.js';
+import { extractBoundary } from './http-utils.js';
 
-/**
- * Parse the request body
- * @param req The incoming request
- */
-export async function parseBody(req: IncomingMessage): Promise<any> {
-  // Skip body parsing for methods that don't have a body
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method || '')) {
-    return {};
-  }
-
-  // Check content type
-  const contentType = req.headers['content-type'] || '';
-
-  if (contentType.includes('application/json')) {
-    return parseJson(req);
-  } else if (contentType.includes('application/x-www-form-urlencoded')) {
-    return parseUrlEncoded(req);
-  } else if (contentType.includes('multipart/form-data')) {
-    return parseMultipart(req);
-  } else if (contentType.includes('text/plain')) {
-    return parseText(req);
-  }
-
-  // Default to raw body
-  return parseRaw(req);
+export interface BodyParserOptions {
+  maxBodySize?: number;
+  maxFiles?: number;
+  maxFileSize?: number;
+  contentTypes?: string[];
+  parseRawBuffers?: boolean;
+  tempDir?: string;
+  keepFiles?: boolean;
+  maxBufferSize?: number;
+  alwaysStream?: boolean;
+  streamChunkSize?: number;
+  exposeStream?: boolean;
 }
 
+const DEFAULT_OPTIONS: Required<BodyParserOptions> = {
+  maxBodySize: 1024 * 1024, // 1MB
+  maxFiles: 10,
+  maxFileSize: 5 * 1024 * 1024, // 5MB
+  contentTypes: ['application/json', 'application/x-www-form-urlencoded', 'multipart/form-data'],
+  parseRawBuffers: false,
+  tempDir: '/tmp',
+  keepFiles: false,
+  maxBufferSize: 64 * 1024, // 64KB
+  alwaysStream: false,
+  streamChunkSize: 16 * 1024, // 16KB
+  exposeStream: false
+};
+
 /**
- * Parse JSON request body
- * @param req The incoming request
+ * Parse raw buffer based on content type
  */
-async function parseJson(req: IncomingMessage): Promise<any> {
-  try {
-    const raw = await parseRaw(req);
-    return JSON.parse(raw.toString());
-  } catch (error) {
-    throw HttpException.badRequest('Invalid JSON body');
+export async function parseRawBuffer(
+  buffer: Buffer,
+  contentType: string | undefined,
+  options: Partial<BodyParserOptions> = {}
+): Promise<any> {
+  const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
+
+  if (!contentType || !mergedOptions.contentTypes.some(type => contentType.startsWith(type))) {
+    throw new Error(`Unsupported content type: ${contentType}`);
   }
-}
 
-/**
- * Parse URL-encoded request body
- * @param req The incoming request
- */
-async function parseUrlEncoded(req: IncomingMessage): Promise<Record<string, string>> {
-  try {
-    const raw = await parseRaw(req);
-    const text = raw.toString();
-    const params = new URLSearchParams(text);
-    const result: Record<string, string> = {};
+  if (buffer.length > mergedOptions.maxBodySize) {
+    throw new Error(`Request body too large: ${buffer.length} bytes`);
+  }
 
-    for (const [key, value] of params.entries()) {
-      result[key] = value;
+  if (contentType.startsWith('application/json')) {
+    return parseJson(buffer);
+  }
+
+  if (contentType.startsWith('application/x-www-form-urlencoded')) {
+    return parseUrlEncoded(buffer);
+  }
+
+  if (contentType.startsWith('multipart/form-data')) {
+    const boundary = getBoundary(contentType);
+    if (!boundary) {
+      throw new Error('Missing boundary in multipart/form-data');
     }
+    const parser = new MultipartParser(boundary, mergedOptions);
+    return parser.parse(buffer);
+  }
 
-    return result;
-  } catch (error) {
-    throw HttpException.badRequest('Invalid URL-encoded body');
+  return buffer;
+}
+
+/**
+ * Parse request body
+ */
+export async function parseBody(
+  req: IncomingMessage,
+  options: Partial<BodyParserOptions> = {}
+): Promise<any> {
+  const contentType = req.headers['content-type'];
+  const buffer = await readBody(req, options);
+  return parseRawBuffer(buffer, contentType, options);
+}
+
+/**
+ * Parse JSON buffer
+ */
+function parseJson(buffer: Buffer): any {
+  try {
+    return JSON.parse(buffer.toString('utf8'));
+  } catch (_error) {
+    return null;
   }
 }
 
 /**
- * Parse multipart form data request body
- * @param req The incoming request
+ * Parse URL encoded buffer
  */
-async function parseMultipart(req: IncomingMessage): Promise<any> {
-  // This is a simplified implementation
-  // In a real-world scenario, you would use a library like formidable or busboy
-  // or implement a more robust multipart parser
+function parseUrlEncoded(buffer: Buffer): Record<string, string> {
+  const text = buffer.toString('utf8');
+  const result: Record<string, string> = {};
 
-  // For now, just return the raw body
-  const raw = await parseRaw(req);
-  return { _raw: raw };
+  for (const pair of text.split('&')) {
+    const [key, value] = pair.split('=').map(decodeURIComponent);
+    if (key) {
+      result[key] = value || '';
+    }
+  }
+
+  return result;
 }
 
 /**
- * Parse text request body
- * @param req The incoming request
+ * Get boundary from content type
  */
-async function parseText(req: IncomingMessage): Promise<string> {
-  const raw = await parseRaw(req);
-  return raw.toString();
+function getBoundary(contentType: string): string | undefined {
+  return extractBoundary(contentType) || undefined;
 }
 
 /**
- * Parse raw request body
- * @param req The incoming request
+ * Read request body into buffer
  */
-async function parseRaw(req: IncomingMessage): Promise<Buffer> {
+async function readBody(
+  req: IncomingMessage,
+  options: Partial<BodyParserOptions> = {}
+): Promise<Buffer> {
+  const mergedOptions = { ...DEFAULT_OPTIONS, ...options };
+  const chunks: Buffer[] = [];
+  let size = 0;
+
   return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-
-    req.on('data', (chunk) => {
-      chunks.push(Buffer.from(chunk));
+    req.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size > mergedOptions.maxBodySize) {
+        reject(new Error(`Request body too large: ${size} bytes`));
+        return;
+      }
+      chunks.push(chunk);
     });
 
     req.on('end', () => {
       resolve(Buffer.concat(chunks));
     });
 
-    req.on('error', (_err) => {
-      reject(HttpException.badRequest('Error parsing request body'));
-    });
+    req.on('error', reject);
   });
 }

@@ -4,13 +4,11 @@
  * This module provides an adapter for HTTP/2 servers.
  */
 
-import * as http2 from 'node:http2';
 import { IncomingMessage, ServerResponse } from 'node:http';
 import { Socket } from 'node:net';
-import { Http2SecureServer, constants } from 'node:http2';
+import { Http2SecureServer, constants, createSecureServer } from 'node:http2';
 import { Router } from '../routing/router.js';
 import { MiddlewareHandler } from '../middleware/middleware.js';
-import { Logger } from '../utils/logger.js';
 
 /**
  * HTTP/2 Server Options
@@ -161,7 +159,7 @@ export class Http2ServerAdapter {
     this.router = router;
 
     // Create HTTP/2 server
-    this.server = http2.createSecureServer({
+    this.server = createSecureServer({
       key: options.key,
       cert: options.cert,
       allowHTTP1: options.allowHttp1 !== false,
@@ -216,7 +214,7 @@ export class Http2ServerAdapter {
 
       const next = async (): Promise<void> => {
         if (middlewareIndex < this.middlewares.length) {
-          const middleware = this.middlewares[middlewareIndex++];
+          const middleware = this.middlewares[middlewareIndex++]!;
           await middleware(req, res, next);
         } else {
           // Process the route after all middleware has run
@@ -243,7 +241,7 @@ export class Http2ServerAdapter {
    */
   close(): Promise<void> {
     return new Promise((resolve, reject) => {
-      this.server.close((err) => {
+      this.server.close(err => {
         if (err) {
           reject(err);
         } else {

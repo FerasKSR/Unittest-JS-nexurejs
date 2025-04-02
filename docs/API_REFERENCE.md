@@ -3,15 +3,22 @@
 ## Table of Contents
 
 - [Nexure Class](#nexure-class)
-- [Controllers](#controllers)
 - [Routing](#routing)
+- [HTTP Methods](#http-methods)
 - [Middleware](#middleware)
-- [Dependency Injection](#dependency-injection)
+- [Request Handling](#request-handling)
+- [Response Methods](#response-methods)
+- [Error Handling](#error-handling)
 - [WebSockets](#websockets)
 - [Native Modules](#native-modules)
+- [Streaming](#streaming)
+- [Validation](#validation)
+- [File Operations](#file-operations)
 - [Utility Functions](#utility-functions)
 
 ## Nexure Class
+
+The main application class that handles routing, middleware, and server operations.
 
 ### Constructor
 
@@ -52,6 +59,11 @@ export interface NexureOptions {
      * @default true
      */
     enabled?: boolean;
+
+    /**
+     * Advanced WebSocket configuration
+     */
+    config?: WebSocketServerOptions;
   };
 
   /**
@@ -64,6 +76,12 @@ export interface NexureOptions {
      * @default true
      */
     nativeModules?: boolean;
+
+    /**
+     * Force using native modules even when they might not be fully compatible
+     * @default false
+     */
+    forceNativeModules?: boolean;
 
     /**
      * Native module configuration
@@ -80,6 +98,12 @@ export interface NexureOptions {
        * @default 1000
        */
       maxCacheSize?: number;
+
+      /**
+       * Preload all available native modules on startup
+       * @default true
+       */
+      preloadModules?: boolean;
     };
 
     /**
@@ -94,17 +118,75 @@ export interface NexureOptions {
      */
     maxMemoryMB?: number;
   };
+
+  /**
+   * Body parser options
+   */
+  bodyParser?: {
+    /**
+     * Enable streaming body parsing
+     * @default false
+     */
+    streaming?: boolean;
+
+    /**
+     * Stream options for body parsing
+     */
+    streamOptions?: {
+      /**
+       * High water mark for streams (chunk size)
+       * @default 64 * 1024 (64KB)
+       */
+      highWaterMark?: number;
+
+      /**
+       * Maximum size for request body
+       * @default 10 * 1024 * 1024 (10MB)
+       */
+      maxSize?: number;
+    };
+  };
+
+  /**
+   * Logger configuration
+   */
+  logger?: {
+    /**
+     * Log level
+     * @default 'info'
+     */
+    level?: 'debug' | 'info' | 'warn' | 'error';
+
+    /**
+     * Pretty print logs
+     * @default false
+     */
+    prettyPrint?: boolean;
+  };
 }
 ```
 
 ### Methods
 
-#### `register(target: any): this`
+#### `route(options: RouteOptions): this`
 
-Registers a controller or provider with the application.
+Registers a route with the application.
 
 ```typescript
-app.register(UserController);
+interface RouteOptions {
+  path: string;
+  method: HttpMethod;
+  handler: (req: IncomingMessage, res: ServerResponse) => Promise<any> | any;
+  middleware?: MiddlewareHandler[];
+}
+
+app.route({
+  path: '/users',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    res.status(200).json({ users: [] });
+  }
+});
 ```
 
 #### `use(middleware: MiddlewareHandler): this`
@@ -112,7 +194,10 @@ app.register(UserController);
 Adds a middleware to the application.
 
 ```typescript
-app.use(new LoggerMiddleware());
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
 ```
 
 #### `listen(port: number, callback?: () => void): Server`
@@ -125,14 +210,14 @@ app.listen(3000, () => {
 });
 ```
 
-#### `getWebSocketServer(): NexureWebSocketServer | undefined`
+#### `getWebSocketServer(): WebSocketServer | undefined`
 
 Returns the WebSocket server instance if WebSockets are enabled, or `undefined` otherwise.
 
 ```typescript
 const wsServer = app.getWebSocketServer();
 if (wsServer) {
-  wsServer.broadcast({ type: 'message', data: 'Hello' });
+  wsServer.broadcast({ message: 'Hello' });
 }
 ```
 
@@ -148,616 +233,491 @@ process.on('SIGINT', () => {
 });
 ```
 
-## Controllers
-
-### Controller Decorator
-
-```typescript
-@Controller(prefix?: string)
-```
-
-Marks a class as a controller with an optional route prefix.
-
-```typescript
-@Controller('/users')
-class UserController {
-  // ...
-}
-```
-
-### Route Decorators
-
-#### `@Get(path?: string)`
-
-Marks a method as a handler for GET requests.
-
-```typescript
-@Get('/profile')
-getProfile() {
-  // ...
-}
-```
-
-#### `@Post(path?: string)`
-
-Marks a method as a handler for POST requests.
-
-```typescript
-@Post()
-createUser(@Body() userData: any) {
-  // ...
-}
-```
-
-#### `@Put(path?: string)`
-
-Marks a method as a handler for PUT requests.
-
-```typescript
-@Put('/:id')
-updateUser(@Param('id') id: string, @Body() userData: any) {
-  // ...
-}
-```
-
-#### `@Patch(path?: string)`
-
-Marks a method as a handler for PATCH requests.
-
-```typescript
-@Patch('/:id')
-partialUpdateUser(@Param('id') id: string, @Body() userData: any) {
-  // ...
-}
-```
-
-#### `@Delete(path?: string)`
-
-Marks a method as a handler for DELETE requests.
-
-```typescript
-@Delete('/:id')
-deleteUser(@Param('id') id: string) {
-  // ...
-}
-```
-
-#### `@Head(path?: string)`
-
-Marks a method as a handler for HEAD requests.
-
-```typescript
-@Head()
-checkUser() {
-  // ...
-}
-```
-
-#### `@Options(path?: string)`
-
-Marks a method as a handler for OPTIONS requests.
-
-```typescript
-@Options()
-getUserOptions() {
-  // ...
-}
-```
-
-#### `@All(path?: string)`
-
-Marks a method as a handler for all HTTP methods.
-
-```typescript
-@All('/any')
-handleAny() {
-  // ...
-}
-```
-
-### Parameter Decorators
-
-#### `@Param(name?: string)`
-
-Extracts a route parameter.
-
-```typescript
-@Get('/:id')
-getUserById(@Param('id') id: string) {
-  // ...
-}
-```
-
-#### `@Query(name?: string)`
-
-Extracts a query parameter.
-
-```typescript
-@Get()
-searchUsers(@Query('name') name: string) {
-  // ...
-}
-```
-
-#### `@Body()`
-
-Extracts the request body.
-
-```typescript
-@Post()
-createUser(@Body() userData: any) {
-  // ...
-}
-```
-
-#### `@Header(name: string)`
-
-Extracts a request header.
-
-```typescript
-@Get()
-getWithAuth(@Header('authorization') auth: string) {
-  // ...
-}
-```
-
-#### `@Req()`
-
-Provides access to the request object.
-
-```typescript
-@Get()
-getWithRequest(@Req() req: any) {
-  // ...
-}
-```
-
-#### `@Res()`
-
-Provides access to the response object.
-
-```typescript
-@Get()
-getWithResponse(@Res() res: any) {
-  // ...
-}
-```
-
 ## Routing
 
-### Router Class
+### HTTP Methods
+
+The framework supports all standard HTTP methods through the `HttpMethod` enum:
 
 ```typescript
-class Router {
-  constructor(prefix?: string);
-
-  add(method: HttpMethod, path: string, handler: RouteHandler): this;
-  find(method: HttpMethod, path: string): RouteMatch;
-
-  get(path: string, handler: RouteHandler): this;
-  post(path: string, handler: RouteHandler): this;
-  put(path: string, handler: RouteHandler): this;
-  patch(path: string, handler: RouteHandler): this;
-  delete(path: string, handler: RouteHandler): this;
-  head(path: string, handler: RouteHandler): this;
-  options(path: string, handler: RouteHandler): this;
-  all(path: string, handler: RouteHandler): this;
+enum HttpMethod {
+  GET = 'GET',
+  POST = 'POST',
+  PUT = 'PUT',
+  DELETE = 'DELETE',
+  PATCH = 'PATCH',
+  HEAD = 'HEAD',
+  OPTIONS = 'OPTIONS',
+  ALL = '*'
 }
+```
+
+### Route Parameters
+
+Route parameters can be defined using the colon syntax in the path and are available in `req.params`:
+
+```typescript
+app.route({
+  path: '/users/:id',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    const userId = req.params.id;
+    res.status(200).json({ id: userId, name: `User ${userId}` });
+  }
+});
+```
+
+### Query Parameters
+
+Query parameters are automatically parsed and available in `req.query`:
+
+```typescript
+app.route({
+  path: '/search',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    const { term, limit } = req.query;
+    res.status(200).json({ results: [], term, limit });
+  }
+});
+```
+
+## Request Handling
+
+### Request Object
+
+The request object is an extended version of Node.js's `IncomingMessage` with these additional properties:
+
+- `params`: Object containing route parameters
+- `query`: Object containing query parameters
+- `body`: Parsed request body (available after parsing middleware)
+- `json()`: Method to parse JSON body
+- `text()`: Method to parse text body
+- `formData()`: Method to parse form data
+- `stream()`: Method to get request body as a stream
+
+### Body Parsing
+
+Parse request body using async methods:
+
+```typescript
+app.route({
+  path: '/users',
+  method: HttpMethod.POST,
+  handler: async (req, res) => {
+    try {
+      const body = await req.json();
+      res.status(201).json({ id: 1, ...body });
+    } catch (err) {
+      res.status(400).json({ error: 'Invalid JSON' });
+    }
+  }
+});
+```
+
+### Streaming
+
+Process request body as a stream:
+
+```typescript
+app.route({
+  path: '/upload',
+  method: HttpMethod.POST,
+  handler: async (req, res) => {
+    try {
+      const stream = req.stream();
+      // Process the stream
+      res.status(200).json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  }
+});
+```
+
+## Response Methods
+
+### JSON Response
+
+Send JSON response:
+
+```typescript
+res.status(200).json({ message: 'Success', data: {} });
+```
+
+### Text Response
+
+Send text response:
+
+```typescript
+res.status(200).text('Success');
+```
+
+### HTML Response
+
+Send HTML response:
+
+```typescript
+res.status(200).html('<h1>Hello World</h1>');
+```
+
+### Stream Response
+
+Respond with a stream:
+
+```typescript
+res.status(200)
+  .setHeader('Content-Type', 'application/octet-stream')
+  .stream(fileStream);
+```
+
+### Setting Status
+
+Set HTTP status code:
+
+```typescript
+res.status(404);
+```
+
+### Setting Headers
+
+Set response headers:
+
+```typescript
+res.setHeader('Content-Type', 'application/json');
+res.setHeader('X-Custom-Header', 'Value');
 ```
 
 ## Middleware
 
-### Creating Middleware
+Middleware functions are functions that have access to the request object, the response object, and the next middleware function.
+
+### Global Middleware
+
+Apply middleware to all routes:
 
 ```typescript
-@Middleware()
-class LoggerMiddleware implements MiddlewareHandler {
-  async handle(req: any, res: any, next: () => Promise<void>): Promise<void> {
-    console.log(`${req.method} ${req.url}`);
-    await next();
-    console.log(`Response status: ${res.statusCode}`);
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+```
+
+### Route-Specific Middleware
+
+Apply middleware to specific routes:
+
+```typescript
+const authMiddleware = (req, res, next) => {
+  const token = req.headers.authorization;
+  if (!token) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  // Validate token
+  next();
+};
+
+app.route({
+  path: '/protected',
+  method: HttpMethod.GET,
+  middleware: [authMiddleware],
+  handler: (req, res) => {
+    res.status(200).json({ message: 'Protected resource' });
+  }
+});
+```
+
+### Error Handling Middleware
+
+Handle errors in middleware chain:
+
+```typescript
+app.use((err, req, res, next) => {
+  console.error(err);
+  res.status(500).json({
+    error: 'Internal Server Error',
+    message: process.env.NODE_ENV === 'production'
+      ? 'An unexpected error occurred'
+      : err.message
+  });
+});
+```
+
+## Error Handling
+
+### HTTP Errors
+
+The framework provides a set of HTTP error classes:
+
+```typescript
+import { BadRequestError, NotFoundError } from 'nexurejs';
+
+app.route({
+  path: '/users/:id',
+  method: HttpMethod.GET,
+  handler: (req, res) => {
+    const userId = parseInt(req.params.id);
+    if (isNaN(userId)) {
+      throw new BadRequestError('Invalid user ID');
+    }
+
+    const user = findUser(userId);
+    if (!user) {
+      throw new NotFoundError(`User with ID ${userId} not found`);
+    }
+
+    res.status(200).json(user);
+  }
+});
+```
+
+Available HTTP error classes:
+
+- `HttpError` - Base error class
+- `BadRequestError` (400)
+- `UnauthorizedError` (401)
+- `ForbiddenError` (403)
+- `NotFoundError` (404)
+- `MethodNotAllowedError` (405)
+- `NotAcceptableError` (406)
+- `ConflictError` (409)
+- `PayloadTooLargeError` (413)
+- `UnsupportedMediaTypeError` (415)
+- `UnprocessableEntityError` (422)
+- `TooManyRequestsError` (429)
+- `InternalServerError` (500)
+- `NotImplementedError` (501)
+- `ServiceUnavailableError` (503)
+
+## Streaming
+
+The framework provides advanced streaming capabilities for handling large files and data efficiently.
+
+### Request Streaming
+
+```typescript
+app.route({
+  path: '/upload',
+  method: HttpMethod.POST,
+  handler: async (req, res) => {
+    const hashTransformer = new HashTransform();
+    const writeStream = fs.createWriteStream('/path/to/file');
+
+    await pipeline(
+      req.stream(),
+      hashTransformer,
+      writeStream
+    );
+
+    res.status(200).json({
+      size: hashTransformer.totalBytes,
+      hash: hashTransformer.digest
+    });
+  }
+});
+```
+
+### Response Streaming
+
+```typescript
+app.route({
+  path: '/download/:filename',
+  method: HttpMethod.GET,
+  handler: async (req, res) => {
+    const filename = req.params.filename;
+    const filePath = `/path/to/${filename}`;
+
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const stat = fs.statSync(filePath);
+    res.setHeader('Content-Type', 'application/octet-stream');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    const readStream = fs.createReadStream(filePath);
+    await pipeline(readStream, res.stream());
+  }
+});
+```
+
+### Transform Streams
+
+Create custom transform streams for data processing:
+
+```typescript
+class UppercaseTransform extends Transform {
+  _transform(chunk, encoding, callback) {
+    this.push(chunk.toString().toUpperCase());
+    callback();
   }
 }
-```
 
-### Using Middleware
-
-```typescript
-// Global middleware
-app.use(new LoggerMiddleware());
-
-// Controller-specific middleware
-@Controller('/users')
-@UseMiddleware(AuthMiddleware)
-class UserController {
-  // ...
-}
-
-// Route-specific middleware
-@Post()
-@UseMiddleware(ValidationMiddleware)
-createUser(@Body() userData: any) {
-  // ...
-}
-```
-
-## Dependency Injection
-
-### Injectable Decorator
-
-```typescript
-@Injectable(options?: { scope?: ServiceScope })
-```
-
-Marks a class as injectable.
-
-```typescript
-@Injectable()
-class UserService {
-  // ...
-}
-```
-
-### Service Scopes
-
-```typescript
-enum ServiceScope {
-  SINGLETON, // One instance for the entire application
-  REQUEST,   // New instance for each request
-  TRANSIENT  // New instance each time it's injected
-}
-```
-
-### Inject Decorator
-
-```typescript
-@Inject(token: any)
-```
-
-Explicitly specifies a dependency to inject.
-
-```typescript
-@Injectable()
-class UserService {
-  constructor(@Inject('CONFIG') private config: any) {
-    // ...
+app.route({
+  path: '/transform',
+  method: HttpMethod.POST,
+  handler: async (req, res) => {
+    const transform = new UppercaseTransform();
+    res.setHeader('Content-Type', 'text/plain');
+    await pipeline(req.stream(), transform, res.stream());
   }
-}
+});
 ```
 
-### Optional Decorator
+## Validation
+
+The framework includes input validation capabilities:
 
 ```typescript
-@Optional()
-```
-
-Marks a dependency as optional.
-
-```typescript
-@Injectable()
-class UserService {
-  constructor(@Optional() private logger?: LoggerService) {
-    // ...
+// Define a schema
+const userSchema = {
+  required: ['name', 'email', 'password'],
+  properties: {
+    name: {
+      type: 'string',
+      minLength: 2,
+      maxLength: 50
+    },
+    email: {
+      type: 'string',
+      format: 'email'
+    },
+    password: {
+      type: 'string',
+      minLength: 8
+    }
   }
-}
-```
+};
 
-## WebSockets
+// Create validation middleware
+const validateUser = async (req, res, next) => {
+  try {
+    const body = await req.json();
+    const errors = validate(body, userSchema);
 
-### WebSocketController Decorator
+    if (errors.length > 0) {
+      return res.status(400).json({
+        error: 'Validation Error',
+        details: errors
+      });
+    }
 
-```typescript
-@WebSocketController()
-```
+    // Body is valid, store it for the handler
+    req.body = body;
+    next();
+  } catch (err) {
+    next(err);
+  }
+};
 
-Marks a class as a WebSocket controller.
-
-```typescript
-@WebSocketController()
-class ChatController {
-  // ...
-}
-```
-
-### WebSocket Event Decorators
-
-#### `@OnConnect()`
-
-Marks a method as a handler for new WebSocket connections.
-
-```typescript
-@OnConnect()
-handleConnection(context: WebSocketContext) {
-  // ...
-}
-```
-
-#### `@OnMessage()`
-
-Marks a method as a handler for incoming WebSocket messages.
-
-```typescript
-@OnMessage()
-handleMessage(context: WebSocketContext) {
-  // ...
-}
-```
-
-#### `@OnJoinRoom()`
-
-Marks a method as a handler for clients joining a room.
-
-```typescript
-@OnJoinRoom()
-handleJoinRoom(context: WebSocketContext) {
-  // ...
-}
-```
-
-#### `@OnLeaveRoom()`
-
-Marks a method as a handler for clients leaving a room.
-
-```typescript
-@OnLeaveRoom()
-handleLeaveRoom(context: WebSocketContext) {
-  // ...
-}
-```
-
-### WebSocket Context
-
-```typescript
-interface WebSocketContext {
-  connection: WebSocketConnection;
-  message?: WebSocketMessage;
-  room?: string;
-  binary?: Buffer;
-}
-```
-
-### WebSocket Connection
-
-```typescript
-interface WebSocketConnection {
-  send(message: string | object): void;
-  sendBinary(data: Buffer): void;
-  close(code?: number, reason?: string): void;
-  joinRoom(roomName: string): void;
-  leaveRoom(roomName: string): void;
-  leaveAllRooms(): void;
-  isInRoom(roomName: string): boolean;
-  getRooms(): string[];
-  isAlive: boolean;
-  data: Record<string, any>;
-}
-```
-
-### WebSocket Message
-
-```typescript
-interface WebSocketMessage {
-  type: string;
-  data: any;
-  room?: string;
-}
-```
-
-### WebSocket Server
-
-```typescript
-class NexureWebSocketServer {
-  broadcast(data: any, exclude?: WebSocket | any): Promise<void>;
-  broadcastToRoom(roomName: string, data: any, exclude?: WebSocket | any): Promise<void>;
-  getRoomSize(roomName: string): number;
-  getRooms(): string[];
-  getRoomClients(roomName: string): (WebSocket | any)[];
-  close(): void;
-}
+// Use the middleware
+app.route({
+  path: '/users',
+  method: HttpMethod.POST,
+  middleware: [validateUser],
+  handler: (req, res) => {
+    // Request body is already validated
+    res.status(201).json({
+      id: 1,
+      ...req.body
+    });
+  }
+});
 ```
 
 ## Native Modules
 
-### Native Module Configuration
+NexureJS includes native C++ modules for performance-critical operations. You can control their usage:
 
 ```typescript
-interface NativeModuleOptions {
-  /** Whether native modules are enabled (default: true) */
-  enabled?: boolean;
-  /** Whether to log verbose information (default: false) */
-  verbose?: boolean;
-  /** Path to the native module (default: auto-detected) */
-  modulePath?: string;
-  /** Maximum size for route cache (default: 1000) */
-  maxCacheSize?: number;
-}
+// Check if native modules are being used
+import { isNative, isNativeAvailable } from 'nexurejs';
+
+console.log(`Using native implementation: ${isNative}`);
+console.log(`Native implementation available: ${isNativeAvailable()}`);
+
+// Force JavaScript fallback
+import { forceJavaScriptFallback } from 'nexurejs';
+forceJavaScriptFallback();
+
+// Try to force native implementation (returns true if successful)
+import { forceNativeImplementation } from 'nexurejs';
+const success = forceNativeImplementation();
 ```
 
-### Native Module Status
+## File Operations
+
+The framework provides utility functions for file operations:
 
 ```typescript
-interface NativeModuleStatus {
-  /** Whether the native module is loaded */
-  loaded: boolean;
-  /** Whether the HTTP parser is available */
-  httpParser: boolean;
-  /** Whether the radix router is available */
-  radixRouter: boolean;
-  /** Whether the JSON processor is available */
-  jsonProcessor: boolean;
-  /** Whether the URL parser is available */
-  urlParser: boolean;
-  /** Whether the schema validator is available */
-  schemaValidator: boolean;
-  /** Whether the compression module is available */
-  compression: boolean;
-  /** Whether the WebSocket module is available */
-  webSocket: boolean;
-  /** Error message if loading failed */
-  error?: string;
-}
-```
+import {
+  readFileContents,
+  writeFileContents,
+  ensureDirectory,
+  fileExists,
+  streamFile
+} from 'nexurejs';
 
-### Configure Native Modules
+// Read file
+const content = await readFileContents('/path/to/file');
 
-```typescript
-function configureNativeModules(options: NativeModuleOptions): NativeModuleStatus
-```
+// Write file
+await writeFileContents('/path/to/file', 'content');
 
-### Get Native Module Status
+// Stream file to response
+app.route({
+  path: '/files/:filename',
+  method: HttpMethod.GET,
+  handler: async (req, res) => {
+    const { filename } = req.params;
+    const exists = await fileExists(`/files/${filename}`);
 
-```typescript
-function getNativeModuleStatus(): NativeModuleStatus
-```
+    if (!exists) {
+      return res.status(404).json({ error: 'File not found' });
+    }
 
-### HTTP Parser
-
-```typescript
-class HttpParser {
-  constructor();
-  parse(buffer: Buffer): HttpParseResult;
-  parseHeaders(buffer: Buffer): Record<string, string>;
-  parseBody(buffer: Buffer, contentLength: number): Buffer;
-  reset(): void;
-
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number };
-  static resetPerformanceMetrics(): void;
-}
-```
-
-### Radix Router
-
-```typescript
-class RadixRouter {
-  constructor(options?: { maxCacheSize?: number });
-  add(method: string, path: string, handler: any): this;
-  find(method: string, path: string): RouteMatch;
-  remove(method: string, path: string): boolean;
-
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number };
-  static resetPerformanceMetrics(): void;
-}
-```
-
-### JSON Processor
-
-```typescript
-class JsonProcessor {
-  constructor();
-  parse(json: string | Buffer): any;
-  stringify(value: any): string;
-  parseStream(buffer: Buffer): any[];
-  stringifyStream(values: any[]): string;
-
-  static getPerformanceMetrics(): {
-    jsParseTime: number;
-    jsParseCount: number;
-    jsStringifyTime: number;
-    jsStringifyCount: number;
-    nativeParseTime: number;
-    nativeParseCount: number;
-    nativeStringifyTime: number;
-    nativeStringifyCount: number;
-  };
-  static resetPerformanceMetrics(): void;
-}
-```
-
-### URL Parser
-
-```typescript
-class UrlParser {
-  constructor();
-  parse(url: string): {
-    protocol: string;
-    auth: string;
-    hostname: string;
-    port: string;
-    pathname: string;
-    search: string;
-    hash: string;
-  };
-  parseQueryString(queryString: string): Record<string, string>;
-
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number };
-  static resetPerformanceMetrics(): void;
-}
-```
-
-### Schema Validator
-
-```typescript
-class SchemaValidator {
-  constructor();
-  validate(schema: object, data: any): { valid: boolean; errors: { path: string; message: string }[] };
-
-  static getPerformanceMetrics(): { jsTime: number; jsCount: number; nativeTime: number; nativeCount: number };
-  static resetPerformanceMetrics(): void;
-}
-```
-
-### Compression
-
-```typescript
-class Compression {
-  constructor();
-  compress(data: Buffer | string, level?: number): Buffer;
-  decompress(data: Buffer, asString?: boolean): Buffer | string;
-
-  static getPerformanceMetrics(): {
-    jsCompressTime: number;
-    jsCompressCount: number;
-    nativeCompressTime: number;
-    nativeCompressCount: number;
-    jsDecompressTime: number;
-    jsDecompressCount: number;
-    nativeDecompressTime: number;
-    nativeDecompressCount: number;
-  };
-  static resetPerformanceMetrics(): void;
-}
+    await streamFile(`/files/${filename}`, res);
+  }
+});
 ```
 
 ## Utility Functions
 
-### Reset Performance Metrics
+The framework provides various utility functions:
+
+### Logging
 
 ```typescript
-function resetAllPerformanceMetrics(): void
+import { logger, LogLevel } from 'nexurejs';
+
+logger.setLevel(LogLevel.DEBUG);
+logger.debug('Debug message');
+logger.info('Info message');
+logger.warn('Warning message');
+logger.error('Error message');
 ```
 
-### Get All Performance Metrics
+### Crypto
 
 ```typescript
-function getAllPerformanceMetrics(): {
-  httpParser: ReturnType<typeof HttpParser.getPerformanceMetrics>;
-  radixRouter: ReturnType<typeof RadixRouter.getPerformanceMetrics>;
-  jsonProcessor: ReturnType<typeof JsonProcessor.getPerformanceMetrics>;
-  urlParser: ReturnType<typeof UrlParser.getPerformanceMetrics>;
-  schemaValidator: ReturnType<typeof SchemaValidator.getPerformanceMetrics>;
-  compression: ReturnType<typeof Compression.getPerformanceMetrics>;
-}
+import { crypto } from 'nexurejs';
+
+// Generate hash
+const hash = crypto.hash('sha256', 'data');
+
+// Generate random string
+const random = crypto.randomBytes(16).toString('hex');
 ```
 
-### Create Benchmark
+### Buffer Pool
 
 ```typescript
-function createBenchmark(name: string): {
-  add(name: string, fn: () => void): void;
-  run(): Promise<any>;
-}
-```
+import { bufferPool } from 'nexurejs';
 
-### Logger
+// Get buffer from pool
+const buffer = bufferPool.get(1024); // 1KB buffer
 
-```typescript
-class Logger {
-  constructor(name?: string);
-
-  log(message: string, ...args: any[]): void;
-  error(message: string, ...args: any[]): void;
-  warn(message: string, ...args: any[]): void;
-  debug(message: string, ...args: any[]): void;
-  verbose(message: string, ...args: any[]): void;
-}
+// Return buffer to pool
+bufferPool.release(buffer);
 ```

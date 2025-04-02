@@ -5,12 +5,11 @@
 import { Worker } from 'node:worker_threads';
 import { cpus } from 'node:os';
 import { EventEmitter } from 'node:events';
-import { Logger } from '../utils/logger.js';
 
 /**
  * Worker task
  */
-export interface WorkerTask<T = any, R = any> {
+export interface WorkerTask<T = any, _R = any> {
   /**
    * Task ID
    */
@@ -82,14 +81,20 @@ export class WorkerPool extends EventEmitter {
   private workerScript: string;
   private workerData: any;
   private taskQueue: WorkerTask[] = [];
-  private taskCallbacks = new Map<string, {
-    resolve: (result: any) => void;
-    reject: (error: Error) => void;
-    timer: NodeJS.Timeout;
-  }>();
+  private taskCallbacks = new Map<
+    string,
+    {
+      resolve: (result: any) => void;
+      reject: (error: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
   private taskTimeout: number;
   private logger = new Logger();
   private isShuttingDown = false;
+
+  // Track which workers are busy
+  private busyWorkers = new Set<Worker>();
 
   /**
    * Create a new worker pool
@@ -124,7 +129,7 @@ export class WorkerPool extends EventEmitter {
         this.handleWorkerResult(result);
       });
 
-      worker.on('error', (error) => {
+      worker.on('error', error => {
         this.logger.error(`Worker error: ${error.message}`);
 
         // Remove the worker from the pool
@@ -139,7 +144,7 @@ export class WorkerPool extends EventEmitter {
         }
       });
 
-      worker.on('exit', (code) => {
+      worker.on('exit', code => {
         this.logger.info(`Worker exited with code ${code}`);
 
         // Remove the worker from the pool
@@ -197,9 +202,7 @@ export class WorkerPool extends EventEmitter {
    */
   private processPendingTasks(): void {
     // Find an available worker
-    const availableWorker = this.workers.find(worker => {
-      return worker.threadId !== undefined;
-    });
+    const availableWorker = this.workers.find(worker => !this.busyWorkers.has(worker));
 
     if (!availableWorker || this.taskQueue.length === 0) {
       return;
@@ -212,8 +215,25 @@ export class WorkerPool extends EventEmitter {
       return;
     }
 
+    // Mark worker as busy
+    this.busyWorkers.add(availableWorker);
+
     // Send the task to the worker
     availableWorker.postMessage(task);
+
+    // Add listener to free up worker when done
+    const messageHandler = (result: WorkerResult): void => {
+      if (result.taskId === task.id) {
+        // Mark worker as available
+        this.busyWorkers.delete(availableWorker);
+        availableWorker.removeListener('message', messageHandler);
+
+        // Process next task if available
+        setTimeout(() => this.processPendingTasks(), 0);
+      }
+    };
+
+    availableWorker.on('message', messageHandler);
   }
 
   /**

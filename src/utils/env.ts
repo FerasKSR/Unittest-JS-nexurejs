@@ -4,7 +4,6 @@
 
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Logger } from './logger.js';
 
 /**
  * Environment variable options
@@ -111,7 +110,7 @@ export class Env {
       const match = line.match(/^\s*([\w.-]+)\s*=\s*(.*)?\s*$/);
 
       if (match) {
-        const key = match[1];
+        const key = match[1]!;
         let value = match[2] || '';
 
         // Remove quotes
@@ -119,7 +118,7 @@ export class Env {
         const quoteMatch = value.match(quoteRegex);
 
         if (quoteMatch) {
-          value = quoteMatch[2];
+          value = quoteMatch[2]!;
         }
 
         // Replace escaped newlines
@@ -242,7 +241,7 @@ export class Env {
 
     try {
       return JSON.parse(value) as T;
-    } catch (error) {
+    } catch (_error) {
       this.logger.warn(`Environment variable ${key} is not valid JSON: ${value}`);
       return defaultValue;
     }
@@ -258,7 +257,7 @@ export class Env {
 
     try {
       return JSON.parse(value) as T;
-    } catch (error) {
+    } catch (_error) {
       throw new Error(`Required environment variable ${key} is not valid JSON: ${value}`);
     }
   }

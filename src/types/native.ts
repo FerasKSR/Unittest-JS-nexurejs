@@ -31,6 +31,74 @@ export interface NativeHttpParser {
 }
 
 /**
+ * Object Pool options
+ */
+export interface ObjectPoolOptions {
+  /**
+   * Maximum size of the object pool
+   * @default 1000
+   */
+  maxObjectPoolSize?: number;
+
+  /**
+   * Maximum size of the buffer pool
+   * @default 1000
+   */
+  maxBufferPoolSize?: number;
+
+  /**
+   * Maximum size of the headers pool
+   * @default 1000
+   */
+  maxHeadersPoolSize?: number;
+
+  /**
+   * Whether to enable the pool
+   * @default true
+   */
+  enabled?: boolean;
+}
+
+/**
+ * Pool information
+ */
+export interface PoolInfo {
+  enabled: boolean;
+  objects: {
+    total: number;
+    inUse: number;
+    available: number;
+    maxSize: number;
+  };
+  buffers: {
+    total: number;
+    inUse: number;
+    available: number;
+    maxSize: number;
+  };
+  headers: {
+    total: number;
+    inUse: number;
+    available: number;
+    maxSize: number;
+  };
+}
+
+/**
+ * Native Object Pool interface
+ */
+export interface NativeObjectPool {
+  createObject(): object;
+  releaseObject(_obj: object): void;
+  getHeadersObject(): object;
+  releaseHeadersObject(_headers: object): void;
+  getBuffer(_size: number): Buffer;
+  releaseBuffer(_buffer: Buffer): void;
+  reset(): void;
+  getPoolInfo(): PoolInfo;
+}
+
+/**
  * Native radix router interface
  */
 export interface NativeRadixRouter {

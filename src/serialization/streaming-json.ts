@@ -6,7 +6,7 @@
  * in chunks using streams, significantly reducing memory usage for large payloads.
  */
 
-import { Transform, Readable, Writable } from 'node:stream';
+import { Transform, Readable } from 'node:stream';
 import { clearTimeout, setTimeout } from 'node:timers';
 
 // JSON Token Types
@@ -22,7 +22,7 @@ enum JsonTokenType {
 }
 
 // JSON Token
-interface JsonToken {
+interface _JsonToken {
   type: JsonTokenType;
   value?: any;
   key?: string;
@@ -52,28 +52,38 @@ export class JsonSerializer extends Transform {
   }
 
   /**
+   * Handle non-first chunks in the stream
+   */
+  private handleChunk(chunk: any): void {
+    if (this.stack.length === 0) {
+      throw new Error('Cannot serialize multiple root elements');
+    }
+
+    const top = this.stack[this.stack.length - 1]!;
+
+    if (top.count > 0) {
+      this.push(',');
+      if (this.pretty) this.push(`\n${this.indent.repeat(this.indentLevel)}`);
+    }
+
+    this.serializeValue(chunk);
+    top.count++;
+  }
+
+  /**
    * Transform implementation
    */
-  override _transform(chunk: any, encoding: string, callback: (error?: Error, data?: any) => void): void {
+  override _transform(
+    chunk: any,
+    encoding: string,
+    callback: (error?: Error, data?: any) => void
+  ): void {
     try {
       if (this.isFirstChunk) {
         this.isFirstChunk = false;
         this.serializeValue(chunk);
       } else {
-        // If not the first chunk, we're expecting an array or object element
-        if (this.stack.length > 0) {
-          const top = this.stack[this.stack.length - 1];
-
-          if (top.count > 0) {
-            this.push(',');
-            if (this.pretty) this.push('\n' + this.indent.repeat(this.indentLevel));
-          }
-
-          this.serializeValue(chunk);
-          top.count++;
-        } else {
-          throw new Error('Cannot serialize multiple root elements');
-        }
+        this.handleChunk(chunk);
       }
 
       callback();
@@ -92,7 +102,7 @@ export class JsonSerializer extends Transform {
       this.indentLevel--;
 
       if (this.pretty && top.count > 0) {
-        this.push('\n' + this.indent.repeat(this.indentLevel));
+        this.push(`\n${this.indent.repeat(this.indentLevel)}`);
       }
 
       this.push(top.isArray ? ']' : '}');
@@ -134,7 +144,7 @@ export class JsonSerializer extends Transform {
     }
 
     this.indentLevel++;
-    if (this.pretty) this.push('\n' + this.indent.repeat(this.indentLevel));
+    if (this.pretty) this.push(`\n${this.indent.repeat(this.indentLevel)}`);
 
     this.stack.push({ isArray: true, count: 0 });
 
@@ -144,7 +154,7 @@ export class JsonSerializer extends Transform {
     // Serialize remaining elements
     for (let i = 1; i < array.length; i++) {
       this.push(',');
-      if (this.pretty) this.push('\n' + this.indent.repeat(this.indentLevel));
+      if (this.pretty) this.push(`\n${this.indent.repeat(this.indentLevel)}`);
       this.serializeValue(array[i]);
     }
 
@@ -152,7 +162,7 @@ export class JsonSerializer extends Transform {
     this.stack.pop();
     this.indentLevel--;
 
-    if (this.pretty) this.push('\n' + this.indent.repeat(this.indentLevel));
+    if (this.pretty) this.push(`\n${this.indent.repeat(this.indentLevel)}`);
     this.push(']');
   }
 
@@ -170,7 +180,7 @@ export class JsonSerializer extends Transform {
     }
 
     this.indentLevel++;
-    if (this.pretty) this.push('\n' + this.indent.repeat(this.indentLevel));
+    if (this.pretty) this.push(`\n${this.indent.repeat(this.indentLevel)}`);
 
     this.stack.push({ isArray: false, count: 0 });
 
@@ -179,24 +189,24 @@ export class JsonSerializer extends Transform {
     this.push(JSON.stringify(firstKey));
     this.push(':');
     if (this.pretty) this.push(' ');
-    this.serializeValue(obj[firstKey]);
+    this.serializeValue(obj[firstKey!]);
 
     // Serialize remaining key-value pairs
     for (let i = 1; i < keys.length; i++) {
       const key = keys[i];
       this.push(',');
-      if (this.pretty) this.push('\n' + this.indent.repeat(this.indentLevel));
+      if (this.pretty) this.push(`\n${this.indent.repeat(this.indentLevel)}`);
       this.push(JSON.stringify(key));
       this.push(':');
       if (this.pretty) this.push(' ');
-      this.serializeValue(obj[key]);
+      this.serializeValue(obj[key!]);
     }
 
     // Close the object
     this.stack.pop();
     this.indentLevel--;
 
-    if (this.pretty) this.push('\n' + this.indent.repeat(this.indentLevel));
+    if (this.pretty) this.push(`\n${this.indent.repeat(this.indentLevel)}`);
     this.push('}');
   }
 }
@@ -223,7 +233,11 @@ export class JsonParser extends Transform {
   /**
    * Transform implementation
    */
-  override _transform(chunk: Buffer | string, encoding: string, callback: (error?: Error, data?: any) => void): void {
+  override _transform(
+    chunk: Buffer | string,
+    encoding: string,
+    callback: (error?: Error, data?: any) => void
+  ): void {
     try {
       if (this.complete) {
         callback(new Error('Parser already completed'));
@@ -268,7 +282,7 @@ export class JsonParser extends Transform {
       const char = this.buffer[this.position];
 
       // Skip whitespace
-      if (/\s/.test(char)) {
+      if (char && /\s/.test(char!)) {
         this.position++;
         continue;
       }
@@ -300,8 +314,13 @@ export class JsonParser extends Transform {
    * Parse a JSON value
    */
   private parseValue(): void {
+    if (this.position >= this.buffer.length) {
+      return; // Not enough data yet
+    }
+
     const char = this.buffer[this.position];
 
+    // Ensure we have a valid character
     switch (char) {
       case '{':
         this.startObject();
@@ -331,13 +350,22 @@ export class JsonParser extends Transform {
   }
 
   /**
+   * Skip whitespace characters in the buffer
+   */
+  private skipWhitespace(): void {
+    while (this.position < this.buffer.length && /\s/.test(this.buffer[this.position]!)) {
+      this.position++;
+    }
+  }
+
+  /**
    * Parse a JSON object
    */
   private parseObject(): void {
     const char = this.buffer[this.position];
 
     // Skip whitespace
-    if (/\s/.test(char)) {
+    if (char && /\s/.test(char!)) {
       this.position++;
       return;
     }
@@ -351,11 +379,7 @@ export class JsonParser extends Transform {
     if (char === ',') {
       // Next property
       this.position++;
-
-      // Skip whitespace
-      while (this.position < this.buffer.length && /\s/.test(this.buffer[this.position])) {
-        this.position++;
-      }
+      this.skipWhitespace();
 
       // Expect property name
       if (this.position < this.buffer.length && this.buffer[this.position] === '"') {
@@ -378,7 +402,7 @@ export class JsonParser extends Transform {
     const char = this.buffer[this.position];
 
     // Skip whitespace
-    if (/\s/.test(char)) {
+    if (char && /\s/.test(char!)) {
       this.position++;
       return;
     }
@@ -433,7 +457,7 @@ export class JsonParser extends Transform {
 
     // Update state based on parent
     if (this.stack.length > 0) {
-      this.state = this.stack[this.stack.length - 1].isArray ? 'ARRAY' : 'OBJECT';
+      this.state = this.stack[this.stack.length - 1]!.isArray ? 'ARRAY' : 'OBJECT';
     }
   }
 
@@ -471,7 +495,7 @@ export class JsonParser extends Transform {
 
     // Update state based on parent
     if (this.stack.length > 0) {
-      this.state = this.stack[this.stack.length - 1].isArray ? 'ARRAY' : 'OBJECT';
+      this.state = this.stack[this.stack.length - 1]!.isArray ? 'ARRAY' : 'OBJECT';
     }
   }
 
@@ -508,9 +532,7 @@ export class JsonParser extends Transform {
     this.position++; // Skip closing quote
 
     // Skip whitespace
-    while (this.position < this.buffer.length && /\s/.test(this.buffer[this.position])) {
-      this.position++;
-    }
+    this.skipWhitespace();
 
     // Expect colon
     if (this.position < this.buffer.length && this.buffer[this.position] === ':') {
@@ -561,7 +583,7 @@ export class JsonParser extends Transform {
    * Parse a numeric value
    */
   private parseNumber(): void {
-    const start = this.position;
+    const _start = this.position;
 
     // Match number pattern
     const numberPattern = /^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/;
@@ -625,7 +647,7 @@ export class JsonParser extends Transform {
       return;
     }
 
-    const parent = this.stack[this.stack.length - 1];
+    const parent = this.stack[this.stack.length - 1]!;
 
     if (parent.isArray) {
       // Add to array
@@ -665,13 +687,16 @@ export function createJsonParser(): Transform {
  * @param value Value to serialize
  * @param options Serializer options
  */
-export function stringifyStream(value: any, options?: { pretty?: boolean; indent?: string }): Readable {
+export function stringifyStream(
+  value: any,
+  options?: { pretty?: boolean; indent?: string }
+): Readable {
   const serializer = createJsonSerializer(options);
 
   // Create a readable stream that pushes the value and ends
   const source = new Readable({
     objectMode: true,
-    read() {
+    read(): void {
       this.push(value);
       this.push(null);
     }
@@ -701,7 +726,7 @@ export function parseStream(source: Readable, timeout?: number): Promise<any> {
     const parser = createJsonParser();
     const results: any[] = [];
 
-    parser.on('data', (data) => {
+    parser.on('data', data => {
       results.push(data);
     });
 
@@ -717,7 +742,7 @@ export function parseStream(source: Readable, timeout?: number): Promise<any> {
       }
     });
 
-    parser.on('error', (error) => {
+    parser.on('error', error => {
       if (timer) clearTimeout(timer);
       reject(error);
     });
