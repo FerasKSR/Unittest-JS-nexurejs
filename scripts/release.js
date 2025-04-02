@@ -565,33 +565,6 @@ async function main() {
       process.exit(1);
     }
 
-    // Build native modules for all platforms
-    console.log(`${colors.blue}Building native modules...${colors.reset}`);
-    try {
-      if (!isDryRun) {
-        exec('npm run build:native:all');
-      } else {
-        try {
-          // Just try to build for the current platform in dry run mode
-          exec('npm run build:native', { silent: true });
-          console.log(`${colors.yellow}DRY RUN: Native module build successful${colors.reset}`);
-        } catch (error) {
-          console.log(`${colors.yellow}DRY RUN: Native module build would fail in a real release${colors.reset}`);
-          const skipNativeBuild = await prompt(`${colors.bright}Native module build is failing. Skip for dry run? (y/N)${colors.reset} `);
-          if (skipNativeBuild.toLowerCase() !== 'y') {
-            console.log(`${colors.yellow}Dry run cancelled.${colors.reset}`);
-            process.exit(0);
-          }
-        }
-      }
-    } catch (error) {
-      console.log(`${colors.yellow}Warning: Failed to build native modules for all platforms.${colors.reset}`);
-      const proceed = await prompt(`${colors.bright}Do you want to proceed anyway? (y/N)${colors.reset} `);
-      if (proceed.toLowerCase() !== 'y') {
-        process.exit(0);
-      }
-    }
-
     // Update version in package.json
     if (!isDryRun) {
       updateVersion(newVersion);
