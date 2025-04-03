@@ -115,6 +115,13 @@ export function createErrorHandler(options: ErrorHandlerOptions = {}): ErrorHand
         name: httpError.name,
         code: httpError.code || 'UNKNOWN_ERROR',
         ...(Object.keys(httpError.details || {}).length > 0 && { details: httpError.details })
+      } as {
+        statusCode: number;
+        message: string;
+        name: string;
+        code: string;
+        details?: any;
+        stack?: string[];
       }
     };
 

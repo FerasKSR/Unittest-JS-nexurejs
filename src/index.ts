@@ -114,8 +114,8 @@ let usingNative = false;
 if (!flags.forceJs) {
   try {
     // Attempt to load native modules
-    const nativeModule = await import('./native');
-    nativeImpl = nativeModule.default || nativeModule;
+    const nativeModule = await import('./native/index.js');
+    nativeImpl = nativeModule as unknown as typeof safeImpl;
 
     // Verify that the native module is working by calling a simple function
     if (nativeImpl && !nativeImpl.isAvailable()) {
@@ -124,7 +124,7 @@ if (!flags.forceJs) {
 
     usingNative = true;
     if (flags.verbose) {
-      console.log(`Using native implementation (v${nativeImpl?.version})`);
+      console.log(`Using native implementation (v${nativeImpl.version})`);
     }
   } catch (err) {
     if (flags.verbose) {
