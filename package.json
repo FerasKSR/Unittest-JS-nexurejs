@@ -23,7 +23,7 @@
     "ci:profile": "node profiling/run.js --ci",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch=\"**/test/unit/**/*.test.ts\"",
-    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch=\"**/test/integration/**/*.test.ts\"",
+    "test:integration": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config=jest.integration.config.js",
     "test:compatibility": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testMatch=\"**/test/compatibility/**/*.test.ts\"",
     "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage --coverageReporters=text --coverageReporters=json --coverageReporters=lcov",
