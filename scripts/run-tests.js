@@ -69,7 +69,11 @@ async function runCommand(command, args, cwd = resolve(__dirname, '..')) {
     const proc = spawn(command, args, {
       stdio: 'inherit',
       shell: true,
-      cwd
+      cwd,
+      env: {
+        ...process.env,
+        NODE_OPTIONS: `${process.env.NODE_OPTIONS || ''} --experimental-vm-modules`.trim()
+      }
     });
 
     proc.on('close', (code) => {

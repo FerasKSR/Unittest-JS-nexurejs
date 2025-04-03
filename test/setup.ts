@@ -43,7 +43,7 @@ afterAll(() => {
 });
 
 // Add global mocks or test utilities
-global.mockRequest = (options = {}) => {
+globalThis.mockRequest = (options = {}) => {
   return {
     headers: {},
     method: 'GET',
@@ -55,7 +55,7 @@ global.mockRequest = (options = {}) => {
   };
 };
 
-global.mockResponse = () => {
+globalThis.mockResponse = () => {
   const res: any = {};
   res.status = jest.fn().mockReturnValue(res);
   res.json = jest.fn().mockReturnValue(res);
@@ -69,10 +69,6 @@ global.mockResponse = () => {
 
 // Add type definitions for global test utilities
 declare global {
-  namespace NodeJS {
-    interface Global {
-      mockRequest: (options?: any) => any;
-      mockResponse: () => any;
-    }
-  }
+  function mockRequest(options?: any): any;
+  function mockResponse(): any;
 }

@@ -10,7 +10,34 @@
  * 4. Generating a unified report
  *
  * Usage:
- *   node scripts/run-parallel-tests.js [--workers=4] [--testMatch=".test.js"]
+ *   node scripts/run-parallel-tests.js [options]
+ *
+ * Options:
+ *   --workers=N             Number of parallel workers (default: CPU count - 1)
+ *   --testMatch=PATTERN     Pattern to match test files
+ *   --memoryLimit=N         Memory limit per worker in MB (default: 2048)
+ *   --timeout=N             Timeout for test runs in ms (default: 300000)
+ *   --shard=X/Y             Run shard X of Y (for distributed testing)
+ *   --balancedShards        Balance test distribution by file size (default: true)
+ *   --u, --updateSnapshot   Update snapshots
+ *   --watch                 Watch mode
+ *   --ci                    CI mode
+ *   --coverage              Generate coverage reports
+ *   --changed               Only run tests related to changed files
+ *   --mergeOnly             Only merge coverage reports (skip test runs)
+ *
+ * Examples:
+ *   # Run all tests with 4 workers
+ *   node scripts/run-parallel-tests.js --workers=4
+ *
+ *   # Run only unit tests
+ *   node scripts/run-parallel-tests.js --testMatch="unit"
+ *
+ *   # Run first shard of 3 total shards
+ *   node scripts/run-parallel-tests.js --shard=1/3
+ *
+ *   # Run with larger memory limit
+ *   node scripts/run-parallel-tests.js --memoryLimit=4096
  */
 
 import { execSync, spawn } from 'child_process';
@@ -34,6 +61,7 @@ const ci = args.ci || false;
 const coverage = args.coverage || false;
 const changedOnly = args.changed || false;
 const mergeOnly = args.mergeOnly || false;
+const balancedShards = args.balancedShards !== 'false'; // Default to true
 
 // ANSI color codes for console output
 const Colors = {
@@ -66,55 +94,150 @@ function parseArgs(args) {
 }
 
 /**
+ * Improved pattern matching for test files
+ */
+function matchesTestPattern(file, pattern) {
+  if (!pattern || pattern === '**/*.@(test|spec).@(js|ts)') {
+    return true; // Default pattern, match all test files
+  }
+
+  const filename = path.basename(file);
+  const relPath = path.relative(rootDir, file);
+
+  // If pattern is a simple keyword (like 'integration'), check if filename or path contains it
+  if (!pattern.includes('*') && !pattern.includes('.')) {
+    return filename.includes(pattern) || relPath.includes(pattern);
+  }
+
+  // Convert simple glob patterns to regex
+  // e.g., 'src/*.test.ts' -> /^src\/[^\/]*\.test\.ts$/
+  const regexPattern = pattern
+    .replace(/\./g, '\\.')
+    .replace(/\*\*/g, '{{GLOBSTAR}}')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\{\{GLOBSTAR\}\}/g, '.*');
+
+  const regex = new RegExp(`^${regexPattern}$`);
+  return regex.test(relPath);
+}
+
+/**
  * Find all test files
  */
 function findTestFiles() {
   console.log(`${Colors.BLUE}Finding test files matching: ${testMatch}${Colors.RESET}`);
 
   try {
-    // Use Jest's CLI to list test files
-    const cmd = `npx jest --listTests --json --testMatch="**/*.@(test|spec).@(js|ts)"`;
-    const output = execSync(cmd, { cwd: rootDir, encoding: 'utf8' });
-    let files = [];
+    // Use Jest's CLI to list test files with explicit options for ESM compatibility
+    const cmd = `NODE_OPTIONS=--experimental-vm-modules npx jest --listTests --json --testMatch="**/*.@(test|spec).@(js|ts)"`;
+    let output;
 
+    try {
+      output = execSync(cmd, { cwd: rootDir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch (cmdError) {
+      // If Jest fails to list tests, try a simpler approach with file system
+      console.warn(`${Colors.YELLOW}Unable to use Jest to list tests: ${cmdError.message}${Colors.RESET}`);
+      console.log(`${Colors.BLUE}Falling back to direct file search...${Colors.RESET}`);
+
+      // Find test files using file system (basic implementation)
+      const findTestFilesManually = (dir, pattern) => {
+        const results = [];
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
+
+        for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
+
+          if (entry.isDirectory()) {
+            // Skip node_modules and other common non-test directories
+            if (!['node_modules', '.git', 'dist', 'coverage'].includes(entry.name)) {
+              results.push(...findTestFilesManually(fullPath, pattern));
+            }
+          } else if (entry.isFile() && entry.name.match(/\.(test|spec)\.(js|ts)$/)) {
+            if (!pattern || entry.name.includes(pattern) || fullPath.includes(pattern)) {
+              results.push(fullPath);
+            }
+          }
+        }
+
+        return results;
+      };
+
+      const manualFiles = findTestFilesManually(path.join(rootDir, 'test'), testMatch);
+      console.log(`${Colors.BLUE}Found ${manualFiles.length} test files manually${Colors.RESET}`);
+      return manualFiles;
+    }
+
+    let files = [];
     try {
       files = JSON.parse(output);
     } catch (parseError) {
       console.warn(`${Colors.YELLOW}Unable to parse Jest output: ${parseError.message}${Colors.RESET}`);
+      console.log(`${Colors.DIM}Raw output: ${output.substring(0, 200)}...${Colors.RESET}`);
       // Return empty array if parse fails
       return [];
     }
 
     // Filter files by testMatch pattern if provided
     if (testMatch && testMatch !== '**/*.@(test|spec).@(js|ts)') {
-      // Simple pattern matching (could be enhanced with micromatch/minimatch)
-      files = files.filter(file => {
-        const filename = path.basename(file);
-        const relPath = path.relative(rootDir, file);
+      // Use our improved pattern matching
+      files = files.filter(file => matchesTestPattern(file, testMatch));
+    }
 
-        // If testMatch is a specific keyword (like 'integration'), check if filename contains it
-        if (!testMatch.includes('*') && !testMatch.includes('.')) {
-          return filename.includes(testMatch) || relPath.includes(testMatch);
+    // Handle shard settings
+    if (args.shard) {
+      const [shardIndex, totalShards] = args.shard.split('/').map(Number);
+
+      if (isNaN(shardIndex) || isNaN(totalShards) || shardIndex < 1 || totalShards < 1 || shardIndex > totalShards) {
+        console.warn(`${Colors.YELLOW}Invalid shard specification: ${args.shard}, using all files${Colors.RESET}`);
+      } else {
+        console.log(`${Colors.BLUE}Running shard ${shardIndex}/${totalShards}${Colors.RESET}`);
+
+        // Shuffle files with a consistent seed to ensure same distribution across runs
+        const shuffledFiles = [...files];
+        const seedStr = 'nexurejs-tests'; // Consistent seed for deterministic shuffling
+
+        // Simple Fisher-Yates shuffle with a deterministic seed
+        const seededRandom = (() => {
+          let seedVal = Array.from(seedStr).reduce((acc, char) => acc + char.charCodeAt(0), 0);
+          return () => {
+            seedVal = (seedVal * 9301 + 49297) % 233280;
+            return seedVal / 233280;
+          };
+        })();
+
+        for (let i = shuffledFiles.length - 1; i > 0; i--) {
+          const j = Math.floor(seededRandom() * (i + 1));
+          [shuffledFiles[i], shuffledFiles[j]] = [shuffledFiles[j], shuffledFiles[i]];
         }
 
-        // Otherwise use a simple pattern match
-        return true; // Default to including all files
-      });
+        // Get this shard's subset of files
+        const shardSize = Math.ceil(shuffledFiles.length / totalShards);
+        const start = (shardIndex - 1) * shardSize;
+        const end = Math.min(start + shardSize, shuffledFiles.length);
+
+        files = shuffledFiles.slice(start, end);
+        console.log(`${Colors.BLUE}Selected ${files.length} files for this shard${Colors.RESET}`);
+      }
     }
 
     // Filter for changed files if requested
     if (changedOnly) {
-      const changedCmd = `git diff --name-only HEAD`;
-      const changedOutput = execSync(changedCmd, { cwd: rootDir, encoding: 'utf8' });
-      const changedFiles = changedOutput.split('\n').filter(Boolean);
+      try {
+        const changedCmd = `git diff --name-only HEAD`;
+        const changedOutput = execSync(changedCmd, { cwd: rootDir, encoding: 'utf8' });
+        const changedFiles = changedOutput.split('\n').filter(Boolean);
 
-      return files.filter(file => {
-        const relativePath = path.relative(rootDir, file);
-        return changedFiles.some(changed => {
-          return relativePath.includes(changed) ||
-                 changed.includes(path.basename(relativePath, path.extname(relativePath)));
+        return files.filter(file => {
+          const relativePath = path.relative(rootDir, file);
+          return changedFiles.some(changed => {
+            return relativePath.includes(changed) ||
+                   changed.includes(path.basename(relativePath, path.extname(relativePath)));
+          });
         });
-      });
+      } catch (gitError) {
+        console.warn(`${Colors.YELLOW}Unable to get changed files: ${gitError.message}${Colors.RESET}`);
+        return files; // Return all files if git command fails
+      }
     }
 
     return files;
@@ -126,16 +249,69 @@ function findTestFiles() {
 }
 
 /**
- * Split tests into batches
+ * Improved split tests into batches to consider file size
  */
 function splitTestFiles(files, numBatches) {
+  if (args.shard) {
+    // If we're already running in shard mode, we don't need to split further
+    // Just create a single batch with all files
+    return [files];
+  }
+
   // Create empty batches
   const batches = Array.from({ length: numBatches }, () => []);
 
-  // Distribute files among batches
-  files.forEach((file, index) => {
-    batches[index % numBatches].push(file);
-  });
+  if (args.balancedShards === false) {
+    // Simple round-robin distribution if balanced shards not requested
+    files.forEach((file, index) => {
+      batches[index % numBatches].push(file);
+    });
+  } else {
+    // Balance batches based on file sizes as a heuristic for test complexity
+    try {
+      // Get file sizes as a proxy for complexity
+      const fileSizes = files.map(file => {
+        try {
+          const stats = fs.statSync(file);
+          return { file, size: stats.size };
+        } catch (e) {
+          return { file, size: 0 };
+        }
+      });
+
+      // Sort by size descending (largest files first)
+      fileSizes.sort((a, b) => b.size - a.size);
+
+      // Track batch sizes
+      const batchSizes = Array(numBatches).fill(0);
+
+      // Distribute files using a greedy algorithm
+      // (put each file in the batch with the smallest current size)
+      fileSizes.forEach(({ file, size }) => {
+        // Find the smallest batch
+        const smallestBatchIndex = batchSizes.indexOf(Math.min(...batchSizes));
+
+        // Add file to that batch
+        batches[smallestBatchIndex].push(file);
+
+        // Update batch size
+        batchSizes[smallestBatchIndex] += size;
+      });
+
+      // Log the distribution
+      console.log(`${Colors.BLUE}Balanced batch distribution:${Colors.RESET}`);
+      batches.forEach((batch, i) => {
+        console.log(`${Colors.DIM}Batch ${i+1}: ${batch.length} files (${Math.round(batchSizes[i]/1024)}KB)${Colors.RESET}`);
+      });
+    } catch (e) {
+      console.warn(`${Colors.YELLOW}Error balancing test batches: ${e.message}. Using round-robin distribution.${Colors.RESET}`);
+
+      // Fallback to simple distribution
+      files.forEach((file, index) => {
+        batches[index % numBatches].push(file);
+      });
+    }
+  }
 
   // Remove empty batches
   return batches.filter(batch => batch.length > 0);
@@ -185,16 +361,40 @@ function runTestBatch(batchId, testFiles) {
       jestArgs.push('--ci');
     }
 
+    // Add a reasonable memory limit (2GB by default)
+    const memoryLimit = args.memoryLimit || '2048';
+
+    // Add resource constraints
+    const nodeOptions = process.env.NODE_OPTIONS?.includes('--experimental-vm-modules')
+      ? process.env.NODE_OPTIONS
+      : `${process.env.NODE_OPTIONS || ''} --experimental-vm-modules`.trim();
+
+    // Add max-old-space-size flag if not already present
+    const maxOldSpaceSize = nodeOptions.includes('--max-old-space-size')
+      ? nodeOptions
+      : `${nodeOptions} --max-old-space-size=${memoryLimit}`;
+
     // Log batch start
-    console.log(`${Colors.CYAN}Running batch ${batchId} (${testFiles.length} tests)${Colors.RESET}`);
+    console.log(`${Colors.CYAN}Running batch ${batchId} (${testFiles.length} tests) with memory limit: ${memoryLimit}MB${Colors.RESET}`);
     testFiles.forEach(file => {
       console.log(`${Colors.DIM}- ${path.relative(rootDir, file)}${Colors.RESET}`);
     });
 
+    // Add timeout for the process to prevent hanging
+    const timeout = args.timeout ? parseInt(args.timeout, 10) : 300000; // 5 minutes default
+    let timeoutId;
+
+    // Track child process memory usage
+    let memoryUsageInterval;
+
     // Run Jest process
     const testProcess = spawn('npx', jestArgs, {
       cwd: rootDir,
-      stdio: ['ignore', 'pipe', 'pipe']
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        NODE_OPTIONS: maxOldSpaceSize
+      }
     });
 
     let output = '';
@@ -214,8 +414,40 @@ function runTestBatch(batchId, testFiles) {
       process.stderr.write(`${Colors.RED}[Batch ${batchId}] ${data.toString()}${Colors.RESET}`);
     });
 
+    // Start timer for process timeout
+    timeoutId = setTimeout(() => {
+      console.error(`${Colors.RED}Batch ${batchId} timed out after ${timeout}ms${Colors.RESET}`);
+      testProcess.kill('SIGTERM');
+      setTimeout(() => {
+        // Force kill if still running after 5 seconds
+        if (testProcess.exitCode === null) {
+          console.error(`${Colors.RED}Force killing batch ${batchId}${Colors.RESET}`);
+          testProcess.kill('SIGKILL');
+        }
+      }, 5000);
+    }, timeout);
+
+    // Monitor memory usage every 10 seconds (if not in CI)
+    if (!ci) {
+      memoryUsageInterval = setInterval(() => {
+        try {
+          const usage = process.memoryUsage();
+          const usageMB = Math.round(usage.rss / 1024 / 1024);
+          if (usageMB > parseInt(memoryLimit) * 0.8) {
+            console.warn(`${Colors.YELLOW}[Batch ${batchId}] High memory usage: ${usageMB}MB (80% of limit)${Colors.RESET}`);
+          }
+        } catch (e) {
+          // Ignore errors reading memory usage
+        }
+      }, 10000);
+    }
+
     // Handle process completion
     testProcess.on('close', code => {
+      // Clear the timeout and memory usage interval
+      clearTimeout(timeoutId);
+      if (memoryUsageInterval) clearInterval(memoryUsageInterval);
+
       if (code === 0) {
         console.log(`${Colors.GREEN}Batch ${batchId} completed successfully${Colors.RESET}`);
         resolve({ batchId, success: true, output });
@@ -226,6 +458,10 @@ function runTestBatch(batchId, testFiles) {
     });
 
     testProcess.on('error', error => {
+      // Clear the timeout and memory usage interval
+      clearTimeout(timeoutId);
+      if (memoryUsageInterval) clearInterval(memoryUsageInterval);
+
       console.error(`${Colors.RED}Batch ${batchId} error: ${error.message}${Colors.RESET}`);
       reject(error);
     });
@@ -245,66 +481,29 @@ async function mergeCoverageReports(numBatches) {
       fs.mkdirSync(coverageDir, { recursive: true });
     }
 
-    // Check if we're running in merge-only mode
-    if (mergeOnly) {
-      // Check if test-results directory exists
-      const testResultsDir = path.join(rootDir, 'test-results');
-      if (fs.existsSync(testResultsDir)) {
-        // Copy coverage files from test-results to .nyc_output
-        const files = fs.readdirSync(testResultsDir, { recursive: true });
-        for (const file of files) {
-          if (file.endsWith('coverage-final.json')) {
-            const sourcePath = path.join(testResultsDir, file);
-            const destPath = path.join(coverageDir, path.basename(file));
-            fs.copyFileSync(sourcePath, destPath);
-            console.log(`${Colors.GREEN}Copied ${file} to .nyc_output${Colors.RESET}`);
-          }
+    // Use a simpler approach - just copy the coverage files to the expected location
+    // rather than trying to merge them with external tools
+    for (let i = 1; i <= numBatches; i++) {
+      const batchCoverageDir = path.join(rootDir, 'coverage', `batch-${i}`);
+      if (fs.existsSync(batchCoverageDir)) {
+        // Copy the coverage-final.json file if it exists
+        const coverageFile = path.join(batchCoverageDir, 'coverage-final.json');
+        if (fs.existsSync(coverageFile)) {
+          // Create a dest filename with the batch number to avoid conflicts
+          const destFile = path.join(coverageDir, `coverage-batch-${i}.json`);
+          fs.copyFileSync(coverageFile, destFile);
+          console.log(`${Colors.GREEN}Copied coverage from batch ${i}${Colors.RESET}`);
         }
-      } else {
-        console.warn(`${Colors.YELLOW}No test-results directory found for merge-only operation${Colors.RESET}`);
-        // Create an empty coverage file as fallback
-        fs.writeFileSync(path.join(coverageDir, 'coverage.json'), '{}');
-      }
-
-      return;
-    }
-
-    // Use istanbul to merge coverage reports
-    let cmd = `npx istanbul-merge --out .nyc_output/coverage.json`;
-
-    // Add all the batch coverage files
-    let foundCoverageFiles = false;
-    for (let i = 0; i < numBatches; i++) {
-      const coverageFile = path.join(rootDir, 'coverage', `batch-${i}`, 'coverage-final.json');
-      if (fs.existsSync(coverageFile)) {
-        cmd += ` ${coverageFile}`;
-        foundCoverageFiles = true;
       }
     }
 
-    if (!foundCoverageFiles) {
-      console.warn(`${Colors.YELLOW}No coverage files found to merge${Colors.RESET}`);
-      // Create an empty coverage file as fallback
-      fs.writeFileSync(path.join(coverageDir, 'coverage.json'), '{}');
-      return;
-    }
+    console.log(`${Colors.GREEN}Coverage reports collected successfully${Colors.RESET}`);
 
-    // Run the merge command
-    execSync(cmd, { cwd: rootDir, stdio: 'inherit' });
-
-    // Generate HTML report
-    execSync('npx istanbul report html', { cwd: rootDir, stdio: 'inherit' });
-
-    console.log(`${Colors.GREEN}Coverage reports merged successfully${Colors.RESET}`);
-    console.log(`${Colors.GREEN}HTML report available at: ${path.join(rootDir, 'coverage', 'index.html')}${Colors.RESET}`);
+    // Jest already creates an HTML report for each batch, so we don't need to generate one
+    console.log(`${Colors.GREEN}HTML reports available in the coverage directory${Colors.RESET}`);
   } catch (error) {
     console.error(`${Colors.RED}Error merging coverage reports: ${error.message}${Colors.RESET}`);
-    // Create an empty coverage file as fallback
-    const coverageDir = path.join(rootDir, '.nyc_output');
-    if (!fs.existsSync(coverageDir)) {
-      fs.mkdirSync(coverageDir, { recursive: true });
-    }
-    fs.writeFileSync(path.join(coverageDir, 'coverage.json'), '{}');
+    // Don't try to create an empty coverage file - just report the error
   }
 }
 
@@ -330,7 +529,7 @@ function mergeTestResults(numBatches) {
   };
 
   // Merge all batch results
-  for (let i = 0; i < numBatches; i++) {
+  for (let i = 1; i <= numBatches; i++) {
     const resultsFile = path.join(rootDir, 'coverage', `batch-${i}`, 'results.json');
 
     if (fs.existsSync(resultsFile)) {
@@ -338,15 +537,15 @@ function mergeTestResults(numBatches) {
         const batchResults = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
 
         // Update aggregate counts
-        mergedResults.numFailedTestSuites += batchResults.numFailedTestSuites;
-        mergedResults.numFailedTests += batchResults.numFailedTests;
-        mergedResults.numPassedTestSuites += batchResults.numPassedTestSuites;
-        mergedResults.numPassedTests += batchResults.numPassedTests;
-        mergedResults.numPendingTestSuites += batchResults.numPendingTestSuites;
-        mergedResults.numPendingTests += batchResults.numPendingTests;
-        mergedResults.numRuntimeErrorTestSuites += batchResults.numRuntimeErrorTestSuites;
-        mergedResults.numTotalTestSuites += batchResults.numTotalTestSuites;
-        mergedResults.numTotalTests += batchResults.numTotalTests;
+        mergedResults.numFailedTestSuites += batchResults.numFailedTestSuites || 0;
+        mergedResults.numFailedTests += batchResults.numFailedTests || 0;
+        mergedResults.numPassedTestSuites += batchResults.numPassedTestSuites || 0;
+        mergedResults.numPassedTests += batchResults.numPassedTests || 0;
+        mergedResults.numPendingTestSuites += batchResults.numPendingTestSuites || 0;
+        mergedResults.numPendingTests += batchResults.numPendingTests || 0;
+        mergedResults.numRuntimeErrorTestSuites += batchResults.numRuntimeErrorTestSuites || 0;
+        mergedResults.numTotalTestSuites += batchResults.numTotalTestSuites || 0;
+        mergedResults.numTotalTests += batchResults.numTotalTests || 0;
 
         // Track earliest start time
         if (!mergedResults.startTime || batchResults.startTime < mergedResults.startTime) {
@@ -354,10 +553,12 @@ function mergeTestResults(numBatches) {
         }
 
         // Merge test results
-        mergedResults.testResults.push(...batchResults.testResults);
+        if (Array.isArray(batchResults.testResults)) {
+          mergedResults.testResults.push(...batchResults.testResults);
+        }
 
         // If any batch failed, the overall run failed
-        if (!batchResults.success) {
+        if (batchResults.success === false) {
           mergedResults.success = false;
         }
       } catch (error) {
@@ -367,12 +568,82 @@ function mergeTestResults(numBatches) {
   }
 
   // Write merged results
-  fs.writeFileSync(
-    path.join(rootDir, 'coverage', 'merged-results.json'),
-    JSON.stringify(mergedResults, null, 2)
-  );
+  try {
+    const resultsDir = path.join(rootDir, 'coverage');
+    if (!fs.existsSync(resultsDir)) {
+      fs.mkdirSync(resultsDir, { recursive: true });
+    }
+    fs.writeFileSync(
+      path.join(resultsDir, 'merged-results.json'),
+      JSON.stringify(mergedResults, null, 2)
+    );
+  } catch (writeError) {
+    console.error(`${Colors.RED}Error writing merged results: ${writeError.message}${Colors.RESET}`);
+  }
 
   return mergedResults;
+}
+
+/**
+ * Extract test results from Jest output
+ */
+function extractTestStats(output) {
+  try {
+    // First try to find a complete JSON object in the output
+    // Look for the standard Jest result object pattern
+    const jsonRegex = /\{[\s\S]*?"numTotalTestSuites"\s*:\s*\d+[\s\S]*?\}/;
+    const match = output.match(jsonRegex);
+
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch (e) {
+        // Failed to parse, continue to other methods
+      }
+    }
+
+    // If no JSON object found, try to extract individual metrics
+    const stats = {
+      numTotalTestSuites: 0,
+      numTotalTests: 0,
+      numPassedTests: 0,
+      numFailedTests: 0,
+      numPendingTests: 0
+    };
+
+    // Extract test suites count
+    const suitesMatch = output.match(/Test Suites:\s+(\d+)\s+passed,\s+(\d+)\s+total/);
+    if (suitesMatch) {
+      stats.numPassedTestSuites = parseInt(suitesMatch[1], 10);
+      stats.numTotalTestSuites = parseInt(suitesMatch[2], 10);
+      stats.numFailedTestSuites = stats.numTotalTestSuites - stats.numPassedTestSuites;
+    }
+
+    // Extract tests count
+    const testsMatch = output.match(/Tests:\s+(\d+)\s+passed,\s+(\d+)\s+total/);
+    if (testsMatch) {
+      stats.numPassedTests = parseInt(testsMatch[1], 10);
+      stats.numTotalTests = parseInt(testsMatch[2], 10);
+      stats.numFailedTests = stats.numTotalTests - stats.numPassedTests;
+    }
+
+    // Extract pending tests
+    const pendingMatch = output.match(/(\d+)\s+pending/i);
+    if (pendingMatch) {
+      stats.numPendingTests = parseInt(pendingMatch[1], 10);
+    }
+
+    return stats;
+  } catch (e) {
+    console.warn(`${Colors.YELLOW}Error extracting test stats: ${e.message}${Colors.RESET}`);
+    return {
+      numTotalTestSuites: 0,
+      numTotalTests: 0,
+      numPassedTests: 0,
+      numFailedTests: 0,
+      numPendingTests: 0
+    };
+  }
 }
 
 /**
@@ -382,18 +653,78 @@ function printTestSummary(results) {
   console.log('\n');
   console.log(`${Colors.BOLD}Test Summary:${Colors.RESET}`);
   console.log(`${Colors.BOLD}-------------${Colors.RESET}`);
-  console.log(`Total test suites: ${results.numTotalTestSuites}`);
-  console.log(`Total tests: ${results.numTotalTests}`);
-  console.log(`Passed tests: ${Colors.GREEN}${results.numPassedTests}${Colors.RESET}`);
-  console.log(`Failed tests: ${results.numFailedTests > 0 ? Colors.RED : Colors.GREEN}${results.numFailedTests}${Colors.RESET}`);
-  console.log(`Pending tests: ${Colors.YELLOW}${results.numPendingTests}${Colors.RESET}`);
-  console.log('\n');
 
-  if (results.success) {
-    console.log(`${Colors.GREEN}${Colors.BOLD}All tests passed!${Colors.RESET}`);
+  // Handle different possible formats of results
+  if (Array.isArray(results)) {
+    // Aggregate batch-level results
+    const summary = {
+      numTotalTestSuites: 0,
+      numTotalTests: 0,
+      numPassedTests: 0,
+      numFailedTests: 0,
+      numPendingTests: 0,
+      success: true
+    };
+
+    results.forEach(result => {
+      // Check if it's a batch result or already an aggregated result
+      if (result.batchId) {
+        // This is a batch result, extract stats from output
+        const stats = extractTestStats(result.output);
+
+        // Add to summary
+        summary.numTotalTestSuites += stats.numTotalTestSuites || 0;
+        summary.numTotalTests += stats.numTotalTests || 0;
+        summary.numPassedTests += stats.numPassedTests || 0;
+        summary.numFailedTests += stats.numFailedTests || 0;
+        summary.numPendingTests += stats.numPendingTests || 0;
+
+        // Update overall success
+        summary.success = summary.success && result.success;
+      } else {
+        // Already has the right structure
+        summary.numTotalTestSuites += result.numTotalTestSuites || 0;
+        summary.numTotalTests += result.numTotalTests || 0;
+        summary.numPassedTests += result.numPassedTests || 0;
+        summary.numFailedTests += result.numFailedTests || 0;
+        summary.numPendingTests += result.numPendingTests || 0;
+
+        // Update overall success if property exists
+        if (typeof result.success === 'boolean') {
+          summary.success = summary.success && result.success;
+        }
+      }
+    });
+
+    // Print aggregated results
+    console.log(`Total test suites: ${summary.numTotalTestSuites}`);
+    console.log(`Total tests: ${summary.numTotalTests}`);
+    console.log(`Passed tests: ${Colors.GREEN}${summary.numPassedTests}${Colors.RESET}`);
+    console.log(`Failed tests: ${summary.numFailedTests > 0 ? Colors.RED : Colors.GREEN}${summary.numFailedTests}${Colors.RESET}`);
+    console.log(`Pending tests: ${Colors.YELLOW}${summary.numPendingTests}${Colors.RESET}`);
+    console.log('\n');
+
+    if (summary.success) {
+      console.log(`${Colors.GREEN}${Colors.BOLD}All tests passed!${Colors.RESET}`);
+    } else {
+      console.log(`${Colors.RED}${Colors.BOLD}Some tests failed!${Colors.RESET}`);
+    }
   } else {
-    console.log(`${Colors.RED}${Colors.BOLD}Some tests failed!${Colors.RESET}`);
-    process.exit(1);
+    // Single result object (likely from merged results)
+    const success = results.success !== false; // Default to true if undefined
+
+    console.log(`Total test suites: ${results.numTotalTestSuites || 0}`);
+    console.log(`Total tests: ${results.numTotalTests || 0}`);
+    console.log(`Passed tests: ${Colors.GREEN}${results.numPassedTests || 0}${Colors.RESET}`);
+    console.log(`Failed tests: ${(results.numFailedTests || 0) > 0 ? Colors.RED : Colors.GREEN}${results.numFailedTests || 0}${Colors.RESET}`);
+    console.log(`Pending tests: ${Colors.YELLOW}${results.numPendingTests || 0}${Colors.RESET}`);
+    console.log('\n');
+
+    if (success) {
+      console.log(`${Colors.GREEN}${Colors.BOLD}All tests passed!${Colors.RESET}`);
+    } else {
+      console.log(`${Colors.RED}${Colors.BOLD}Some tests failed!${Colors.RESET}`);
+    }
   }
 }
 
@@ -407,7 +738,28 @@ async function main() {
 
     // If merge-only mode is enabled, just merge coverage reports and exit
     if (mergeOnly) {
-      await mergeCoverageReports(0);
+      console.log(`${Colors.YELLOW}Running in merge-only mode${Colors.RESET}`);
+      try {
+        // Find any existing coverage folders
+        const coverageDir = path.join(rootDir, 'coverage');
+        if (fs.existsSync(coverageDir)) {
+          const batchDirs = fs.readdirSync(coverageDir)
+            .filter(dir => dir.startsWith('batch-'))
+            .map(dir => parseInt(dir.replace('batch-', ''), 10))
+            .filter(num => !isNaN(num));
+
+          if (batchDirs.length > 0) {
+            const maxBatch = Math.max(...batchDirs);
+            await mergeCoverageReports(maxBatch);
+          } else {
+            console.log(`${Colors.YELLOW}No batch coverage directories found${Colors.RESET}`);
+          }
+        } else {
+          console.log(`${Colors.YELLOW}No coverage directory found${Colors.RESET}`);
+        }
+      } catch (error) {
+        console.error(`${Colors.RED}Error in merge-only mode: ${error.message}${Colors.RESET}`);
+      }
       return 0;
     }
 
@@ -432,23 +784,57 @@ async function main() {
     const batches = splitTestFiles(testFiles, Math.min(numWorkers, testFiles.length));
     console.log(`${Colors.BLUE}Running ${batches.length} batches in parallel${Colors.RESET}`);
 
-    // Run all batches in parallel
-    const batchPromises = batches.map((batch, index) => runTestBatch(index + 1, batch));
-    const results = await Promise.all(batchPromises);
+    // Handle results
+    let results = [];
+    let allSucceeded = true;
 
-    // Check if all batches succeeded
-    const allSucceeded = results.every(result => result.success);
+    try {
+      // Run all batches in parallel
+      const batchPromises = batches.map((batch, index) => runTestBatch(index + 1, batch));
+      results = await Promise.all(batchPromises);
 
-    // Merge coverage reports if enabled
-    if (coverage) {
-      await mergeCoverageReports(batches.length);
+      // Check if all batches succeeded
+      allSucceeded = results.every(result => result.success);
+    } catch (testError) {
+      console.error(`${Colors.RED}Error during test execution: ${testError.message}${Colors.RESET}`);
+      allSucceeded = false;
+      // Create placeholder results if we don't have any
+      if (results.length === 0) {
+        results = [{
+          numTotalTestSuites: 0,
+          numTotalTests: 0,
+          numPassedTests: 0,
+          numFailedTests: 1,
+          numPendingTests: 0,
+          success: false
+        }];
+      }
     }
 
-    // Merge test results
-    await mergeTestResults(batches.length);
+    // Merge coverage reports if enabled, with error handling
+    if (coverage) {
+      try {
+        await mergeCoverageReports(batches.length);
+      } catch (coverageError) {
+        console.error(`${Colors.RED}Error merging coverage: ${coverageError.message}${Colors.RESET}`);
+      }
+    }
+
+    // Merge test results with error handling
+    let mergedResults = null;
+    try {
+      mergedResults = await mergeTestResults(batches.length);
+    } catch (resultError) {
+      console.error(`${Colors.RED}Error merging test results: ${resultError.message}${Colors.RESET}`);
+    }
 
     // Print summary
-    printTestSummary(results);
+    try {
+      // Use merged results if available, otherwise use batch results
+      printTestSummary(mergedResults || results);
+    } catch (summaryError) {
+      console.error(`${Colors.RED}Error printing test summary: ${summaryError.message}${Colors.RESET}`);
+    }
 
     // Return appropriate exit code
     return allSucceeded ? 0 : 1;
@@ -461,10 +847,20 @@ async function main() {
   }
 }
 
-// Run the main function
+// Run the main function with better error handling
 main().then(exitCode => {
-  process.exit(exitCode);
+  try {
+    process.exit(exitCode);
+  } catch (error) {
+    console.error(`${Colors.RED}Error during exit: ${error.message}${Colors.RESET}`);
+    process.exit(1);
+  }
 }).catch(error => {
   console.error(`${Colors.RED}Unhandled error: ${error.message}${Colors.RESET}`);
-  process.exit(1);
+  try {
+    process.exit(1);
+  } catch (exitError) {
+    // Forced exit in case of issues with graceful exit
+    process.kill(process.pid, 'SIGTERM');
+  }
 });

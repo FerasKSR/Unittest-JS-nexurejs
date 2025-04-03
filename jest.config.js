@@ -1,5 +1,5 @@
 export default {
-  preset: 'ts-jest',
+  preset: 'ts-jest/presets/js-with-ts-esm',
   testEnvironment: 'node',
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
@@ -11,6 +11,7 @@ export default {
       'ts-jest',
       {
         useESM: true,
+        tsconfig: 'tsconfig.json'
       },
     ],
   },
@@ -23,7 +24,7 @@ export default {
   coverageDirectory: './coverage',
   coverageReporters: ['text', 'lcov', 'json'],
   setupFilesAfterEnv: ['<rootDir>/test/setup.ts'],
-  coverageProvider: 'babel',
+  coverageProvider: 'v8',
   collectCoverageFrom: [
     'src/**/*.ts',
     '!src/**/*.d.ts',
@@ -32,5 +33,11 @@ export default {
   ],
   testEnvironmentOptions: {
     url: 'http://localhost'
-  }
+  },
+  // Force Jest to use ESM
+  globals: {
+    // 'ts-jest' config removed from here as it's already in the transform section
+  },
+  // Handle the .js extension properly in imports
+  moduleFileExtensions: ['ts', 'tsx', 'js', 'jsx', 'json', 'node'],
 };

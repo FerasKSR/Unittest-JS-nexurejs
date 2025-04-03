@@ -52,7 +52,9 @@ describe('Native Module Loading and Status', () => {
       expect(status.httpParser || status.radixRouter || status.jsonProcessor || status.webSocket).toBe(true);
     } else {
       expect(status.loaded).toBe(false);
-      console.warn('Native binding could not be loaded during test. Ensure it is built.');
+      // Don't show warning during tests as this is expected behavior
+      // When running in a test environment, native modules are often not available
+      // console.warn('Native binding could not be loaded during test. Ensure it is built.');
     }
   });
 
