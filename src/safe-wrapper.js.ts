@@ -208,7 +208,7 @@ export function formatUrl(url: {
 // Version and Availability Info
 // =================================================
 export const version = '0.1.0';
-export const isAvailable = () => true;
+export const isAvailable = (): boolean => true;
 
 // =================================================
 // WebSocket Implementation
@@ -231,26 +231,26 @@ export const formatQueryString = (params: Record<string, string>): string => {
 // =================================================
 // Schema Validation
 // =================================================
-export const validate = (schema: any, data: any) => {
+export const validate = (_schema: any, _data: any): boolean => {
   // Simple validation fallback
   return true;
 };
 
-export const validatePartial = (schema: any, data: any) => {
+export const validatePartial = (_schema: any, _data: any): boolean => {
   // Simple validation fallback
   return true;
 };
 
-export const compileSchema = (schema: any) => {
+export const compileSchema = (_schema: any): ((_data: any) => boolean) => {
   // Simple compilation fallback
-  return (data: any) => true;
+  return (_data: any): boolean => true;
 };
 
-export const clearCache = () => {
+export const clearCache = (): void => {
   // No-op in safe mode
 };
 
-export const getCacheStats = () => {
+export const getCacheStats = (): Record<string, any> => {
   return {};
 };
 

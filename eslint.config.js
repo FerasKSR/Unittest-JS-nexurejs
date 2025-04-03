@@ -12,7 +12,8 @@ export default [
       'dist/**',
       'node_modules/**',
       '**/*.d.ts',
-      'examples/**'
+      'examples/**',
+      'benchmarks/**'
     ]
   },
 

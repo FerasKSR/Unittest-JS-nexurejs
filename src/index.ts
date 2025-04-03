@@ -114,7 +114,8 @@ let usingNative = false;
 if (!flags.forceJs) {
   try {
     // Attempt to load native modules
-    nativeImpl = require('./native');
+    const nativeModule = await import('./native');
+    nativeImpl = nativeModule.default || nativeModule;
 
     // Verify that the native module is working by calling a simple function
     if (nativeImpl && !nativeImpl.isAvailable()) {
@@ -185,8 +186,8 @@ export function forceJavaScriptFallback(): void {
     module.exports = {
       ...safeImpl,
       isNative: false,
-      isNativeAvailable: () => false,
-      forceJavaScriptFallback: () => {/* no-op */},
+      isNativeAvailable: (): boolean => false,
+      forceJavaScriptFallback: (): void => void 0,
       forceNativeImplementation: forceNativeImplementation
     };
   }
@@ -208,9 +209,9 @@ export function forceNativeImplementation(): boolean {
       module.exports = {
         ...nativeImpl,
         isNative: true,
-        isNativeAvailable: () => true,
+        isNativeAvailable: (): boolean => true,
         forceJavaScriptFallback: forceJavaScriptFallback,
-        forceNativeImplementation: () => {/* no-op */}
+        forceNativeImplementation: (): boolean => true
       };
 
       return true;

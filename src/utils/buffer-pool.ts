@@ -244,12 +244,12 @@ export class BufferPool {
     const expireTime = now - 30000; // Remove buffers older than 30 seconds
 
     // Remove older buffers, keeping at least some for immediate reuse
-    let removed = 0;
+    let _removed = 0;
 
     if (this.buffers.length > 10) {
       this.buffers = this.buffers.filter(entry => {
         if (entry.lastUsed < expireTime) {
-          removed++;
+          _removed++;
           return false;
         }
         return true;

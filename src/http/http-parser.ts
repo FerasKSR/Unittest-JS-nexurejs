@@ -43,9 +43,8 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parse(buffer: Buffer): HttpParseResult {
-    // Buffer checks are important for security even if TypeScript thinks they're unnecessary
-    // @ts-ignore Buffer check is still needed for runtime safety
-    if (!buffer || buffer.length === 0) {
+    // Safety check for empty buffer
+    if (buffer.length === 0) {
       throw new Error('Empty request');
     }
 
@@ -78,9 +77,8 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parseHeaders(buffer: Buffer): Record<string, string> {
-    // Buffer checks are important for security even if TypeScript thinks they're unnecessary
-    // @ts-ignore Buffer check is still needed for runtime safety
-    if (!buffer || buffer.length === 0) {
+    // Safety check for empty buffer
+    if (buffer.length === 0) {
       throw new Error('Empty headers');
     }
 
@@ -108,9 +106,8 @@ export class JsHttpParser implements IHttpParser {
    * @throws Error if parsing fails
    */
   parseBody(buffer: Buffer, contentLength: number): Buffer {
-    // Buffer checks are important for security even if TypeScript thinks they're unnecessary
-    // @ts-ignore Buffer check is still needed for runtime safety
-    if (!buffer || buffer.length === 0) {
+    // Safety check for empty buffer
+    if (buffer.length === 0) {
       throw new Error('Empty body');
     }
 

@@ -67,7 +67,7 @@ export interface NativeBindingModule {
 // This is a hack to prevent crashes if there are memory issues
 // when loading and unloading the module. We'll keep a global reference
 // to prevent the module from being garbage collected.
-let globalModuleRef: any = null;
+let _globalModuleRef: any = null;
 
 // Module cache to prevent redundant loading attempts
 const moduleCache: Record<string, any> = {};
@@ -109,7 +109,7 @@ function safeLoadNativeModule(modulePath: string): any {
 
     // Store in global ref to prevent garbage collection
     // This is important to prevent crashes during cleanup
-    globalModuleRef = module;
+    _globalModuleRef = module;
 
     // Re-add the existing handler if any
     if (existingHandler) {

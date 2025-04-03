@@ -100,7 +100,7 @@ export function createErrorHandler(options: ErrorHandlerOptions = {}): ErrorHand
     // Set headers
     const headers = {
       ...config.headers,
-      ...(httpError.getHeaders ? httpError.getHeaders() : {})
+      ...(typeof httpError.getHeaders === 'function' ? httpError.getHeaders() : {})
     };
 
     for (const [key, value] of Object.entries(headers)) {
@@ -114,7 +114,7 @@ export function createErrorHandler(options: ErrorHandlerOptions = {}): ErrorHand
         message: httpError.message || config.fallbackErrorMessage,
         name: httpError.name,
         code: httpError.code || 'UNKNOWN_ERROR',
-        ...(httpError.details && { details: httpError.details })
+        ...(Object.keys(httpError.details || {}).length > 0 && { details: httpError.details })
       }
     };
 

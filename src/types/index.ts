@@ -318,7 +318,7 @@ export class ZeroCopyHttpParser {
   static getParser(): any {
     return null;
   }
-  static releaseParser(parser: any): void {}
+  static releaseParser(_parser: any): void {}
 }
 
 export function getParser(): any {
@@ -342,7 +342,7 @@ export function parseHttpRequest(_buffer: Buffer): ZeroCopyResult {
 // Object pool type
 // ==========================================
 export class ObjectPool {
-  constructor(options: any) {}
+  constructor(_options: any) {}
 }
 
 // ==========================================
@@ -407,7 +407,7 @@ export enum Scope {
   REQUEST = 'request'
 }
 
-export function getInjectionMetadata(target: any): any {
+export function getInjectionMetadata(_target: any): any {
   return {};
 }
 
@@ -439,9 +439,9 @@ export type MiddlewareHandler = (
  * @param req The request to parse
  * @param options Parsing options
  */
-export function parseBody(req: IncomingMessage, options?: any): Promise<any> {
+export function parseBody(req: IncomingMessage, _options?: any): Promise<any> {
   try {
-    return parseBodyImpl(req, options);
+    return parseBodyImpl(req, _options);
   } catch (error) {
     logger.error(`Error parsing request body: ${(error as Error).message}`);
     throw error;
@@ -467,9 +467,9 @@ export function composeMiddleware(middlewares: MiddlewareHandler[]): MiddlewareH
  * @param target The target to get metadata from
  * @param propertyKey Optional property key
  */
-export function getRouteMetadata(target: any, propertyKey?: string | symbol): any {
+export function getRouteMetadata(_target: any, _propertyKey?: string | symbol): any {
   try {
-    return getRouteMetadataImpl(target, propertyKey);
+    return getRouteMetadataImpl(_target, _propertyKey);
   } catch (error) {
     logger.error(`Error getting route metadata: ${(error as Error).message}`);
     return { path: '/', middlewares: [] };
@@ -563,33 +563,48 @@ export const globalPool = {
   acquire(size: number): Buffer {
     return Buffer.alloc(size);
   },
-  release(buffer: Buffer): void {
+  release(_buffer: Buffer): void {
     // Implementation would release the buffer to the pool
   }
 };
 
-export function extractBoundary(contentType: string): string {
-  // Implementation would extract boundary from content type
+/**
+ * Extract boundary from content-type header
+ */
+export function extractBoundary(_contentType: string): string {
   return '';
 }
 
-export function getTempFilePath(prefix: string, suffix: string): Promise<string> {
-  // Implementation would get a temp file path
-  return Promise.resolve('/tmp/temp-file');
+/**
+ * Create a temporary file for multipart uploads
+ * @param prefix Optional prefix for the temp file
+ * @param suffix Optional suffix for the temp file
+ */
+export function getTempFilePath(_prefix: string, _suffix: string): Promise<string> {
+  return Promise.resolve('');
 }
 
-export function ensureDirectory(dir: string): Promise<void> {
-  // Implementation would ensure directory exists
+/**
+ * Ensure a directory exists
+ * @param dir Directory path
+ */
+export function ensureDirectory(_dir: string): Promise<void> {
   return Promise.resolve();
 }
 
-export function fileExists(path: string): Promise<boolean> {
-  // Implementation would check if file exists
+/**
+ * Check if a file exists
+ * @param path File path
+ */
+export function fileExists(_path: string): Promise<boolean> {
   return Promise.resolve(false);
 }
 
-export function deleteFile(path: string): Promise<void> {
-  // Implementation would delete a file
+/**
+ * Delete a file
+ * @param path File path
+ */
+export function deleteFile(_path: string): Promise<void> {
   return Promise.resolve();
 }
 
@@ -663,4 +678,19 @@ export function getEmptyResult(): ZeroCopyResult {
     complete: false,
     upgrade: false
   };
+}
+
+/**
+ * Memory management interface for buffer pooling
+ */
+export interface MemoryManager {
+  /**
+   * Acquire a buffer of given size
+   */
+  acquire(size: number): Buffer;
+
+  /**
+   * Release a buffer back to the pool
+   */
+  release(_buffer: Buffer): void;
 }

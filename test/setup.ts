@@ -15,23 +15,23 @@ beforeAll(async () => {
 
   // Initialize native modules if available
   try {
-    const httpParser = new HttpParser();
+    const _httpParser = new HttpParser();
     console.log('Native HttpParser initialized');
-  } catch (error) {
+  } catch (_error) {
     console.warn('Native HttpParser not available, tests might only cover JS fallback');
   }
 
   try {
-    const radixRouter = new RadixRouter();
+    const _radixRouter = new RadixRouter();
     console.log('Native RadixRouter initialized');
-  } catch (error) {
+  } catch (_error) {
     console.warn('Native RadixRouter not available, tests might only cover JS fallback');
   }
 
   try {
-    const jsonProcessor = new JsonProcessor();
+    const _jsonProcessor = new JsonProcessor();
     console.log('Native JsonProcessor initialized');
-  } catch (error) {
+  } catch (_error) {
     console.warn('Native JsonProcessor not available, tests might only cover JS fallback');
   }
 });

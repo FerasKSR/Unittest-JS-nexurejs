@@ -4,7 +4,7 @@
  * This module provides high-performance C++ implementations of core components.
  */
 
-import { join, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, URL, URLSearchParams } from 'node:url';
 import { performance } from 'node:perf_hooks';
@@ -23,14 +23,14 @@ import type {
 } from '../types/native.js';
 
 // Get dirName equivalent in ESM/CJS compatible way
-let dirName: string;
-let customRequire: NodeRequire;
+let _dirName: string;
+let _customRequire: NodeRequire;
 
 // Handle both ESM and CommonJS environments
 if (typeof __dirname !== 'undefined') {
   // CommonJS
-  dirName = __dirname;
-  customRequire = require;
+  _dirName = __dirname;
+  _customRequire = require;
 } else {
   // ESM - handle import.meta.url with typeof check for CJS compatibility
   try {
@@ -38,17 +38,17 @@ if (typeof __dirname !== 'undefined') {
     const metaUrl = typeof import.meta !== 'undefined' ? import.meta.url : '';
     if (metaUrl) {
       const filename = fileURLToPath(metaUrl);
-      dirName = dirname(filename);
-      customRequire = createRequire(metaUrl);
+      _dirName = dirname(filename);
+      _customRequire = createRequire(metaUrl);
     } else {
       // Fallback if import.meta is not available (during CJS build)
-      dirName = process.cwd();
-      customRequire = require;
+      _dirName = process.cwd();
+      _customRequire = require;
     }
   } catch (_err) {
     // Final fallback
-    dirName = process.cwd();
-    customRequire = require;
+    _dirName = process.cwd();
+    _customRequire = require;
   }
 }
 
@@ -289,22 +289,7 @@ export function loadNativeBinding(): any {
   try {
     // Custom path provided in options
     if (nativeOptions.modulePath) {
-      if (existsSync(nativeOptions.modulePath)) {
-        try {
-          // Use the safer loader
-          nativeBinding = safeLoadNativeBinding(nativeOptions.modulePath);
-          if (nativeBinding) {
-            nativeModuleStatus.loaded = true;
-          }
-        } catch (err: any) {
-          nativeModuleStatus.error = err.message;
-          if (nativeOptions.verbose) {
-            console.error(`Failed to load native binding from ${nativeOptions.modulePath}:`, err);
-          }
-        }
-      } else if (nativeOptions.verbose) {
-        console.error(`Native module path not found: ${nativeOptions.modulePath}`);
-      }
+      loadCustomNativeModule(nativeOptions);
     } else {
       // Auto-detect module
       nativeBinding = safeLoadNativeBinding();
@@ -314,23 +299,7 @@ export function loadNativeBinding(): any {
     }
 
     // Initialize component status if module loaded
-    if (nativeBinding) {
-      nativeModuleStatus.httpParser = Boolean(nativeBinding.HttpParser);
-      nativeModuleStatus.radixRouter = Boolean(nativeBinding.RadixRouter);
-      nativeModuleStatus.jsonProcessor = Boolean(nativeBinding.JsonProcessor);
-      nativeModuleStatus.urlParser = Boolean(nativeBinding.parse && nativeBinding.parseQueryString);
-      nativeModuleStatus.schemaValidator = Boolean(nativeBinding.validate && nativeBinding.compileSchema);
-      nativeModuleStatus.compression = Boolean(nativeBinding.compress && nativeBinding.decompress);
-      nativeModuleStatus.webSocket = Boolean(nativeBinding.NativeWebSocketServer);
-      nativeModuleStatus.objectPool = Boolean(nativeBinding.ObjectPool);
-
-      if (nativeOptions.verbose) {
-        console.log('Native modules loaded successfully');
-        console.log('Available components:', JSON.stringify(nativeModuleStatus, null, 2));
-      }
-    } else if (nativeOptions.verbose) {
-      console.log('Native modules not available, using JavaScript fallbacks');
-    }
+    initializeNativeModuleStatus();
   } catch (err: any) {
     nativeModuleStatus.error = err.message;
     if (nativeOptions.verbose) {
@@ -339,6 +308,51 @@ export function loadNativeBinding(): any {
   }
 
   return nativeBinding;
+}
+
+/**
+ * Helper function to load a native module from a custom path
+ */
+function loadCustomNativeModule(options: NativeModuleOptions): void {
+  if (existsSync(options.modulePath!)) {
+    try {
+      // Use the safer loader
+      nativeBinding = safeLoadNativeBinding(options.modulePath!);
+      if (nativeBinding) {
+        nativeModuleStatus.loaded = true;
+      }
+    } catch (err: any) {
+      nativeModuleStatus.error = err.message;
+      if (options.verbose) {
+        console.error(`Failed to load native binding from ${options.modulePath}:`, err);
+      }
+    }
+  } else if (options.verbose) {
+    console.error(`Native module path not found: ${options.modulePath}`);
+  }
+}
+
+/**
+ * Helper function to initialize native module status
+ */
+function initializeNativeModuleStatus(): void {
+  if (nativeBinding) {
+    nativeModuleStatus.httpParser = Boolean(nativeBinding.HttpParser);
+    nativeModuleStatus.radixRouter = Boolean(nativeBinding.RadixRouter);
+    nativeModuleStatus.jsonProcessor = Boolean(nativeBinding.JsonProcessor);
+    nativeModuleStatus.urlParser = Boolean(nativeBinding.parse && nativeBinding.parseQueryString);
+    nativeModuleStatus.schemaValidator = Boolean(nativeBinding.validate && nativeBinding.compileSchema);
+    nativeModuleStatus.compression = Boolean(nativeBinding.compress && nativeBinding.decompress);
+    nativeModuleStatus.webSocket = Boolean(nativeBinding.NativeWebSocketServer);
+    nativeModuleStatus.objectPool = Boolean(nativeBinding.ObjectPool);
+
+    if (nativeOptions.verbose) {
+      console.log('Native modules loaded successfully');
+      console.log('Available components:', JSON.stringify(nativeModuleStatus, null, 2));
+    }
+  } else if (nativeOptions.verbose) {
+    console.log('Native modules not available, using JavaScript fallbacks');
+  }
 }
 
 /**

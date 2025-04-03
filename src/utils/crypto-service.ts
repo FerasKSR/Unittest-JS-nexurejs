@@ -137,11 +137,11 @@ export class CryptoService {
     // to maintain constant time
     if (bufA.length !== bufB.length) {
       // Still do the comparison to make timing attacks harder
-      let result = 0;
+      let _result = 0;
       const len = Math.min(bufA.length, bufB.length);
 
       for (let i = 0; i < len; i++) {
-        result |= bufA[i]! ^ bufB[i]!;
+        _result |= bufA[i]! ^ bufB[i]!;
       }
 
       return false;
