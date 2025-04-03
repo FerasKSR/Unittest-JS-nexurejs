@@ -1181,6 +1181,9 @@ async function buildNativeModuleDirect(options = {}) {
         return false;
       }
     }
+
+    // Pre-sanitize any existing vcxproj files before running node-gyp
+    await sanitizeVcxprojFiles();
   }
 
   try {
@@ -1204,6 +1207,23 @@ async function buildNativeModuleDirect(options = {}) {
       stdio: 'inherit',
       env: { ...process.env, FORCE_COLOR: '1' }
     });
+
+    // Sanitize vcxproj files if on Windows and try again if it failed
+    if (CURRENT_PLATFORM === 'win32') {
+      await sanitizeVcxprojFiles();
+
+      // Try to build again if vcxproj files were sanitized
+      try {
+        execSync(`${cmd} ${args.join(' ')}`, {
+          cwd: rootDir,
+          stdio: 'inherit',
+          env: { ...process.env, FORCE_COLOR: '1' }
+        });
+      } catch (retryErr) {
+        // If it still fails, continue with the original error handling
+        throw retryErr;
+      }
+    }
 
     console.log(`${Colors.GREEN}✓ Native module build successful${Colors.RESET}`);
 
@@ -2106,5 +2126,63 @@ async function copyNativeModule() {
     }
   } catch (err) {
     console.error(`${Colors.RED}Failed to copy native module:${Colors.RESET}`, err.message);
+  }
+}
+
+/**
+ * Sanitize vcxproj files to remove illegal characters
+ */
+async function sanitizeVcxprojFiles() {
+  if (CURRENT_PLATFORM !== 'win32') {
+    return;
+  }
+
+  console.log(`${Colors.BLUE}Sanitizing vcxproj files to remove invalid characters...${Colors.RESET}`);
+
+  try {
+    // Get all vcxproj files in the build directory
+    const files = await fsPromises.readdir(buildDir, { recursive: true });
+    const vcxprojFiles = files.filter(file => file.endsWith('.vcxproj'));
+
+    for (const file of vcxprojFiles) {
+      const filePath = path.join(buildDir, file);
+      let content = await fsPromises.readFile(filePath, 'utf8');
+
+      // Check specifically for line 51 (which is the line with the error in nexurejs_native.vcxproj)
+      const lines = content.split('\n');
+      if (lines.length >= 51) {
+        const line51 = lines[50]; // 0-based index for line 51
+
+        // Check if this line contains the problematic escape character
+        if (line51.includes('\x1B')) {
+          console.log(`${Colors.YELLOW}Found escape character (0x1B) in line 51 of ${file}${Colors.RESET}`);
+          lines[50] = line51.replace(/\x1B/g, '');
+        }
+
+        // Replace any other control characters in all lines
+        for (let i = 0; i < lines.length; i++) {
+          lines[i] = lines[i].replace(/[\x00-\x1F]/g, '');
+        }
+
+        // Join the lines back together
+        const sanitized = lines.join('\n');
+
+        if (sanitized !== content) {
+          await fsPromises.writeFile(filePath, sanitized);
+          console.log(`${Colors.GREEN}Sanitized ${file}${Colors.RESET}`);
+        }
+      } else {
+        // If the file doesn't have 51 lines, just do a general sanitization
+        const sanitized = content.replace(/[\x00-\x1F]/g, '');
+
+        if (sanitized !== content) {
+          await fsPromises.writeFile(filePath, sanitized);
+          console.log(`${Colors.GREEN}Sanitized ${file}${Colors.RESET}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error(`${Colors.YELLOW}Error sanitizing vcxproj files: ${err.message}${Colors.RESET}`);
+    // Continue with the build even if sanitization fails
   }
 }

@@ -53,7 +53,7 @@ async function createSimdjsonStub() {
     await fs.mkdir(simdjsonDir, { recursive: true });
 
     // Create a stub header file that defines the minimal necessary interfaces
-    const headerContent = `
+    let headerContent = `
 /**
  * Simdjson compatibility stub header
  * This is a minimal implementation to allow builds to succeed on platforms
@@ -150,6 +150,10 @@ namespace simdjson {
 
 #endif // SIMDJSON_H
 `;
+
+    // Remove any control characters from the header content
+    // This is particularly important for Windows builds
+    headerContent = headerContent.replace(/[\x00-\x1F]/g, '');
 
     await fs.writeFile(simdjsonHeader, headerContent);
     console.log('Created simdjson stub header successfully');
