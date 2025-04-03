@@ -26,7 +26,11 @@ jobs:
       run: npm run build
 
     - name: Run benchmarks
-      run: npm run benchmark
+      run: |
+        # Fix TypeScript execution by using ts-node with `proper flags
+        npx ts-node-esm -P tsconfig.json benchmarks/benchmarks.ts || \
+        npx tsx benchmarks/benchmarks.ts || \
+        node -r ts-node/register benchmarks/benchmarks.ts
 
     - name: Store benchmark results
       uses: actions/upload-artifact@v4
