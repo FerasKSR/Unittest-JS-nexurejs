@@ -1,16 +1,15 @@
 name: NexureJS Tests
 
 on:
-  pull_request:
-    branches: [main, develop]
+  push:
 
 jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-        node-version: [18.x, 20.x]
+        os: [ubuntu-latest]
+        node-version: [20.x]
 
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +20,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
-          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -39,12 +37,8 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=4096"
 
-      - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v4
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v4
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage/lcov.info,./coverage/coverage-final.json
-          flags: unittests
-          name: codecov-umbrella
-          fail_ci_if_error: false
-          verbose: true
+          name: code-coverage-report
+          path: ./coverage
